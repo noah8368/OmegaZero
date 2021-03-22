@@ -11,21 +11,33 @@
 
 #include "board.h"
 #include "constants.h"
-#include "string.h"
+#include "move.h"
 
+#include <string>
 #include <unordered_map>
 
 class Game {
 public:
   Game();
-  void move(Player player);
+  void outputGameResolution();
+  void play(Player player);
   // Check if the game has ended in a win or draw
   bool isActive() const;
 private:
+  // Parse algebraic notation denoting a chess move, return if the move is
+  // legal, and construct a corresponding Move struct.
+  bool interpretCmd(std::string user_cmd, Move& user_move,
+                    std::string& err_msg);
+  // Inspect the board representation to see if the conditions for a checkmate,
+  // check, or stalemate have occured.
+  void checkGameStatus() const;
   void displayBoard() const;
+  void updateBoard(Move move);
 
   Board board_;
-  bool is_game_active_;
+  bool game_active_;
+  int player_in_check_;
+  int winner_;
   std::unordered_map<int, std::string> piece_symbols_;
 };
 

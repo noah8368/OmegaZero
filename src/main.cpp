@@ -13,8 +13,9 @@ int main() {
   Player player = kWhite;
 
   while (game.isActive()) {
-    game.move(player);
+    game.play(player);
     // Switch to the other player
     player = static_cast<Player>(player ^ 1);
   }
+  game.outputGameResolution();
 }
