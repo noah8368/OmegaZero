@@ -12,6 +12,13 @@
 
 typedef uint64_t Bitboard;
 
+enum NonSliderAttackMap {
+  kWhitePawnPush, kWhitePawnTake, kBlackPawnPush, kBlackPawnTake,
+  kKnightAttack, kKingAttack,
+};
+enum SliderAttackMap {
+  kBishopAttack, kRookAttack, kQueenAttack,
+};
 enum Rank {
   k1 = 0, k2 = 1, k3 = 2, k4 = 3, k5 = 4, k6 = 5, k7 = 6, k8 = 7,
 };
@@ -24,7 +31,6 @@ enum Piece {
 enum Player {
   kWhite = 1, kBlack = -1,
 };
-
 // LERF mapped square definitions
 enum Square {
   kA1, kB1, kC1, kD1, kE1, kF1, kG1, kH1,
@@ -36,15 +42,18 @@ enum Square {
   kA7, kB7, kC7, kD7, kE7, kF7, kG7, kH7,
   kA8, kB8, kC8, kD8, kE8, kF8, kG8, kH8
 };
-
 enum BoardSide {
   kKingSide, kQueenSide,
 };
 
-const int kNumRanks = 8;
-const int kNumFiles = 8;
-const int kNumBitboards = 8;
 const int kNA = -1;
+const int kNumBitboards = 8;
+const int kNumFiles = 8;
+const int kNumNonSliderMaps = 6;
+const int kNumPieces = 6;
+const int kNumRanks = 8;
+const int kNumSliderMasks = 2;
+const int kNumSquares = 64;
 
 // Little Endian Rank File (LERF) indexed 8x8 board representation
 const int kStartLayout[kNumRanks][kNumFiles] = {

@@ -10,12 +10,12 @@
 
 int main() {
   Game game;
-  Player player = kWhite;
+  int player = kWhite;
 
-  while (game.isActive()) {
-    game.play(player);
+  while (game.IsActive()) {
+    game.Play(player);
     // Switch to the other player
-    player = static_cast<Player>(player ^ 1);
+    player ^= 1;
   }
-  game.outputGameResolution();
+  game.OutputGameResolution();
 }

@@ -19,20 +19,20 @@
 class Game {
 public:
   Game();
-  void outputGameResolution();
-  void play(Player player);
+  void OutputGameResolution() const;
+  void Play(int player);
   // Check if the game has ended in a win or draw
-  bool isActive() const;
+  bool IsActive() const;
 private:
   // Parse algebraic notation denoting a chess move, return if the move is
   // legal, and construct a corresponding Move struct.
-  bool interpretCmd(std::string user_cmd, Move& user_move,
-                    std::string& err_msg);
+  bool CheckMove(std::string user_cmd, Move& user_move,
+                      std::string& err_msg, int player);
+  bool MakeMove(int player, Move move, std::string& err_msg);
   // Inspect the board representation to see if the conditions for a checkmate,
   // check, or stalemate have occured.
-  void checkGameStatus() const;
-  void displayBoard() const;
-  void updateBoard(Move move);
+  void CheckGameStatus() const;
+  void DisplayBoard() const;
 
   Board board_;
   bool game_active_;

@@ -27,7 +27,9 @@ Game::Game() {
   int winner_ = kNA;
 }
 
-void Game::outputGameResolution() {
+void Game::OutputGameResolution() const {
+  DisplayBoard();
+
   if (winner_ == kNA) {
     std::cout << "Game has ended in a stalemate" << std::endl;
   } else {
@@ -36,43 +38,45 @@ void Game::outputGameResolution() {
   }
 }
 
-void Game::play(Player player) {
-  displayBoard();
+void Game::Play(int player) {
+  DisplayBoard();
 
   std::string player_name = (player == kWhite) ? "WHITE" : "BLACK";
   std::cout << "\n\n" << player_name << " to move" << std::endl;
 
-  std::string user_cmd;
-  std::cout << "Enter move: ";
-  std::getline(std::cin, user_cmd);
+  bool move_legal;
   Move user_move;
-  std::string err_msg;
-  bool move_legal = interpretCmd(user_cmd, user_move, err_msg);
-
-  while (!move_legal) {
-    std::cout << "ERROR: " << err_msg << std::endl
-              << "Enter new move: ";
+  std::string err_msg, user_cmd;
+  do {
+    std::cout << "Enter move: ";
     std::getline(std::cin, user_cmd);
-    move_legal = interpretCmd(user_cmd, user_move, err_msg);
-  }
+    move_legal = CheckMove(user_cmd, user_move, err_msg, player);
+    if (move_legal) {
+      if (game_active_) {
+        move_legal = MakeMove(player, user_move, err_msg);
+      } else {
+        break;
+      }
+    }
+    // Output an error message if the input format was invalid, the move did
+    // not follow piece movement rules, or the move put the king in check.
+    if (!move_legal) {
+      std::cout << "ERROR: " << err_msg << std::endl;
+    }
+  } while (!move_legal);
   std::cout << "\n\n";
 
-  updateBoard(user_move);
-  // Only check the game status if the player didn't just resign.
-  if (game_active_) {
-    checkGameStatus();
-  }
+  CheckGameStatus();
 }
 
-bool Game::isActive() const {
+bool Game::IsActive() const {
   return game_active_;
 }
 
-bool Game::interpretCmd(std::string user_cmd, Move& move,
-                        std::string& err_msg) {
+bool Game::CheckMove(std::string user_cmd, Move& move,
+                     std::string& err_msg, int player) {
   err_msg = "bad command formatting";
   size_t cmd_len = user_cmd.length();
-  // Handle the case in which input is too short for any possible command.
   if (cmd_len == 0) {
     return false;
   }
@@ -80,6 +84,7 @@ bool Game::interpretCmd(std::string user_cmd, Move& move,
   // Handle the case in which the user resigns.
   if (user_cmd == "r") {
     game_active_ = false;
+    winner_ = player ^ 1;
     return true;
   }
 
@@ -263,34 +268,34 @@ bool Game::interpretCmd(std::string user_cmd, Move& move,
     return false;
   }
 
+  // TODO: Check psuedo legality of move. Use error "illegal piece movement"
+
+  
+
   entered_move.capture_indicated = capture_indicated;
   entered_move.is_ep = is_ep;
   entered_move.promoted_piece = promoted_piece;
   entered_move.castling_type = kNA;
   entered_move.dest = static_cast<Square>(kNumFiles * dest_rank + dest_file);
 
-  // TODO: Check psuedo legality of move. Use error "illegal piece movement"
-  // TODO: Check if the move puts king in check. Use error
-  // "move leaves king in check"
-
   return true;
 }
 
-void Game::checkGameStatus() const {
+void Game::CheckGameStatus() const {
   // TODO: Check if a player is now in check.
   // TODO: Check if the game has just ended in a stalemate and set
-  // game_active_ equal to false.
+  // game_active_ equal to false. (Zobrist hashing happens here!)
   // TODO: Check if a player has been checkmated, set winner_ equal to the
   // player not in checkmate, and set game_active_ to false.
 }
 
-void Game::displayBoard() const {
+void Game::DisplayBoard() const {
   int piece;
   // Loop through 8x8 board representation and print corresponding symbols.
   for (int rank = k8; rank >= k1; --rank) {
     std::cout << rank + 1 << " ";
     for (int file = kA; file <= kH; ++file) {
-      piece = board_.getPieceOnSquare(rank, file);
+      piece = board_.GetPieceOnSquare(rank, file);
       std::string piece_symbol = piece_symbols_.at(piece);
       std::cout << piece_symbol << " ";
     }
@@ -299,7 +304,9 @@ void Game::displayBoard() const {
   std::cout << "  A B C D E F G H" << std::endl;
 }
 
-void Game::updateBoard(Move move) {
+bool Game::MakeMove(int player, Move move, std::string& err_msg) {
+  // TOTO: Check if the player that moved put their king in check.
   // TODO: Update the 8x8 representation.
   // TODO: Incrementally update the bitboards and attack maps.
+  return true;
 }
