@@ -58,8 +58,6 @@ void Game::Play(int player) {
         break;
       }
     }
-    // Output an error message if the input format was invalid, the move did
-    // not follow piece movement rules, or the move put the king in check.
     if (!move_legal) {
       std::cout << "ERROR: " << err_msg << std::endl;
     }
@@ -270,8 +268,6 @@ bool Game::CheckMove(std::string user_cmd, Move& move,
 
   // TODO: Check psuedo legality of move. Use error "illegal piece movement"
 
-  
-
   entered_move.capture_indicated = capture_indicated;
   entered_move.is_ep = is_ep;
   entered_move.promoted_piece = promoted_piece;
@@ -291,7 +287,6 @@ void Game::CheckGameStatus() const {
 
 void Game::DisplayBoard() const {
   int piece;
-  // Loop through 8x8 board representation and print corresponding symbols.
   for (int rank = k8; rank >= k1; --rank) {
     std::cout << rank + 1 << " ";
     for (int file = kA; file <= kH; ++file) {
@@ -305,7 +300,7 @@ void Game::DisplayBoard() const {
 }
 
 bool Game::MakeMove(int player, Move move, std::string& err_msg) {
-  // TOTO: Check if the player that moved put their king in check.
+  // TODO: Check if the player that moved put their king in check.
   // TODO: Update the 8x8 representation.
   // TODO: Incrementally update the bitboards and attack maps.
   return true;

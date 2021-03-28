@@ -12,12 +12,12 @@
 
 typedef uint64_t Bitboard;
 
-enum NonSliderAttackMap {
-  kWhitePawnPush, kWhitePawnTake, kBlackPawnPush, kBlackPawnTake,
-  kKnightAttack, kKingAttack,
+enum NonSliderAttackMask {
+  kWhitePawnPushAttack, kWhitePawnCaptureAttack, kBlackPawnPushAttack,
+  kBlackPawnCaptureAttack, kKnightAttack, kKingAttack,
 };
-enum SliderAttackMap {
-  kBishopAttack, kRookAttack, kQueenAttack,
+enum SliderPieceMask {
+  kBishopMoves, kRookMoves,
 };
 enum Rank {
   k1 = 0, k2 = 1, k3 = 2, k4 = 3, k5 = 4, k6 = 5, k7 = 6, k8 = 7,
@@ -49,7 +49,7 @@ enum BoardSide {
 const int kNA = -1;
 const int kNumBitboards = 8;
 const int kNumFiles = 8;
-const int kNumNonSliderMaps = 6;
+const int kNumNonSliderMasks = 6;
 const int kNumPieces = 6;
 const int kNumRanks = 8;
 const int kNumSliderMasks = 2;

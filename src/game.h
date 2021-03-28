@@ -21,7 +21,6 @@ public:
   Game();
   void OutputGameResolution() const;
   void Play(int player);
-  // Check if the game has ended in a win or draw
   bool IsActive() const;
 private:
   // Parse algebraic notation denoting a chess move, return if the move is
@@ -32,6 +31,7 @@ private:
   // Inspect the board representation to see if the conditions for a checkmate,
   // check, or stalemate have occured.
   void CheckGameStatus() const;
+  // Loop through 8x8 board representation and print corresponding symbols.
   void DisplayBoard() const;
 
   Board board_;
