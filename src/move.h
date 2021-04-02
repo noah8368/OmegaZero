@@ -14,12 +14,12 @@
 struct Move {
   bool capture_indicated;
   bool is_ep;
-  int promoted_piece;
   // Indicate if the move is not a castling move, queenside castling, or
   // kingside castling.
   int castling_type;
-  Square dest;
-  Square origin;
+  int dest;
+  int origin;
+  int promoted_piece;
 };
 
 #endif // OMEGAZERO_SRC_MOVE_H

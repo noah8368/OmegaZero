@@ -20,18 +20,18 @@ enum SliderPieceMask {
   kBishopMoves, kRookMoves,
 };
 enum Rank {
-  k1 = 0, k2 = 1, k3 = 2, k4 = 3, k5 = 4, k6 = 5, k7 = 6, k8 = 7,
+  k1, k2, k3, k4, k5, k6, k7, k8,
 };
 enum File {
   kA, kB, kC, kD, kE, kF, kG, kH,
 };
-enum Piece {
-  kEmpty, kPawn, kKnight, kBishop, kRook, kQueen, kKing
-};
 enum Player {
-  kWhite = 1, kBlack = -1,
+  kWhite, kBlack,
 };
-// LERF mapped square definitions
+enum Piece {
+  kPawn, kKnight, kBishop, kRook, kQueen, kKing,
+};
+// Little Endian Rank File (LERF) mapped square definitions
 enum Square {
   kA1, kB1, kC1, kD1, kE1, kF1, kG1, kH1,
   kA2, kB2, kC2, kD2, kE2, kF2, kG2, kH2,
@@ -51,24 +51,9 @@ const int kNumBitboards = 8;
 const int kNumFiles = 8;
 const int kNumNonSliderMasks = 6;
 const int kNumPieces = 6;
+const int kNumPlayers = 2;
 const int kNumRanks = 8;
 const int kNumSliderMasks = 2;
 const int kNumSquares = 64;
-
-// Little Endian Rank File (LERF) indexed 8x8 board representation
-const int kStartLayout[kNumRanks][kNumFiles] = {
-  kWhite * kRook, kWhite * kKnight, kWhite * kBishop, kWhite * kQueen,
-  kWhite * kKing, kWhite * kBishop, kWhite * kKnight, kWhite * kRook,
-  kWhite * kPawn, kWhite * kPawn, kWhite * kPawn, kWhite * kPawn,
-  kWhite * kPawn, kWhite * kPawn, kWhite * kPawn, kWhite * kPawn,
-  kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
-  kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
-  kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
-  kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
-  kBlack * kPawn, kBlack * kPawn, kBlack * kPawn, kBlack * kPawn,
-  kBlack * kPawn, kBlack * kPawn, kBlack * kPawn, kBlack * kPawn,
-  kBlack * kRook, kBlack * kKnight, kBlack * kBishop, kBlack * kQueen,
-  kBlack * kKing, kBlack * kBishop, kBlack * kKnight, kBlack * kRook
-};
 
 #endif // OMEGAZERO_SRC_CONSTANTS_H_

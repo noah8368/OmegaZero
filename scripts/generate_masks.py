@@ -43,8 +43,7 @@ class MaskGenerator:
     # Get piece masks for "sliding" pieces (Bishop and Rook)
     # The argument "move_dirs" is a list of two element tuples denoting single
     # move directions in the format (rank, file)
-    def get_slider_piece_mask(self, rank, file, move_dirs,
-                              endpoints_only=False):
+    def get_slider_piece_mask(self, rank, file, move_dirs):
         slider_board = [[0 for file in range(self.num_files)] for rank in \
                          range(self.num_ranks)]
         for dir in move_dirs:
@@ -63,22 +62,20 @@ class MaskGenerator:
             move_file -= dir[1]
             # Check that the endpoint is not the original piece position
             if move_rank != rank or move_file != file:
-                if endpoints_only:
-                    slider_board[move_rank][move_file] = 1
-                else:
-                    slider_board[move_rank][move_file] = 0
+                slider_board[move_rank][move_file] = 0
         return self.get_bitboard(slider_board)
 
-    def get_slider_attack_mask(self, moves, occupancy_mask, pos_rank,
+    def get_slider_attack_mask(self, moves, blocker_mask, pos_rank,
                                pos_file):
         attack_mask = 0X0
         blocker_board = [[0 for file in range(self.num_files)] for rank in \
                             range(self.num_ranks)]
-        attack_board = blocker_board
+        attack_board = [[0 for file in range(self.num_files)] for rank in \
+                            range(self.num_ranks)]
         for rank in range(self.num_ranks):
             for file in range(self.num_files):
                 square =  self.num_files * rank + file
-                square_bit_set = occupancy_mask & (1 << square)
+                square_bit_set = blocker_mask & (1 << square)
                 if square_bit_set:
                     blocker_board[rank][file] = 1
 
@@ -94,7 +91,6 @@ class MaskGenerator:
                     break
                 move_rank += move[0]
                 move_file += move[1]
-
         return self.get_bitboard(attack_board)
 
     # Get attack masks for "non sliding" pieces (Pawn, Knight, King)
@@ -186,11 +182,4 @@ if __name__ == "__main__":
                    mask_gen.get_slider_piece_mask, [rook_moves])
     f.write("\n};")
 
-    f.write("\n\nconst Bitboard "
-            + "kSliderEndpointMasks[kNumSliderMasks][kNumSquares] = {")
-    write_mask_set(f, "bishop endpoint masks",
-                   mask_gen.get_slider_piece_mask, [bishop_moves, True])
-    f.write(",")
-    write_mask_set(f, "rook endpoint masks",
-                   mask_gen.get_slider_piece_mask, [rook_moves, True])
-    f.write("\n};")
+    f.close()

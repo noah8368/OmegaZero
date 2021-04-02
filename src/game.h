@@ -9,12 +9,14 @@
 #ifndef OMEGAZERO_SRC_GAME_H_
 #define OMEGAZERO_SRC_GAME_H_
 
+#include <string>
+#include <map>
+
 #include "board.h"
 #include "constants.h"
 #include "move.h"
 
-#include <string>
-#include <unordered_map>
+using namespace std;
 
 class Game {
 public:
@@ -25,9 +27,8 @@ public:
 private:
   // Parse algebraic notation denoting a chess move, return if the move is
   // legal, and construct a corresponding Move struct.
-  bool CheckMove(std::string user_cmd, Move& user_move,
-                      std::string& err_msg, int player);
-  bool MakeMove(int player, Move move, std::string& err_msg);
+  bool CheckMove(string user_cmd, Move& user_move, string& err_msg, int player);
+  bool MakeMove(int player, Move move, string& err_msg);
   // Inspect the board representation to see if the conditions for a checkmate,
   // check, or stalemate have occured.
   void CheckGameStatus() const;
@@ -38,7 +39,8 @@ private:
   bool game_active_;
   int player_in_check_;
   int winner_;
-  std::unordered_map<int, std::string> piece_symbols_;
+  // Use a map over an unordered map to allow the use of pairs as keys.
+  map<pair<int, int>, string> piece_symbols_;
 };
 
 #endif // OMEGAZERO_SRC_GAME_H_

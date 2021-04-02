@@ -75,7 +75,6 @@ class MagicsGenerator:
                                                                blocker_mask,
                                                                rank, file)
             blocker_to_attack_map[blocker_mask] = attack_mask
-
         index_to_attack_map = {}
         for trial in range(self.num_attempts):
             magic_is_valid = True
@@ -94,12 +93,32 @@ class MagicsGenerator:
             for blocker_mask in blocker_to_attack_map:
                 attack_mask = blocker_to_attack_map[blocker_mask]
                 index = (magic * blocker_mask) >> (self.num_squares - magic_len)
-                if index not in index_to_attack_map:
+                # Check that the index is not bigger than magic_len bits
+                if index > 0XFFFFFFFFFFFFFFFF:
+                    magic_is_valid = False
+                    break
+                elif index not in index_to_attack_map:
                     index_to_attack_map[index] = attack_mask
-                elif index_to_attack_map[index] != attack_mask:
+                elif (index_to_attack_map[index] != attack_mask):
                     magic_is_valid = False
                     break
             if magic_is_valid:
+
+                # Debugging code
+                if piece_type == "BISHOP" and rank == 3 and file == 4:
+                    print("MAGIC:", hex(magic))
+                    # Blocker mask for bishop on e4 with starting layout
+                    blocker_mask = 0X2000000004400
+                    print("Is blocker mask in blocker > attack mask?",
+                          str("YES" if blocker_mask in blocker_to_attack_map
+                              else "NO"))
+                    # Should print 55
+                    print("shift amount:", str(self.num_squares - magic_len))
+                    index = (magic * blocker_mask) >> (self.num_squares - magic_len)
+                    print("index:", hex(index))
+                    # Should print "0x82442800284400"
+                    print("attack set:", hex(index_to_attack_map[index]))
+
                 return magic, index_to_attack_map
         print("FAILED TO FIND SUITABLE MAGIC FOR RANK " + str(rank) + ", FILE "
               + str(file))
@@ -153,9 +172,9 @@ def write_magics(f, piece_name, magics):
 
 def write_magics_map(f, magics_map):
     for index in magics_map:
-        formatted_index = format_hex(index, 32)
+        formatted_index = format_hex(index, 16)
         formatted_attack_mask = format_hex(magics_map[index], 16)
-        f.write("  {\"" + formatted_index + "\", " + formatted_attack_mask
+        f.write("  {" + formatted_index + ", " + formatted_attack_mask
                 + "}")
         if index == list(magics_map)[-1]:
             f.write("};")
@@ -164,26 +183,26 @@ def write_magics_map(f, magics_map):
 
 if __name__ == "__main__":
     magics_gen = MagicsGenerator(10**6)
+    magics_gen.mine_magics("BISHOP")
+    magics_gen.mine_magics("ROOK")
 
+    print("Found magics\nWriting to file...")
     date = date.today().strftime("%d %B %Y")
     boiler_plate = ("// Noah Himed" + "\n// " + date + "\n//"
         + "\n// Define the magic numbers and hashmap used to generate attack"
         + " masks \n// for sliding pieces (bishop, rook, and queen).\n//"
         + "\n// Licensed under MIT License. Terms and conditions enclosed in"
         + "\"LICENSE.txt\".\n\n#include \"board.h\"\n#include \"constants.h\""
-        + "\n\n#include <unordered_map>\n\n")
+        + "\n\n#include<cstdint>\n#include <unordered_map>\n\n")
     f = open("../src/magics.cpp", 'w')
     f.write(boiler_plate)
-    f.write("const Bitboard kMagics[kNumSliderMasks][kNumSquares] = {")
-
-    magics_gen.mine_magics("BISHOP")
+    f.write("const uint64_t kMagics[kNumSliderMasks][kNumSquares] = {")
     write_magics(f, "bishop", magics_gen.bishop_magics)
     f.write(",\n")
-
-    magics_gen.mine_magics("ROOK")
-    write_magics(f, "rook", magics_gen.bishop_magics)
+    write_magics(f, "rook", magics_gen.rook_magics)
     f.write("\n};")
-
-    f.write("\n\nconst std::unordered_map<const char*, Bitboard> "
+    f.write("\n\nconst std::unordered_map<uint64_t, Bitboard> "
             + "kMagicIndexToAttackMap = {\n")
     write_magics_map(f, magics_gen.magics_map)
+
+    f.close()
