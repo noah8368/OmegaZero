@@ -5,16 +5,25 @@
 
 ### Project Summary
 
+![image info](./logo.png)
+
 OmegaZero is a terminal-based chess engine which allows a user to play against
 an AI. The engine uses a board representation that takes advantage of both
 bitboards and an 8x8 representation, and uses the magic bitboard technique
-to implement a psuedo-legal move generator.
+to implement a psuedo-legal move generator. Search and evaluation is done by
+traversing a tree and using an evaluation function which takes into account
+material advantage and piece position on each board state. Alpha-beta pruning
+is used to optimize this process.
+
+The name OmegaZero is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), an algorithm developed by
+[DeepMind](https://deepmind.com/) that was used to create one of the best Chess engines ever made. The
+[Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during development.
 
 ### Usage
 
 #### Prerequisites
 
-The included makefile is designed to run on Linux machines. The GNU GMP library
+The included `Makefile` is designed to run on Linux machines. The GNU GMP library
 is a requirement, and should be installed on a Linux system locally before
 compilation. Information on how to do this can be found [here](https://gmplib.org/).
 
@@ -56,6 +65,6 @@ by `generate_masks.py`. For sliding pieces, move generation is implemented
 through the [magic bitboard technique](http://pradu.us/old/Nov27_2008/Buzz/research/magic/Bitboards.pdf).
 
 The move generation function is implemented as a [pseudo-legal generator](https://www.chessprogramming.org/Move_Generation#Pseudo-legal). A
-full legality check is made in Board::MakeMove() to ensure that a move does not
+full legality check is made in `Board::MakeMove()` to ensure that a move does not
 put the moving player in check; illegal moves are unmade if they are found to
 do this.
