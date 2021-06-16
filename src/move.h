@@ -12,14 +12,16 @@
 #include "constants.h"
 
 struct Move {
-  bool capture_indicated;
   bool is_ep;
+  int captured_piece;
   // Indicate if the move is not a castling move, queenside castling, or
   // kingside castling.
   int castling_type;
-  int dest;
-  int origin;
+  int end_sq;
+  int moving_piece;
+  int moving_player;
   int promoted_piece;
+  int start_sq;
 };
 
 #endif // OMEGAZERO_SRC_MOVE_H

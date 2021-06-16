@@ -1,6 +1,6 @@
 OBJECTS = build/main.o build/game.o build/board.o build/masks.o build/magics.o
 CC = g++
-FLAGS = -g -O0 -lgmp -lgmpxx
+FLAGS = -g -Og -lgmp -lgmpxx
 
 all : build $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS)

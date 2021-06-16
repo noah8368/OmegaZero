@@ -13,8 +13,8 @@
 typedef uint64_t Bitboard;
 
 enum NonSliderAttackMask {
-  kWhitePawnPushAttack, kWhitePawnCaptureAttack, kBlackPawnPushAttack,
-  kBlackPawnCaptureAttack, kKnightAttack, kKingAttack,
+  kWhitePawnPushAttack, kWhitePawnTakeAttack, kBlackPawnPushAttack,
+  kBlackPawnTakeAttack, kKnightAttack, kKingAttack,
 };
 enum SliderPieceMask {
   kBishopMoves, kRookMoves,

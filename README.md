@@ -1,7 +1,7 @@
 # OmegaZero Chess Engine
 
 ###### Noah Himed
-###### 21 March 2021
+###### 16 June 2021
 
 ### Project Summary
 
@@ -11,6 +11,14 @@ bitboards and an 8x8 representation, and uses the magic bitboard technique
 to implement a psuedo-legal move generator.
 
 ### Usage
+
+#### Prerequisites
+
+The included makefile is designed to run on Linux machines. The GNU GMP library
+is a requirement, and should be installed on a Linux system locally before
+compilation. Information on how to do this can be found [here](https://gmplib.org/).
+
+#### User Input
 
 The format used to denote entered moves is based around [FIDE standard algebraic
 notation](https://www.chessprogramming.org/Algebraic_Chess_Notation#Standard_Algebraic_Notation_.28SAN.29).
@@ -34,9 +42,20 @@ To resign, a user must enter `r` on their turn.
 
 ### Implementation
 
-#### Attack Sets
+#### Board Representation
 
-For non-sliding pieces (pawn, knight, and king), occupancy masks were computed
-using the script `occ_masks.py` in the `magics` directory. The algorithm used
-checks for off board movement by creating a "buffer zone" of two rings around
-the board initialized to `-1` values.
+64 bit unsigned integers are used to represent board states, with a `1` in the
+number representing the presence of a piece on a board. Squares are indexed in
+the Little Endian Rank File (LERF) format.   
+
+#### Move Generation
+
+For non-sliding pieces, arrays of bitboards representing all possible places
+a piece can move to on an empty board for every square are computed
+by `generate_masks.py`. For sliding pieces, move generation is implemented
+through the [magic bitboard technique](http://pradu.us/old/Nov27_2008/Buzz/research/magic/Bitboards.pdf).
+
+The move generation function is implemented as a [pseudo-legal generator](https://www.chessprogramming.org/Move_Generation#Pseudo-legal). A
+full legality check is made in Board::MakeMove() to ensure that a move does not
+put the moving player in check; illegal moves are unmade if they are found to
+do this.

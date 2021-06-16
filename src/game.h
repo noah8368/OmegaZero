@@ -27,8 +27,7 @@ public:
 private:
   // Parse algebraic notation denoting a chess move, return if the move is
   // legal, and construct a corresponding Move struct.
-  bool CheckMove(string user_cmd, Move& user_move, string& err_msg, int player);
-  bool MakeMove(int player, Move move, string& err_msg);
+  bool CheckMove(string user_cmd, Move* user_move, string& err_msg, int player);
   // Inspect the board representation to see if the conditions for a checkmate,
   // check, or stalemate have occured.
   void CheckGameStatus() const;

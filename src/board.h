@@ -2,7 +2,7 @@
 // 18 March 2021
 //
 // Define a Board object, which includes both bitboard and 8x8 board
-// representations which store piece locations.
+// representations to store piece locations.
 //
 // Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
 
@@ -25,20 +25,35 @@ public:
   Bitboard GetAttackMask(int attacking_player, int square,
                          Piece attacking_piece) const;
   Bitboard GetPiecesByType(Piece piece_type, int player = kNA) const;
+  // Return false if the move was found to put the moving player's King in
+  // check. Return true is the board state was succesfully updated.
+  bool MakeMove (Move move, string& err_msg);
   int GetPieceOnSquare(int rank, int file) const;
   int GetPlayerOnSquare(int rank, int file) const;
-  void UpdateBoard(Move move);
 private:
+  bool KingInCheck() const;
+
   Bitboard pieces_[kNumBitboards];
   Bitboard player_pieces_[kNumPlayers];
-
   // Store an 8x8 board representation.
   int piece_layout_[kNumRanks][kNumFiles];
   int player_layout_[kNumRanks][kNumFiles];
   int bishop_magic_lengths_[kNumSquares];
   int rook_magic_lengths_[kNumSquares];
-
   unordered_map<char, char> hex_map_;
+};
+
+const Bitboard kFileMasks[kNumFiles] = {
+  0X0101010101010101, 0X0202020202020202,
+  0X0404040404040404, 0X0808080808080808,
+  0X1010101010101010, 0X2020202020202020,
+  0X4040404040404040, 0X8080808080808080
+};
+const Bitboard kRankMasks[kNumRanks] = {
+  0X00000000000000FF, 0X000000000000FF00,
+  0X0000000000FF0000, 0X00000000FF000000,
+  0X000000FF00000000, 0X0000FF0000000000,
+  0X00FF000000000000, 0XFF00000000000000
 };
 
 const int kInitialPieceLayout[kNumRanks][kNumFiles] = {
