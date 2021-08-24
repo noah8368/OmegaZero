@@ -25,8 +25,8 @@ to [Bradon Hsu](https://github.com/2brandonh) for designing the logo of this rep
 
 The included `Makefile` is designed to run on Linux machines. The [Boost library](https://www.boost.org/)
 is a requirement, and should be installed on a Linux system locally before
-compilation. On Ubuntu systems, users may alternatively use the `apt-get` package
-manager to install Boost, like so:
+compilation. On Ubuntu systems, users may use the `apt-get` package manager
+to install Boost, like so:
 ```
     sudo apt-get install libboost-all-dev
 ```

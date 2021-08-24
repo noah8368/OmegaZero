@@ -9,7 +9,7 @@
 #ifndef OMEGAZERO_SRC_BOARD_H_
 #define OMEGAZERO_SRC_BOARD_H_
 
-#include <gmp.h>
+#include <stdint.h>
 
 #include <unordered_map>
 
@@ -28,6 +28,7 @@ public:
   // Return false if the move was found to put the moving player's King in
   // check. Return true is the board state was succesfully updated.
   bool MakeMove (Move move, string& err_msg);
+  int GetEpTargetSquare() const;
   int GetPieceOnSquare(int rank, int file) const;
   int GetPlayerOnSquare(int rank, int file) const;
 private:
@@ -35,12 +36,12 @@ private:
 
   Bitboard pieces_[kNumBitboards];
   Bitboard player_pieces_[kNumPlayers];
+  int ep_target_sq_;
   // Store an 8x8 board representation.
   int piece_layout_[kNumRanks][kNumFiles];
   int player_layout_[kNumRanks][kNumFiles];
   int bishop_magic_lengths_[kNumSquares];
   int rook_magic_lengths_[kNumSquares];
-  unordered_map<char, char> hex_map_;
 };
 
 const Bitboard kFileMasks[kNumFiles] = {

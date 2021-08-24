@@ -37,6 +37,7 @@ Game::Game() {
     {make_pair(kBlack, kQueen), "♛"},
     {make_pair(kBlack, kKing), "♚"}
   };
+  int ep_target_sq_ = kNA;
   int player_in_check_ = kNA;
   int winner_ = kNA;
 }
@@ -265,19 +266,20 @@ bool Game::CheckMove(string user_cmd, Move& move,
           || user_cmd.substr(4, 4) != "e.p.") {
         err_msg = "bad command formatting";
         return false;
+      } else {
+        capture_indicated = true;
+        move.is_ep = true;
+        start_file = user_cmd[0] - 'a';
+        end_file = user_cmd[2] - 'a';
+        end_rank = user_cmd[3] - '1';
       }
-      capture_indicated = true;
-      move.is_ep = true;
-      start_file = user_cmd[0] - 'a';
-      end_file = user_cmd[2] - 'a';
-      end_rank = user_cmd[3] - '1';
       break;
     default:
       err_msg = "bad command formatting";
       return false;
   }
 
-  // Check for invalid specified square positions.
+  // Check that specified square positions are on the board.
   if (start_file != kNA && (start_file < kA || start_file > kH) ||
       start_rank != kNA && (start_rank < k1 || start_rank > k8) ||
       end_file < kA || end_file > kH || end_rank < k1 || end_rank > k8) {
@@ -285,8 +287,9 @@ bool Game::CheckMove(string user_cmd, Move& move,
     return false;
   }
 
+  // Confirm a capturing move lands on a square occupied by the other player.
   int other_player = player ^ 1;
-  if (capture_indicated) {
+  if (capture_indicated && !move.is_ep) {
     if (board_.GetPlayerOnSquare(end_rank, end_file) != other_player) {
       err_msg = "invalid capture indicated";
       return false;
@@ -294,7 +297,6 @@ bool Game::CheckMove(string user_cmd, Move& move,
       move.captured_piece = board_.GetPieceOnSquare(end_rank, end_file);
     }
   }
-
   move.end_sq = kNumFiles * end_rank + end_file;
 
   // Compute start_sq by getting all possible places the moved piece could move
@@ -303,17 +305,48 @@ bool Game::CheckMove(string user_cmd, Move& move,
   Bitboard start_positions;
   int start_sq = kNA;
   if (move.moving_piece == kPawn) {
+    // Handle en passent moves. Note that we needn't check if all the
+    // conditions for an en passent have been met here because ep_target_sq_
+    // will only be initialized to a valid square in this scenario.
     if (move.is_ep) {
-      // TODO: Deal with EP captures.
+      // Handle the case of White making an en passent.
+      int ep_target_sq = board_.GetEpTargetSquare();
+      if (move.end_sq == ep_target_sq
+          && abs(start_file - end_file) == 1
+          && ((player == kWhite 
+              && board_.GetPieceOnSquare(k5, start_file) == kPawn
+              && board_.GetPlayerOnSquare(k5, start_file) == kWhite))) {
+        move.start_sq = kNumFiles * k5 + start_file;
+        move.captured_piece = kPawn;
+        return true;
+      // Handle the case of a black player making en passent.
+      } else if (move.end_sq == ep_target_sq
+                 && abs(start_file - end_file) == 1
+                 && ((player == kBlack
+                     && board_.GetPieceOnSquare(k4, start_file) == kPawn
+                     && board_.GetPlayerOnSquare(k4, start_file) == kBlack))) {
+        move.start_sq = kNumFiles * k4 + start_file;
+        move.captured_piece = kPawn;
+        return true;
+      } else {
+        err_msg = "illegal en passent specified";
+        return false;
+      }
+    // Handle the case of White making a double pawn push.
     } else if (player == kWhite && end_rank == k4 && !capture_indicated
-               && (board_.GetPieceOnSquare(k3, end_file) == kNA)) {
-      // Deal with white double pawn pushes.
+               && board_.GetPieceOnSquare(k3, end_file) == kNA
+               && board_.GetPieceOnSquare(k2, end_file) == kPawn
+               && board_.GetPlayerOnSquare(k2, end_file) == kWhite) {
       move.start_sq = kNumFiles * k2 + end_file;
+      move.new_ep_target_sq = kNumFiles * k3 + end_file;
       return true;
+    // Handle the case of Black making a double pawn push.
     } else if (player == kBlack && end_rank == k5 && !capture_indicated
-               && (board_.GetPieceOnSquare(k6, end_file) == kNA)) {
-      // Deal with black double pawn pushes.
+               && (board_.GetPieceOnSquare(k6, end_file) == kNA)
+               && (board_.GetPieceOnSquare(k7, end_file) == kPawn)
+               && (board_.GetPlayerOnSquare(k7, end_file) == kBlack)) {
       move.start_sq = kNumFiles * k7 + end_file;
+      move.new_ep_target_sq = kNumFiles * k6 + end_file;
       return true;
     } else {
       start_positions = board_.GetAttackMask(other_player, move.end_sq, kPawn);
@@ -326,7 +359,8 @@ bool Game::CheckMove(string user_cmd, Move& move,
       start_positions &= kFileMasks[end_file];
     }
   } else {
-    start_positions = board_.GetAttackMask(player, move.end_sq, move.moving_piece);
+    start_positions = board_.GetAttackMask(player, move.end_sq,
+                                           move.moving_piece);
   }
   start_positions &= board_.GetPiecesByType(move.moving_piece, player);
   if (start_file != kNA) {
@@ -339,12 +373,14 @@ bool Game::CheckMove(string user_cmd, Move& move,
   // Check that exactly one bit is set in the start_positions mask.
   bool one_origin_piece = start_positions
                           && !(start_positions & (start_positions - 1));
-  if (!one_origin_piece) {
+  if (one_origin_piece) {
+    move.start_sq = log2(start_positions);
+    // ep_target_sq_ = kNA;
+    return true;
+  } else {
     err_msg = "ambiguous or illegal piece movement specified";
     return false;
   }
-  move.start_sq = log2(start_positions);
-  return true;
 }
 
 void Game::CheckGameStatus() const {

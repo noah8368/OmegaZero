@@ -38,19 +38,11 @@ Board::Board() {
       player_layout_[rank][file] = kInitialPlayerLayout[rank][file];
     }
   }
-
-  std::unordered_map<char, char> hex_map_ = {
-    {0b0000, '0'}, {0b0001, '1'}, {0b0010, '2'}, {0b0011, '3'},
-    {0b0100, '4'}, {0b0101, '5'}, {0b0110, '6'}, {0b0111, '7'},
-    {0b1000, '8'}, {0b1001, '9'}, {0b1010, 'A'}, {0b1011, 'B'},
-    {0b1100, 'C'}, {0b1101, 'D'}, {0b1110, 'E'}, {0b1111, 'F'}
-  };
 }
 
 Bitboard Board::GetAttackMask(int attacking_player, int square,
                               int attacking_piece) const {
   Bitboard all_pieces = player_pieces_[kWhite] | player_pieces_[kBlack];
-  std::cout << "all_pieces: 0x" << hex << all_pieces << std::endl; 
   Bitboard attack_mask = 0X0;
   int attacked_player = attacking_player ^ 1;
   switch (attacking_piece) {
@@ -129,9 +121,25 @@ bool Board::MakeMove(Move move, string& err_msg) {
 
   // Remove a captured piece from the board.
   if (move.captured_piece != kNA) {
-    pieces_[move.captured_piece] &= ~end_mask;
     int other_player = move.moving_player ^ 1;
-    player_pieces_[other_player] &= ~end_mask;
+    if (move.is_ep) {
+      int ep_capture_sq;
+      if (move.moving_player == kWhite) {
+        ep_capture_sq = kNumFiles * k5 + end_file;
+        piece_layout_[k5][end_file] = kNA;
+        player_layout_[k5][end_file] = kNA;
+      } else if (move.moving_player == kBlack) {
+        ep_capture_sq = kNumFiles * k4 + end_file;
+        piece_layout_[k4][end_file] = kNA;
+        player_layout_[k4][end_file] = kNA;
+      }
+      Bitboard ep_capture_mask = ~(1UL << ep_capture_sq);
+      pieces_[move.captured_piece] &= ep_capture_mask;
+      player_pieces_[other_player] &= ep_capture_mask;
+    } else {
+      pieces_[move.captured_piece] &= ~end_mask;
+      player_pieces_[other_player] &= ~end_mask;
+    }
   }
 
   // Undo the move if it puts the king in check.
@@ -139,9 +147,20 @@ bool Board::MakeMove(Move move, string& err_msg) {
     // TODO: undo the move.
     err_msg = "move puts king in check";
     return false;
+  // Update the en passent target square, castling rights,
+  // the halfmove clock, and the repition queue if the move
+  // doesn't put the King in check.
   } else {
+    ep_target_sq_ = move.new_ep_target_sq;
+    // TODO: Set castling rights
+    // TODO: Set Halfmove clock
+    // TODO: Add to repitition queue
     return true;
   }
+}
+
+int Board::GetEpTargetSquare() const {
+  return ep_target_sq_;
 }
 
 int Board::GetPieceOnSquare(int rank, int file) const {

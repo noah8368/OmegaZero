@@ -20,6 +20,9 @@ struct Move {
   int end_sq = kNA;
   int moving_piece = kNA;
   int moving_player = kNA;
+  // Indicate a new en passent target square when a double pawn push
+  // is made by either player.
+  int new_ep_target_sq = kNA;
   int promoted_piece = kNA;
   int start_sq = kNA;
 };
