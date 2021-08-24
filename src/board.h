@@ -1,10 +1,10 @@
-// Noah Himed
-// 18 March 2021
-//
-// Define a Board object, which includes both bitboard and 8x8 board
-// representations to store piece locations.
-//
-// Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
+/* Noah Himed
+*
+* Define a Board object, which includes both bitboard and 8x8 board
+* representations to store piece locations.
+*
+* Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
+*/
 
 #ifndef OMEGAZERO_SRC_BOARD_H_
 #define OMEGAZERO_SRC_BOARD_H_
@@ -23,8 +23,8 @@ public:
   Board();
   // Return possible attacks on both players' pieces.
   Bitboard GetAttackMask(int attacking_player, int square,
-                         Piece attacking_piece) const;
-  Bitboard GetPiecesByType(Piece piece_type, int player = kNA) const;
+                         int attacking_piece) const;
+  Bitboard GetPiecesByType(int piece_type, int player = kNA) const;
   // Return false if the move was found to put the moving player's King in
   // check. Return true is the board state was succesfully updated.
   bool MakeMove (Move move, string& err_msg);
@@ -76,6 +76,7 @@ const int kInitialPlayerLayout[kNumRanks][kNumFiles] = {
   {kBlack, kBlack, kBlack, kBlack, kBlack, kBlack, kBlack, kBlack},
   {kBlack, kBlack, kBlack, kBlack, kBlack, kBlack, kBlack, kBlack}
 };
+// Store the length (in bits) of magic numbers for move generation. 
 const int kBishopMagicLengths[kNumSquares] = {
   6, 5, 5, 5, 5, 5, 5, 6,
   5, 5, 5, 5, 5, 5, 5, 5,
@@ -98,7 +99,7 @@ const int kRookMagicLengths[kNumSquares] = {
 };
 
 extern const Bitboard kNonSliderAttackMasks[kNumNonSliderMasks][kNumSquares];
-// Store all positions sliding pieces can move to on an empty board,
+// Store all positions bishop and rook pieces can move to on an empty board,
 // excluding endpoints.
 extern const Bitboard kSliderPieceMasks[kNumSliderMasks][kNumSquares];
 // Store masks of the endpoints of rays in slider piece occupancy masks.

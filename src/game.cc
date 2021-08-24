@@ -1,9 +1,10 @@
-// Noah Himed
-// 18 March 2021
-//
-// Implement the Game type.
-//
-// Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
+/* Noah Himed
+*
+* Implement the Game type.
+*
+* Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
+*/
+
 
 #include "game.h"
 
@@ -15,9 +16,6 @@
 #include "board.h"
 #include "constants.h"
 #include "move.h"
-
-// debug library
-#include <iomanip>
 
 using namespace std;
 
@@ -66,16 +64,21 @@ void Game::Play(int player) {
   do {
     cout << "Enter move: ";
     getline(cin, user_cmd);
-    move_legal = CheckMove(user_cmd, &user_move, err_msg, player);
-    if (move_legal) {
-      // Check if the player has resigned.
-      if (game_active_) {
-        // Check if the move puts the player's king in check.
-        move_legal = board_.MakeMove(user_move, err_msg);
-      } else {
-        break;
-      }
+    // Check if the player has resigned.
+    if (user_cmd == "r") {
+      game_active_ = false;
+      break;
     } else {
+      // Check if the move is pseudo-legal.
+      move_legal = CheckMove(user_cmd, user_move, err_msg, player);
+      if (move_legal) {
+        // Make the move and check if it puts the player's king in check.
+        // If so, unmake the move and set err_msg accordingly.
+        move_legal = board_.MakeMove(user_move, err_msg);
+      }
+    }
+    // Output an appropriate error message for illegal moves.
+    if (!move_legal) {
       cout << "ERROR: " << err_msg << endl;
     }
   } while (!move_legal);
@@ -88,50 +91,40 @@ bool Game::IsActive() const {
   return game_active_;
 }
 
-bool Game::CheckMove(string user_cmd, Move* move,
+bool Game::CheckMove(string user_cmd, Move& move,
                      string& err_msg, int player) {
   size_t cmd_len = user_cmd.length();
+  move.moving_player = player;
   if (cmd_len == 0) {
     err_msg = "bad command formatting";
     return false;
-  }
-
-  // Handle the case in which the user resigns.
-  if (user_cmd == "r") {
-    game_active_ = false;
-    winner_ = player ^ 1;
+  } else if (user_cmd == "0-0") {
+    move.castling_type = kKingSide;
+    return true;
+  } else if (user_cmd == "0-0-0") {
+    move.castling_type = kQueenSide;
     return true;
   }
 
-  if (user_cmd == "0-0") {
-    move->castling_type = kKingSide;
-    return true;
-  }
-  if (user_cmd == "0-0-0") {
-    move->castling_type = kQueenSide;
-    return true;
-  }
-
-  Piece piece_type;
   char first_ch = user_cmd[0];
   switch (first_ch) {
     case 'N':
-      piece_type = kKnight;
+      move.moving_piece = kKnight;
       break;
     case 'B':
-      piece_type = kBishop;
+      move.moving_piece = kBishop;
       break;
     case 'R':
-      piece_type = kRook;
+      move.moving_piece = kRook;
       break;
     case 'Q':
-      piece_type = kQueen;
+      move.moving_piece = kQueen;
       break;
     case 'K':
-      piece_type = kKing;
+      move.moving_piece = kKing;
       break;
     default:
-      piece_type = kPawn;
+      move.moving_piece = kPawn;
       int file = first_ch - 'a';
       if (file < kA || file > kH) {
         err_msg = "bad command formatting";
@@ -140,11 +133,9 @@ bool Game::CheckMove(string user_cmd, Move* move,
   }
 
   bool capture_indicated = false;
-  bool is_ep = false;
   int end_rank, end_file;
   int start_rank = kNA;
   int start_file = kNA;
-  int promoted_piece = kNA;
   switch (cmd_len) {
     // Handle the case of unambiguous pawn move without capture (ex: e4).
     case 2:
@@ -160,7 +151,7 @@ bool Game::CheckMove(string user_cmd, Move* move,
     // Handle the cases of unambiguous non-pawn moves without capture (ex: Qe4)
     // and unambiguous pawn move and promotion (ex: d8Q).
     case 3:
-      if (piece_type != kPawn) {
+      if (move.moving_piece != kPawn) {
         end_file = user_cmd[1] - 'a';
         end_rank = user_cmd[2] - '1';
       } else {
@@ -173,16 +164,16 @@ bool Game::CheckMove(string user_cmd, Move* move,
         char promoted_piece_ch = user_cmd[2];
         switch (promoted_piece_ch) {
           case 'N':
-            promoted_piece = kKnight;
+            move.promoted_piece = kKnight;
             break;
           case 'B':
-            promoted_piece = kBishop;
+            move.promoted_piece = kBishop;
             break;
           case 'R':
-            promoted_piece = kRook;
+            move.promoted_piece = kRook;
             break;
           case 'Q':
-            promoted_piece = kQueen;
+            move.promoted_piece = kQueen;
             break;
           default:
             err_msg = "bad command formatting";
@@ -196,7 +187,7 @@ bool Game::CheckMove(string user_cmd, Move* move,
     case 4:
       end_file = user_cmd[2] - 'a';
       end_rank = user_cmd[3] - '1';
-      if (piece_type == kPawn) {
+      if (move.moving_piece == kPawn) {
         if (user_cmd[1] != 'x') {
           err_msg = "bad command formatting";
           return false;
@@ -221,7 +212,7 @@ bool Game::CheckMove(string user_cmd, Move* move,
     // non-pawn moves requiring both a specified origin rank and file
     // (ex: Qh4e1).
     case 5:
-      if (piece_type == kPawn) {
+      if (move.moving_piece == kPawn) {
         if (user_cmd[1] != 'x') {
           err_msg = "bad command formatting";
           return false;
@@ -230,16 +221,16 @@ bool Game::CheckMove(string user_cmd, Move* move,
         char promoted_piece_ch = user_cmd[4];
         switch (promoted_piece_ch) {
           case 'N':
-            promoted_piece = kKnight;
+            move.promoted_piece = kKnight;
             break;
           case 'B':
-            promoted_piece = kBishop;
+            move.promoted_piece = kBishop;
             break;
           case 'R':
-            promoted_piece = kRook;
+            move.promoted_piece = kRook;
             break;
           case 'Q':
-            promoted_piece = kQueen;
+            move.promoted_piece = kQueen;
             break;
           default:
             err_msg = "bad command formatting";
@@ -258,7 +249,7 @@ bool Game::CheckMove(string user_cmd, Move* move,
     // Handle the case of an ambiguous non-pawn capture requiring specified
     // origin rank and file (ex: Qh4xe1)
     case 6:
-      if (piece_type == kPawn || user_cmd[3] != 'x') {
+      if (move.moving_piece == kPawn || user_cmd[3] != 'x') {
         err_msg = "bad command formatting";
         return false;
       }
@@ -270,13 +261,13 @@ bool Game::CheckMove(string user_cmd, Move* move,
       break;
     // Handle the case of an en passant (ex: exd6e.p.)
     case 8:
-      if (piece_type != kPawn || user_cmd[1] != 'x'
+      if (move.moving_piece != kPawn || user_cmd[1] != 'x'
           || user_cmd.substr(4, 4) != "e.p.") {
         err_msg = "bad command formatting";
         return false;
       }
       capture_indicated = true;
-      is_ep = true;
+      move.is_ep = true;
       start_file = user_cmd[0] - 'a';
       end_file = user_cmd[2] - 'a';
       end_rank = user_cmd[3] - '1';
@@ -295,50 +286,49 @@ bool Game::CheckMove(string user_cmd, Move* move,
   }
 
   int other_player = player ^ 1;
-  int captured_piece = kNA;
   if (capture_indicated) {
     if (board_.GetPlayerOnSquare(end_rank, end_file) != other_player) {
       err_msg = "invalid capture indicated";
       return false;
     } else {
-      captured_piece = board_.GetPieceOnSquare(end_rank, end_file);
+      move.captured_piece = board_.GetPieceOnSquare(end_rank, end_file);
     }
   }
 
-  // Get all possible places the moved piece could move to from its ending
-  // position (start_positions) and remove all positions where a piece of this
-  // type doesn't exist on the board before the move.
+  move.end_sq = kNumFiles * end_rank + end_file;
+
+  // Compute start_sq by getting all possible places the moved piece could move
+  // to from its ending position (start_positions) and remove all positions
+  // where a piece of this type doesn't exist on the board before the move.
   Bitboard start_positions;
-  int end_sq = kNumFiles * end_rank + end_file;
-  if (piece_type == kPawn) {
-    // Handle the case of double pawn pushes.
-
-    // PROBLEM: The case for dxe4 is unhandled if no piece occupies e3.
-    if (player == kWhite && end_rank == k4
-        && (board_.GetPieceOnSquare(k3, end_file) == kNA)) {
-      int double_push_sq = kNumFiles * k7 + end_file;
-      start_positions = board_.GetAttackMask(kBlack, double_push_sq, kPawn);
-      // Shift the attack mask back down to the 4th rank.
-      start_positions >>= (3*kNumFiles);
-    } else if (player == kBlack && end_rank == k5
+  int start_sq = kNA;
+  if (move.moving_piece == kPawn) {
+    if (move.is_ep) {
+      // TODO: Deal with EP captures.
+    } else if (player == kWhite && end_rank == k4 && !capture_indicated
+               && (board_.GetPieceOnSquare(k3, end_file) == kNA)) {
+      // Deal with white double pawn pushes.
+      move.start_sq = kNumFiles * k2 + end_file;
+      return true;
+    } else if (player == kBlack && end_rank == k5 && !capture_indicated
                && (board_.GetPieceOnSquare(k6, end_file) == kNA)) {
-      int double_push_sq = kNumFiles * k2 + end_file;
-      start_positions = board_.GetAttackMask(kWhite, double_push_sq, kPawn);
-      // Shift the attack mask back down to the 4th rank.
-      start_positions <<= (3*kNumFiles);
+      // Deal with black double pawn pushes.
+      move.start_sq = kNumFiles * k7 + end_file;
+      return true;
     } else {
-      start_positions = board_.GetAttackMask(other_player, end_sq, kPawn);
+      start_positions = board_.GetAttackMask(other_player, move.end_sq, kPawn);
     }
-
-    if (!capture_indicated) {
+    // Clear off pieces on or off the same file as the ending position
+    // depending on if the move is a capture or not.
+    if (capture_indicated) {
+      start_positions &= ~kFileMasks[end_file];
+    } else {
       start_positions &= kFileMasks[end_file];
     }
   } else {
-    start_positions = board_.GetAttackMask(player, end_sq, piece_type);
+    start_positions = board_.GetAttackMask(player, move.end_sq, move.moving_piece);
   }
-  Bitboard matching_piece_positions = board_.GetPiecesByType(piece_type,
-                                                             player);
-  start_positions &= matching_piece_positions;
+  start_positions &= board_.GetPiecesByType(move.moving_piece, player);
   if (start_file != kNA) {
     start_positions &= kFileMasks[start_file];
   }
@@ -350,20 +340,10 @@ bool Game::CheckMove(string user_cmd, Move* move,
   bool one_origin_piece = start_positions
                           && !(start_positions & (start_positions - 1));
   if (!one_origin_piece) {
-    err_msg = "ambiguous or illegal piece movement specied";
+    err_msg = "ambiguous or illegal piece movement specified";
     return false;
   }
-  int start_sq = log2(start_positions);
-
-  move->is_ep = is_ep;
-  move->captured_piece = captured_piece;
-  move->castling_type = kNA;
-  move->end_sq = end_sq;
-  move->moving_piece = piece_type;
-  move->moving_player = player;
-  move->start_sq = start_sq;
-  move->promoted_piece = promoted_piece;
-
+  move.start_sq = log2(start_positions);
   return true;
 }
 

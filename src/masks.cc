@@ -1,13 +1,12 @@
-// Noah Himed
-// 27 March 2021
-//
-// Define the bit masks used to denote the positions pieces canmove
-// to in the bitboard representation of a chess board.
-//
-// Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
+/* Noah Himed
+*
+* Define the bit masks used to denote the positions pieces can move 
+* to in the bitboard representation of a chess board.
+*
+* Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
+*/
 
 #include "board.h"
-
 #include "constants.h"
 
 const Bitboard kNonSliderAttackMasks[kNumNonSliderMasks][kNumSquares] = {

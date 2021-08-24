@@ -1,13 +1,13 @@
-// Noah Himed
-// 18 March 2021
-//
-// Implement the Board type.
-//
-// Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
+/* Noah Himed
+*
+* Implement the Board type.
+*
+* Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
+*/
 
 #include "board.h"
 
-#include <gmp.h>
+#include <boost/multiprecision/cpp_int.hpp>
 
 #include <cstdint>
 #include <unordered_map>
@@ -15,11 +15,10 @@
 #include "constants.h"
 #include "move.h"
 
-// debug libs
+// Debug library
 #include <iostream>
-#include <iomanip>
 
-using namespace std;
+using namespace boost::multiprecision;
 
 Board::Board() {
   // Index from LSB (square a1) to MSB (square f8).
@@ -49,9 +48,11 @@ Board::Board() {
 }
 
 Bitboard Board::GetAttackMask(int attacking_player, int square,
-                              Piece attacking_piece) const {
-  Bitboard all_pieces = pieces_[kWhite] | pieces_[kBlack];
+                              int attacking_piece) const {
+  Bitboard all_pieces = player_pieces_[kWhite] | player_pieces_[kBlack];
+  std::cout << "all_pieces: 0x" << hex << all_pieces << std::endl; 
   Bitboard attack_mask = 0X0;
+  int attacked_player = attacking_player ^ 1;
   switch (attacking_piece) {
     case kPawn: {
       Bitboard capture_attacks, push_attacks;
@@ -64,55 +65,29 @@ Bitboard Board::GetAttackMask(int attacking_player, int square,
         push_attacks = kNonSliderAttackMasks[kBlackPawnPushAttack][square];
       }
       // Include capture attacks that attack occupied squares only.
-      attack_mask = (capture_attacks & all_pieces) | push_attacks;
+      attack_mask = (capture_attacks & player_pieces_[attacked_player])
+                     | push_attacks;
       break;
     }
     case kKnight:
       attack_mask = kNonSliderAttackMasks[kKnightAttack][square];
       break;
-    // For bishops and rooks, avoid overflow by using the GNU GMP library to
-    // compute (magic * blocker_mask) >> (kNumSquares - magic_length). Use
-    // this as an index for the magic bitboard method.
+    // For bishops and rooks, use the magic bitboard method to get possible moves. The
+    // Boost library is used here to avoid integer overflow.
     case kBishop: {
-      Bitboard bishop_mask = kSliderPieceMasks[kBishopMoves][square];
-      mpz_t blocker_mask;
-      mpz_init_set_ui(blocker_mask, bishop_mask & all_pieces);
-      mpz_t magic;
-      mpz_init_set_ui(magic, kMagics[kBishopMoves][square]);
-      mpz_t mpz_index;
-      mpz_init(mpz_index);
-      mpz_mul(mpz_index, magic, blocker_mask);
-      mp_bitcnt_t rshift_amt = kNumSquares - kBishopMagicLengths[square];
-      // Right shift magic * blocker_mask by kNumSquares - magic_length.
-      mpz_fdiv_q_2exp(mpz_index, mpz_index, rshift_amt);
-      void* index_ptr = mpz_export(nullptr, nullptr, 1, sizeof(uint64_t), 0, 0,
-                                   mpz_index);
-      uint64_t index = *static_cast<uint64_t*>(index_ptr);
-      mpz_clear(blocker_mask);
-      mpz_clear(magic);
-      mpz_clear(mpz_index);
-      attack_mask = kMagicIndexToAttackMap.at(index);
+      Bitboard blockers = kSliderPieceMasks[kBishopMoves][square] & all_pieces;
+      uint128_t magic = kMagics[kBishopMoves][square];
+      uint128_t magic_index_128b = (blockers * magic) >> (kNumSquares - kBishopMagicLengths[square]);
+      uint64_t magic_index = static_cast<uint64_t>(magic_index_128b);
+      attack_mask = kMagicIndexToAttackMap.at(magic_index);
       break;
     }
     case kRook: {
-      Bitboard rook_mask = kSliderPieceMasks[kRookMoves][square];
-      mpz_t blocker_mask;
-      mpz_init_set_ui(blocker_mask, rook_mask & all_pieces);
-      mpz_t magic;
-      mpz_init_set_ui(magic, kMagics[kRookMoves][square]);
-      mpz_t mpz_index;
-      mpz_init(mpz_index);
-      mpz_mul(mpz_index, magic, blocker_mask);
-      mp_bitcnt_t rshift_amt = kNumSquares - kRookMagicLengths[square];
-      // Right shift magic * blocker_mask by kNumSquares - magic_length.
-      mpz_fdiv_q_2exp(mpz_index, mpz_index, rshift_amt);
-      void* index_ptr = mpz_export(nullptr, nullptr, 1, sizeof(uint64_t), 0, 0,
-                                   mpz_index);
-      uint64_t index = *static_cast<uint64_t*>(index_ptr);
-      mpz_clear(blocker_mask);
-      mpz_clear(magic);
-      mpz_clear(mpz_index);
-      attack_mask = kMagicIndexToAttackMap.at(index);
+      Bitboard blockers = kSliderPieceMasks[kRookMoves][square] & all_pieces;
+      uint128_t magic = kMagics[kRookMoves][square];
+      uint128_t magic_index_128b = (blockers * magic) >> (kNumSquares - kRookMagicLengths[square]);
+      uint64_t magic_index = static_cast<uint64_t>(magic_index_128b);
+      attack_mask = kMagicIndexToAttackMap.at(magic_index);
       break;
     }
     // Combine the attack masks of a rook and bishop to get a queen's attack.
@@ -129,33 +104,34 @@ Bitboard Board::GetAttackMask(int attacking_player, int square,
 }
 
 bool Board::MakeMove(Move move, string& err_msg) {
-  int origin_rank = move.start_sq >> 3;
-  int origin_file = move.start_sq & 7;
-
   // Remove the piece from its starting position in the board.
-  piece_layout_[origin_rank][origin_file] = kNA;
-  player_layout_[origin_rank][origin_file] = kNA;
-  pieces_[move.moving_piece] &= ~(1 << move.start_sq);
-  player_pieces_[move.moving_player] &= ~(1 << move.start_sq);
+  Bitboard rm_start_mask = ~(1UL << move.start_sq);
+  int start_rank = move.start_sq >> 3;
+  int start_file = move.start_sq & 7;
+  piece_layout_[start_rank][start_file] = kNA;
+  player_layout_[start_rank][start_file] = kNA;
+  pieces_[move.moving_piece] &= rm_start_mask;
+  player_pieces_[move.moving_player] &= rm_start_mask;
 
   // Add the piece to its destination square on the board.
+  Bitboard end_mask = 1UL << move.end_sq;
   int end_rank = move.end_sq >> 3;
   int end_file = move.end_sq & 7;
   if (move.promoted_piece == kNA) {
     piece_layout_[end_rank][end_file] = move.moving_piece;
-    pieces_[move.moving_piece] |= (1 << move.end_sq);
+    pieces_[move.moving_piece] |= end_mask;
   } else {
     piece_layout_[end_rank][end_file] = move.promoted_piece;
-    pieces_[move.promoted_piece] |= (1 << move.end_sq);
+    pieces_[move.promoted_piece] |= end_mask;
   }
   player_layout_[end_rank][end_file] = move.moving_player;
-  player_pieces_[move.moving_player] |= (1 << move.start_sq);
+  player_pieces_[move.moving_player] |= end_mask;
 
   // Remove a captured piece from the board.
   if (move.captured_piece != kNA) {
-    pieces_[move.captured_piece] &= ~(1 << move.end_sq);
+    pieces_[move.captured_piece] &= ~end_mask;
     int other_player = move.moving_player ^ 1;
-    player_pieces_[other_player] &= ~(1 << move.end_sq);
+    player_pieces_[other_player] &= ~end_mask;
   }
 
   // Undo the move if it puts the king in check.
@@ -176,7 +152,7 @@ int Board::GetPlayerOnSquare(int rank, int file) const {
   return player_layout_[rank][file];
 }
 
-Bitboard Board::GetPiecesByType(Piece piece_type, int player) const {
+Bitboard Board::GetPiecesByType(int piece_type, int player) const {
   if (player == kNA) {
     return pieces_[piece_type];
   } else {

@@ -1,9 +1,9 @@
-// Noah Himed
-// 18 March 2021
-//
-// Use a Game object to manage moves in a Chess game.
-//
-// Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
+/* Noah Himed
+*
+* Use a Game object to manage moves in a Chess game.
+*
+* Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
+*/
 
 #include "constants.h"
 #include "game.h"
