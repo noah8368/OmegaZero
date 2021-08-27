@@ -21,27 +21,36 @@ using namespace std;
 class Board {
 public:
   Board();
-  // Return possible attacks on both players' pieces.
-  Bitboard GetAttackMask(int attacking_player, int square,
-                         int attacking_piece) const;
-  Bitboard GetPiecesByType(int piece_type, int player = kNA) const;
+  Bitboard GetAttackersToSq(const int& sq, const int& attacked_player) const;
+  // Return possible attacks a specified piece can make on all other pieces.
+  Bitboard GetAttackMask(const int& attacking_player, const int& sq,
+                         const int& attacking_piece) const;
+  Bitboard GetPiecesByType(const int& piece_type, const int& player) const;
+  bool GetCastlingRights(const int& player, const int& board_side) const;
+  bool KingInCheck(const int& player) const;
   // Return false if the move was found to put the moving player's King in
   // check. Return true is the board state was succesfully updated.
-  bool MakeMove (Move move, string& err_msg);
-  int GetEpTargetSquare() const;
-  int GetPieceOnSquare(int rank, int file) const;
-  int GetPlayerOnSquare(int rank, int file) const;
+  bool MakeMove (const Move& move, string& err_msg);
+  int GetEpTargetSq() const;
+  int GetPieceOnSq(const int& rank, const int& file) const;
+  int GetPlayerOnSq(const int& rank, const int& file) const;
 private:
-  bool KingInCheck() const;
+  void MovePiece(const int& moving_player, const int& piece,
+                 const int& start_sq, const int& end_sq);
 
+  // Store bitboard board representations of each type
+  // of piece that are still active in the game.
   Bitboard pieces_[kNumBitboards];
+  // Store bitboard board representations of the pieces
+  // in each players' posession.
   Bitboard player_pieces_[kNumPlayers];
+  bool castling_rights_[kNumPlayers][kNumBoardSides];
   int ep_target_sq_;
   // Store an 8x8 board representation.
   int piece_layout_[kNumRanks][kNumFiles];
   int player_layout_[kNumRanks][kNumFiles];
-  int bishop_magic_lengths_[kNumSquares];
-  int rook_magic_lengths_[kNumSquares];
+  int bishop_magic_lengths_[kNumSq];
+  int rook_magic_lengths_[kNumSq];
 };
 
 const Bitboard kFileMasks[kNumFiles] = {
@@ -78,7 +87,7 @@ const int kInitialPlayerLayout[kNumRanks][kNumFiles] = {
   {kBlack, kBlack, kBlack, kBlack, kBlack, kBlack, kBlack, kBlack}
 };
 // Store the length (in bits) of magic numbers for move generation. 
-const int kBishopMagicLengths[kNumSquares] = {
+const int kBishopMagicLengths[kNumSq] = {
   6, 5, 5, 5, 5, 5, 5, 6,
   5, 5, 5, 5, 5, 5, 5, 5,
   5, 5, 7, 7, 7, 7, 5, 5,
@@ -88,7 +97,7 @@ const int kBishopMagicLengths[kNumSquares] = {
   5, 5, 5, 5, 5, 5, 5, 5,
   6, 5, 5, 5, 5, 5, 5, 6
 };
-const int kRookMagicLengths[kNumSquares] = {
+const int kRookMagicLengths[kNumSq] = {
   12, 11, 11, 11, 11, 11, 11, 12,
   11, 10, 10, 10, 10, 10, 10, 11,
   11, 10, 10, 10, 10, 10, 10, 11,
@@ -99,13 +108,14 @@ const int kRookMagicLengths[kNumSquares] = {
   12, 11, 11, 11, 11, 11, 11, 12
 };
 
-extern const Bitboard kNonSliderAttackMasks[kNumNonSliderMasks][kNumSquares];
+extern const Bitboard kNonSliderAttackMasks[kNumNonSliderMasks][kNumSq];
 // Store all positions bishop and rook pieces can move to on an empty board,
 // excluding endpoints.
-extern const Bitboard kSliderPieceMasks[kNumSliderMasks][kNumSquares];
-// Store masks of the endpoints of rays in slider piece occupancy masks.
-extern const Bitboard kSliderEndpointMasks[kNumSliderMasks][kNumSquares];
-extern const uint64_t kMagics[kNumSliderMasks][kNumSquares];
+extern const Bitboard kSliderPieceMasks[kNumSliderMasks][kNumSq];
+// Store all positions bishop and rook pieces can move to on an empty board,
+// including endpoints.
+extern const Bitboard kUnblockedSliderAttackMasks[kNumSliderMasks][kNumSq];
+extern const uint64_t kMagics[kNumSliderMasks][kNumSq];
 extern const unordered_map<uint64_t, Bitboard> kMagicIndexToAttackMap;
 
 #endif // OMEGAZERO_SRC_BOARD_H_

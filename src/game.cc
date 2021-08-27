@@ -53,12 +53,11 @@ void Game::OutputGameResolution() const {
   }
 }
 
-void Game::Play(int player) {
+void Game::Play(const int& player) {
   DisplayBoard();
 
   string player_name = (player == kWhite) ? "WHITE" : "BLACK";
   cout << "\n\n" << player_name << " to move" << endl;
-
   bool move_legal;
   Move user_move;
   string err_msg, user_cmd;
@@ -84,8 +83,7 @@ void Game::Play(int player) {
     }
   } while (!move_legal);
   cout << "\n\n";
-
-  CheckGameStatus();
+  CheckFileGameStatus();
 }
 
 bool Game::IsActive() const {
@@ -93,20 +91,56 @@ bool Game::IsActive() const {
 }
 
 bool Game::CheckMove(string user_cmd, Move& move,
-                     string& err_msg, int player) {
+                     string& err_msg, const int& player) {
   size_t cmd_len = user_cmd.length();
   move.moving_player = player;
   if (cmd_len == 0) {
     err_msg = "bad command formatting";
     return false;
-  } else if (user_cmd == "0-0") {
-    move.castling_type = kKingSide;
-    return true;
+  // For castling moves, check that the following hold:
+  //   * Neither the king nor the chosen rook has previously moved.
+  //   * There are no pieces between the king and the chosen rook.
+  //   * The king is not currently in check.
+  //   * The king does not pass through a square that is attacked by an enemy
+  //     piece.
   } else if (user_cmd == "0-0-0") {
-    move.castling_type = kQueenSide;
-    return true;
+    if (board_.GetCastlingRights(player, kQueenSide)
+        && !board_.KingInCheck(player)
+        && ((player == kWhite && board_.GetPieceOnSq(kRank1, kFileB) == kNA
+             && board_.GetPieceOnSq(kRank1, kFileC) == kNA
+             && board_.GetPieceOnSq(kRank1, kFileD) == kNA
+             && board_.GetAttackersToSq(kNumFiles * kRank1 + kFileD,
+                                            kWhite) == 0X0)
+            || (player == kBlack && board_.GetPieceOnSq(kRank8, kFileB) == kNA
+                && board_.GetPieceOnSq(kRank8, kFileC) == kNA
+                && board_.GetPieceOnSq(kRank8, kFileD) == kNA
+                && board_.GetAttackersToSq(kNumFiles * kRank8 + kFileD,
+                                               kBlack) == 0X0))) {
+      move.castling_type = kQueenSide;
+      return true;
+    } else {
+      err_msg = "invalid queenside castling request";
+      return false;
+    }
+  } else if (user_cmd == "0-0") {
+    if (board_.GetCastlingRights(player, kKingSide)
+        && !board_.KingInCheck(player)
+        && ((player == kWhite && board_.GetPieceOnSq(kRank1, kFileF) == kNA
+             && board_.GetAttackersToSq(kNumFiles * kRank1 + kFileF, kWhite) == 0X0
+             && board_.GetPieceOnSq(kRank1, kFileG) == kNA)
+            || (player == kBlack && board_.GetPieceOnSq(kRank8, kFileF) == kNA
+                && board_.GetAttackersToSq(kNumFiles * kRank8 + kFileF,
+                                               kBlack) == 0X0
+                && board_.GetPieceOnSq(kRank8, kFileG) == kNA))) {
+      move.castling_type = kKingSide;
+      return true;
+    } else {
+      err_msg = "invalid kingside castling request";
+      return false;
+    }
   }
 
+  // Parse the command to check that it's formatted correctly.
   char first_ch = user_cmd[0];
   switch (first_ch) {
     case 'N':
@@ -127,12 +161,11 @@ bool Game::CheckMove(string user_cmd, Move& move,
     default:
       move.moving_piece = kPawn;
       int file = first_ch - 'a';
-      if (file < kA || file > kH) {
+      if (file < kFileA || file > kFileH) {
         err_msg = "bad command formatting";
         return false;
       }
   }
-
   bool capture_indicated = false;
   int end_rank, end_file;
   int start_rank = kNA;
@@ -144,7 +177,7 @@ bool Game::CheckMove(string user_cmd, Move& move,
       end_rank = user_cmd[1] - '1';
       // Declare invalid if a pawn move to rank 8 is indicated without
       // choosing a piece type to promote to.
-      if (end_rank == k8) {
+      if (end_rank == kRank8) {
         err_msg = "bad command formatting";
         return false;
       }
@@ -157,7 +190,7 @@ bool Game::CheckMove(string user_cmd, Move& move,
         end_rank = user_cmd[2] - '1';
       } else {
         end_rank = user_cmd[1] - '1';
-        if (end_rank != k8) {
+        if (end_rank != kRank8) {
           err_msg = "bad command formatting";
           return false;
         }
@@ -197,9 +230,9 @@ bool Game::CheckMove(string user_cmd, Move& move,
         start_file = user_cmd[0] - 'a';
       } else {
         char second_ch = user_cmd[1];
-        if (second_ch - '1' >= k1 && second_ch - '1' <= k8) {
+        if (second_ch - '1' >= kRank1 && second_ch - '1' <= kRank8) {
           start_rank = second_ch - '1';
-        } else if (second_ch - 'a' >= kA && second_ch - 'a' <= kH) {
+        } else if (second_ch - 'a' >= kFileA && second_ch - 'a' <= kFileH) {
           start_file = second_ch - 'a';
         } else if (second_ch == 'x') {
           capture_indicated = true;
@@ -280,21 +313,21 @@ bool Game::CheckMove(string user_cmd, Move& move,
   }
 
   // Check that specified square positions are on the board.
-  if (start_file != kNA && (start_file < kA || start_file > kH) ||
-      start_rank != kNA && (start_rank < k1 || start_rank > k8) ||
-      end_file < kA || end_file > kH || end_rank < k1 || end_rank > k8) {
+  if (start_file != kNA && (start_file < kFileA || start_file > kFileH) ||
+      start_rank != kNA && (start_rank < kRank1 || start_rank > kRank8) ||
+      end_file < kFileA || end_file > kFileH || end_rank < kRank1 || end_rank > kRank8) {
     err_msg = "bad command formatting";
     return false;
   }
 
   // Confirm a capturing move lands on a square occupied by the other player.
-  int other_player = player ^ 1;
+  int other_player = (player == kWhite) ? kBlack : kWhite;
   if (capture_indicated && !move.is_ep) {
-    if (board_.GetPlayerOnSquare(end_rank, end_file) != other_player) {
+    if (board_.GetPlayerOnSq(end_rank, end_file) != other_player) {
       err_msg = "invalid capture indicated";
       return false;
     } else {
-      move.captured_piece = board_.GetPieceOnSquare(end_rank, end_file);
+      move.captured_piece = board_.GetPieceOnSq(end_rank, end_file);
     }
   }
   move.end_sq = kNumFiles * end_rank + end_file;
@@ -310,22 +343,22 @@ bool Game::CheckMove(string user_cmd, Move& move,
     // will only be initialized to a valid square in this scenario.
     if (move.is_ep) {
       // Handle the case of White making an en passent.
-      int ep_target_sq = board_.GetEpTargetSquare();
+      int ep_target_sq = board_.GetEpTargetSq();
       if (move.end_sq == ep_target_sq
           && abs(start_file - end_file) == 1
           && ((player == kWhite 
-              && board_.GetPieceOnSquare(k5, start_file) == kPawn
-              && board_.GetPlayerOnSquare(k5, start_file) == kWhite))) {
-        move.start_sq = kNumFiles * k5 + start_file;
+              && board_.GetPieceOnSq(kRank5, start_file) == kPawn
+              && board_.GetPlayerOnSq(kRank5, start_file) == kWhite))) {
+        move.start_sq = kNumFiles * kRank5 + start_file;
         move.captured_piece = kPawn;
         return true;
-      // Handle the case of a black player making en passent.
+      // Handle the case of Black making an en passent.
       } else if (move.end_sq == ep_target_sq
                  && abs(start_file - end_file) == 1
                  && ((player == kBlack
-                     && board_.GetPieceOnSquare(k4, start_file) == kPawn
-                     && board_.GetPlayerOnSquare(k4, start_file) == kBlack))) {
-        move.start_sq = kNumFiles * k4 + start_file;
+                     && board_.GetPieceOnSq(kRank4, start_file) == kPawn
+                     && board_.GetPlayerOnSq(kRank4, start_file) == kBlack))) {
+        move.start_sq = kNumFiles * kRank4 + start_file;
         move.captured_piece = kPawn;
         return true;
       } else {
@@ -333,20 +366,20 @@ bool Game::CheckMove(string user_cmd, Move& move,
         return false;
       }
     // Handle the case of White making a double pawn push.
-    } else if (player == kWhite && end_rank == k4 && !capture_indicated
-               && board_.GetPieceOnSquare(k3, end_file) == kNA
-               && board_.GetPieceOnSquare(k2, end_file) == kPawn
-               && board_.GetPlayerOnSquare(k2, end_file) == kWhite) {
-      move.start_sq = kNumFiles * k2 + end_file;
-      move.new_ep_target_sq = kNumFiles * k3 + end_file;
+    } else if (player == kWhite && end_rank == kRank4 && !capture_indicated
+               && board_.GetPieceOnSq(kRank3, end_file) == kNA
+               && board_.GetPieceOnSq(kRank2, end_file) == kPawn
+               && board_.GetPlayerOnSq(kRank2, end_file) == kWhite) {
+      move.start_sq = kNumFiles * kRank2 + end_file;
+      move.new_ep_target_sq = kNumFiles * kRank3 + end_file;
       return true;
     // Handle the case of Black making a double pawn push.
-    } else if (player == kBlack && end_rank == k5 && !capture_indicated
-               && (board_.GetPieceOnSquare(k6, end_file) == kNA)
-               && (board_.GetPieceOnSquare(k7, end_file) == kPawn)
-               && (board_.GetPlayerOnSquare(k7, end_file) == kBlack)) {
-      move.start_sq = kNumFiles * k7 + end_file;
-      move.new_ep_target_sq = kNumFiles * k6 + end_file;
+    } else if (player == kBlack && end_rank == kRank5 && !capture_indicated
+               && (board_.GetPieceOnSq(kRank6, end_file) == kNA)
+               && (board_.GetPieceOnSq(kRank7, end_file) == kPawn)
+               && (board_.GetPlayerOnSq(kRank7, end_file) == kBlack)) {
+      move.start_sq = kNumFiles * kRank7 + end_file;
+      move.new_ep_target_sq = kNumFiles * kRank6 + end_file;
       return true;
     } else {
       start_positions = board_.GetAttackMask(other_player, move.end_sq, kPawn);
@@ -375,7 +408,6 @@ bool Game::CheckMove(string user_cmd, Move& move,
                           && !(start_positions & (start_positions - 1));
   if (one_origin_piece) {
     move.start_sq = log2(start_positions);
-    // ep_target_sq_ = kNA;
     return true;
   } else {
     err_msg = "ambiguous or illegal piece movement specified";
@@ -383,21 +415,22 @@ bool Game::CheckMove(string user_cmd, Move& move,
   }
 }
 
-void Game::CheckGameStatus() const {
-  // TODO: Check if a player is now in check.
+void Game::CheckFileGameStatus() const {
+  // TODO: Check if a player is now in check. If so, warn the player.
   // TODO: Check if the game has just ended in a stalemate and set
-  // game_active_ equal to false. (Zobrist hashing happens here!)
+  //       game_active_ equal to false and winner_ to kNA. 
+  //       (Zobrist hashing happens here!)
   // TODO: Check if a player has been checkmated, set winner_ equal to the
-  // player not in checkmate, and set game_active_ to false.
+  //       player not in checkmate, and set game_active_ to false.
 }
 
 void Game::DisplayBoard() const {
   int piece, player;
-  for (int rank = k8; rank >= k1; --rank) {
+  for (int rank = kRank8; rank >= kRank1; --rank) {
     cout << rank + 1 << " ";
-    for (int file = kA; file <= kH; ++file) {
-      piece = board_.GetPieceOnSquare(rank, file);
-      player = board_.GetPlayerOnSquare(rank, file);
+    for (int file = kFileA; file <= kFileH; ++file) {
+      piece = board_.GetPieceOnSq(rank, file);
+      player = board_.GetPlayerOnSq(rank, file);
       string piece_symbol = piece_symbols_.at(make_pair(player, piece));
       cout << piece_symbol << " ";
     }

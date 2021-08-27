@@ -17,14 +17,14 @@ struct Move {
   // Indicate if the move is not a castling move, queenside castling, or
   // kingside castling.
   int castling_type = kNA;
-  int end_sq = kNA;
-  int moving_piece = kNA;
-  int moving_player = kNA;
+  int end_sq;
+  int moving_piece;
+  int moving_player;
   // Indicate a new en passent target square when a double pawn push
   // is made by either player.
   int new_ep_target_sq = kNA;
   int promoted_piece = kNA;
-  int start_sq = kNA;
+  int start_sq;
 };
 
 #endif // OMEGAZERO_SRC_MOVE_H

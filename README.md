@@ -47,7 +47,9 @@ to avoid ambiguity in a movement command. Some valid example moves are
  - Pawn takes a piece on d8 and promotes to queen: `exd8Q`
  - Queen from h4 moves to e1: `Qh4e1`
  - Queen from h4 takes piece on e1: `Qh4xe1`
- - Pawn from e file takes piece on d6 in en passant: `exd6e.p.`
+ - Pawn from e file takes pawn on d5 in en passant: `exd6e.p.`
+ - Queenside castle: `0-0-0`
+ - Kingside castle: `0-0`
 
 To resign, a user must enter `r` on their turn.
 

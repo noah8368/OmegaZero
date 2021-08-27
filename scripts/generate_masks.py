@@ -51,7 +51,8 @@ class MaskGenerator:
             else:
                 return self.get_non_slider_attack_mask(rank, file, [(-1, 0)])
 
-    def get_slider_piece_mask(self, rank, file, move_dirs):
+    def get_slider_piece_mask(self, rank, file, move_dirs,
+                              including_endpoints=False):
         """Gets piece masks for "sliding" pieces (Bishop and Rook)
 
         These masks represent the possible locations a sliding piece
@@ -70,13 +71,13 @@ class MaskGenerator:
                 slider_board[move_rank][move_file] = 1
                 move_rank += dir[0]
                 move_file += dir[1]
-
-            # Get the last position before running off the board
-            move_rank -= dir[0]
-            move_file -= dir[1]
-            # Remove the endpoints from the mask.
-            if move_rank != rank or move_file != file:
-                slider_board[move_rank][move_file] = 0
+            if not including_endpoints:
+                # Get the last position before running off the board
+                move_rank -= dir[0]
+                move_file -= dir[1]
+                # Remove the endpoints from the mask.
+                if move_rank != rank or move_file != file:
+                    slider_board[move_rank][move_file] = 0
         return self.get_bitboard(slider_board)
 
     def get_slider_attack_mask(self, moves, blocker_mask, pos_rank,
@@ -197,6 +198,17 @@ if __name__ == "__main__":
     f.write("\n};")
 
     f.write("\n\nconst Bitboard "
+            + "kUnblockedSliderAttackMasks[kNumSliderMasks][kNumSquares] = {")
+    bishop_moves = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+    write_mask_set(f, "bishop piece masks",
+                   mask_gen.get_slider_piece_mask, [bishop_moves, True])
+    f.write(",")
+    rook_moves = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+    write_mask_set(f, "rook piece masks",
+                   mask_gen.get_slider_piece_mask, [rook_moves, True])
+    f.write("\n};\n")
+
+    f.write("\n\nconst Bitboard "
             + "kSliderPieceMasks[kNumSliderMasks][kNumSquares] = {")
     bishop_moves = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
     write_mask_set(f, "bishop piece masks",
@@ -206,5 +218,4 @@ if __name__ == "__main__":
     write_mask_set(f, "rook piece masks",
                    mask_gen.get_slider_piece_mask, [rook_moves])
     f.write("\n};\n")
-
     f.close()

@@ -8,14 +8,15 @@
 #include "constants.h"
 #include "game.h"
 
+// Debug library
+#include <iostream>
+
 int main() {
   Game game;
   int player = kWhite;
-
   while (game.IsActive()) {
     game.Play(player);
-    // Switch to the other player
-    player ^= 1;
+    player = (player == kWhite) ? kBlack : kWhite;
   }
   game.OutputGameResolution();
 }
