@@ -17,16 +17,16 @@ and a transposition table are the main optimizations made to this process.
 The name OmegaZero is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), a program developed by
 [DeepMind](https://deepmind.com/) that was used to create one of the world's best Chess engines. The
 [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during development. Credit goes
-to [Bradon Hsu](https://github.com/2brandonh) for designing the logo of this repository.
+to [Bradon Hsu](https://github.com/2brandonh) for designing the logo for this project.
 
 ### Usage
 
 #### Prerequisites
 
-The included `Makefile` is designed to run on Linux machines. The [Boost library](https://www.boost.org/)
-is a requirement, and should be installed on a Linux system locally before
-compilation. On Ubuntu systems, users may use the `apt-get` package manager
-to install Boost, like so:
+The included `Makefile` is designed to run on GNU/Linux machines. The [Boost library](https://www.boost.org/)
+is a requirement, and should be installed locally before compilation. 
+On Ubuntu systems, users may use the `apt-get` package manager to
+install Boost, like so:
 ```
     sudo apt-get install libboost-all-dev
 ```
@@ -72,3 +72,14 @@ The move generation function is implemented as a [pseudo-legal generator](https:
 full legality check is made in `Board::MakeMove()` to ensure that a move does not
 put the moving player in check; illegal moves are unmade if they are found to
 do this.
+
+#### Board Hashing
+
+In order efficiently compare positions throughout a game, `Game` objects use the
+function `Board::GetBoardHash()` to compute hashes of game states. This function is
+implemented with the [Zobrist Hashing](https://www.chessprogramming.org/Zobrist_Hashing) algorithm, and is used during the detection
+of both threefold and fivefold move repitions and to generate keys to index into the
+transposition table. This technique carries with it a small risk for collisions, with
+an expected collision rate of one in 2^32 ≈ 4.29 billion. Relatively little can be done
+to mitigate this risk, and as such is a known and unavoidable bug with this
+implementation.

@@ -25,7 +25,6 @@ public:
 
   bool IsActive() const;
 
-  void OutputGameResolution() const;
   void Play();
 private:
   // Parse algebraic notation denoting a chess move, return if the move is

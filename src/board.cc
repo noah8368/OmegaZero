@@ -75,7 +75,7 @@ Board::Board() {
 Bitboard Board::GetAttackersToSq(const int& sq,
                                  const int& attacked_player) const {
   Bitboard potential_pawn_attacks;
-  int attacking_player = (attacked_player == kWhite) ? kBlack : kWhite;
+  int attacking_player = GetOtherPlayer(attacked_player);
   // Capture only diagonal squares to sq in the direction of movement.
   if (attacked_player == kWhite) {
     potential_pawn_attacks = kNonSliderAttackMasks[kWhitePawnTakeAttack][sq];
@@ -103,7 +103,7 @@ Bitboard Board::GetAttackersToSq(const int& sq,
 Bitboard Board::GetAttackMask(const int& attacking_player, const int& sq,
                               const int& attacking_piece) const {
   Bitboard attack_mask = 0X0;
-  int attacked_player = (attacking_player == kWhite) ? kBlack : kWhite;
+  int attacked_player = GetOtherPlayer(attacking_player);
   switch (attacking_piece) {
     case kPawn: {
       Bitboard capture_attacks, push_attacks;
@@ -172,34 +172,36 @@ bool Board::GetCastlingRights(const int& player, const int& board_side) const {
 }
 
 bool Board::KingInCheck(const int& player) const {
-  // TODO: implement this.
-  return false;
+  Bitboard king_board = pieces_[kKing] & player_pieces_[player];
+  int king_sq = log2(king_board);
+  return GetAttackersToSq(king_sq, player);
 }
 
 bool Board::MakeMove(const Move& move, string& err_msg) {
-  int start_rank;
-  int start_file;
-  int end_rank;
-  int end_file;
-  // Handle all non-castling moves.
+  int ep_capture_sq;
+  int start_rank = GetRankFromSq(move.start_sq);
+  int start_file = GetFileFromSq(move.start_sq);
+  int end_rank = GetRankFromSq(move.end_sq);
+  int end_file = GetFileFromSq(move.end_sq);
+  int other_player = GetOtherPlayer(move.moving_player);
+  // Make all non-castling moves.
   if (move.castling_type == kNA) {
     // Remove a captured piece from the board.
     if (move.captured_piece != kNA) {
-      int other_player = (move.moving_player == kWhite) ? kBlack : kWhite;
-      // Compute the position to remove a pawn from in an en passent.
       if (move.is_ep) {
-        int ep_capture_sq;
+        // Compute the position for a captured pawn in an en passent,
+        // and then remove it from the board.
         if (move.moving_player == kWhite) {
-          ep_capture_sq = kNumFiles * kRank5 + end_file;
+          ep_capture_sq = GetSqFromRankFile(kRank5, end_file);
           piece_layout_[kRank5][end_file] = kNA;
           player_layout_[kRank5][end_file] = kNA;
         } else if (move.moving_player == kBlack) {
-          ep_capture_sq = kNumFiles * kRank4 + end_file;
+          ep_capture_sq = GetSqFromRankFile(kRank4, end_file);
           piece_layout_[kRank4][end_file] = kNA;
           player_layout_[kRank4][end_file] = kNA;
         }
         Bitboard ep_capture_mask = ~(1ULL << ep_capture_sq);
-        pieces_[move.captured_piece] &= ep_capture_mask;
+        pieces_[kPawn] &= ep_capture_mask;
         player_pieces_[other_player] &= ep_capture_mask;
       } else {
         Bitboard piece_capture_mask = ~(1ULL << move.end_sq);
@@ -208,9 +210,9 @@ bool Board::MakeMove(const Move& move, string& err_msg) {
       }
     }
     MovePiece(move.moving_player, move.moving_piece, move.start_sq,
-              move.end_sq, move.promoted_piece);
-  // Handle queenside castling moves.
+              move.end_sq, move.promoted_to_piece);
   } else if (move.castling_type == kQueenSide) {
+    // Make queenside castling moves.
     if (move.moving_player == kWhite) {
       MovePiece(kWhite, kRook, kSqA1, kSqD1);
       MovePiece(kWhite, kKing, kSqE1, kSqC1);
@@ -218,8 +220,8 @@ bool Board::MakeMove(const Move& move, string& err_msg) {
       MovePiece(kBlack, kRook, kSqA8, kSqD8);
       MovePiece(kBlack, kKing, kSqE8, kSqC8);
     }
-  // Handle kingside castling moves.
   } else if (move.castling_type == kKingSide) {
+    // Make kingside castling moves.
     if (move.moving_player == kWhite) {
       MovePiece(kWhite, kRook, kSqH1, kSqF1);
       MovePiece(kWhite, kKing, kSqE1, kSqG1);
@@ -231,12 +233,71 @@ bool Board::MakeMove(const Move& move, string& err_msg) {
 
   // Undo the move if it puts the king in check.
   if (KingInCheck(move.moving_player)) {
-    // TODO: undo the move.
-    err_msg = "move puts king in check";
+    // Undo all non-castling moves.
+    if (move.castling_type == kNA) {
+      // Move the moving piece back to its original position and undo
+      // any pawn promotion.
+      if (move.promoted_to_piece == kNA) {
+        MovePiece(move.moving_player, move.moving_piece, move.end_sq,
+                  move.start_sq);
+      } else {
+        // Remove the promoted-to piece from the board.
+        Bitboard piece_promotion_rm_mask = ~(1ULL << move.end_sq);
+        pieces_[move.promoted_to_piece] &= piece_promotion_rm_mask;
+        player_pieces_[move.moving_player] &= piece_promotion_rm_mask;
+        piece_layout_[end_rank][end_file] = kNA;
+        player_layout_[end_rank][end_file] = kNA;
+
+        // Add the original pawn back to its start position.
+        Bitboard orig_piece_pos_mask = 1ULL << move.start_sq;
+        pieces_[kPawn] |= orig_piece_pos_mask;
+        player_pieces_[move.moving_player] |= orig_piece_pos_mask;
+        piece_layout_[start_rank][start_file] = kPawn;
+        player_layout_[start_rank][start_file] = move.moving_player;
+      }
+      // Place a captured piece back onto the board.
+      if (move.captured_piece != kNA) {
+        if (move.is_ep) {
+          // Place a captured pawn back onto the board after an en passent.
+          if (move.moving_player == kWhite) {
+            piece_layout_[kRank5][end_file] = kPawn;
+            player_layout_[kRank5][end_file] = kBlack;
+          } else if (move.moving_player == kBlack) {
+            piece_layout_[kRank4][end_file] = kPawn;
+            player_layout_[kRank4][end_file] = kWhite;
+          }
+          Bitboard undo_ep_capture_mask = 1ULL << ep_capture_sq;
+          pieces_[kPawn] |= undo_ep_capture_mask;
+          player_pieces_[other_player] |= undo_ep_capture_mask;
+        } else {
+          Bitboard undo_capture_mask = 1ULL << move.end_sq;
+          pieces_[move.captured_piece] |= undo_capture_mask;
+          player_pieces_[other_player] |= undo_capture_mask;
+        }
+      }
+    // Undo queenside castling moves.
+    } else if (move.castling_type == kQueenSide) {
+      if (move.moving_player == kWhite) {
+        MovePiece(kWhite, kRook, kSqD1, kSqA1);
+        MovePiece(kWhite, kKing, kSqC1, kSqE1);
+      } else if (move.moving_player == kBlack) {
+        MovePiece(kBlack, kRook, kSqD8, kSqA8);
+        MovePiece(kBlack, kKing, kSqC8, kSqE8);
+      }
+    // Undo kingside castling moves.
+    } else if (move.castling_type == kKingSide) {
+      if (move.moving_player == kWhite) {
+        MovePiece(kWhite, kRook, kSqF1, kSqH1);
+        MovePiece(kWhite, kKing, kSqG1, kSqE1);
+      } else if (move.moving_player == kBlack) {
+        MovePiece(kBlack, kRook, kSqF8, kSqH8);
+        MovePiece(kBlack, kKing, kSqG8, kSqE8);
+      }
+    }
+    err_msg = "move leaves king in check";
     return false;
-  // Update the en passent target square, castling rights,
-  // the halfmove clock, and the repition queue if the move
-  // doesn't put the King in check.
+  // Update the en passent target square, castling rights, and the halfmove
+  // clock if the move doesn't put the player's king in check.
   } else {
     ep_target_sq_ = move.new_ep_target_sq;
     // Update castling rights.
@@ -257,6 +318,21 @@ bool Board::MakeMove(const Move& move, string& err_msg) {
           castling_rights_[move.moving_player][kKingSide] = false;
         }
       }
+    } else if (move.captured_piece == kRook) {
+      // Revoke the appropriate castling rights if a player's rook is captured.
+      if (move.moving_player == kWhite) {
+        if (move.end_sq == kSqA8 && castling_rights_[kBlack][kQueenSide]) {
+          castling_rights_[kBlack][kQueenSide] = false;
+        } else if (move.end_sq == kSqH8 && castling_rights_[kBlack][kKingSide]){
+          castling_rights_[kBlack][kKingSide] = false;
+        }
+      } else if (move.moving_player == kBlack) {
+        if (move.end_sq == kSqA1 && castling_rights_[kWhite][kQueenSide]) {
+          castling_rights_[kWhite][kQueenSide] = false;
+        } else if (move.end_sq == kSqH1 && castling_rights_[kWhite][kKingSide]) {
+          castling_rights_[kWhite][kKingSide] = false;
+        }
+      }
     }
     // Reset the halfmove clock if a pawn was moved or if a move resulted in a
     // capture.
@@ -265,7 +341,6 @@ bool Board::MakeMove(const Move& move, string& err_msg) {
     } else {
       halfmove_clock_++;
     }
-    // TODO: Add to repitition queue
     return true;
   }
 }
@@ -298,9 +373,10 @@ Bitboard Board::GetPiecesByType(const int& piece_type,
 uint64_t Board::GetBoardHash(const int& side_to_move) const {
   // Use the Zobrist Hashing algorithm to compute a unique hash of the board
   // state. This involves hashing all stored pseudo-random numbers applicable
-  // to a given game state.
+  // to a given game position. Note that there is a small chance of collisions
+  // which is mostly unavoidable.
   uint64_t board_hash = 0;
-  for (int player = kWhite; player < kNumPlayers; ++player) {
+  for (int player = kWhite; player <= kBlack; ++player) {
     for (int board_side = kQueenSide; board_side <= kKingSide; ++board_side) {
       if(castling_status_[player][board_side]) {
         board_hash ^= castling_rights_rand_nums[player][board_side];
@@ -328,7 +404,7 @@ uint64_t Board::GetBoardHash(const int& side_to_move) const {
 
 void Board::MovePiece(const int& moving_player, const int& piece,
                       const int& start_sq, const int& end_sq,
-                      const int& promoted_piece) {
+                      const int& promoted_to_piece) {
   // Remove the selected piece from its start position on the board.
   int start_rank = GetRankFromSq(start_sq);
   int start_file = GetFileFromSq(start_sq);
@@ -337,20 +413,31 @@ void Board::MovePiece(const int& moving_player, const int& piece,
   Bitboard rm_piece_mask = ~(1ULL << start_sq);
   pieces_[piece] &= rm_piece_mask;
   player_pieces_[moving_player] &= rm_piece_mask;
+
   // Add the selected piece back at its end position on the board.
   Bitboard new_piece_pos_mask = 1ULL << end_sq;
   int end_rank = GetRankFromSq(end_sq);
   int end_file = GetFileFromSq(end_sq);
-  if (promoted_piece == kNA) {
-    piece_layout_[end_rank][end_file] = piece;
+  if (promoted_to_piece == kNA) {
     pieces_[piece] |= new_piece_pos_mask;
+    piece_layout_[end_rank][end_file] = piece;
   // Add a piece back as the type it promotes to if move is a pawn promotion.
   } else {
-    piece_layout_[end_rank][end_file] = promoted_piece;
-    pieces_[promoted_piece] |= new_piece_pos_mask;
+    pieces_[promoted_to_piece] |= new_piece_pos_mask;
+    piece_layout_[end_rank][end_file] = promoted_to_piece;
   }
   player_layout_[end_rank][end_file] = moving_player;
   player_pieces_[moving_player] |= new_piece_pos_mask;
+}
+
+int GetOtherPlayer(const int& player) {
+  if (player == kWhite) {
+    return kBlack;
+  } else if (player == kBlack) {
+    return kWhite;
+  } else {
+    return kNA;
+  }
 }
 
 int GetFileFromSq(const int& sq) {
@@ -358,4 +445,8 @@ int GetFileFromSq(const int& sq) {
 }
 int GetRankFromSq(const int& sq) {
   return sq >> 3;
+}
+
+int GetSqFromRankFile(const int& rank, const int& file) {
+  return rank * kNumFiles + file;
 }

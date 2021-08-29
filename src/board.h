@@ -43,7 +43,7 @@ public:
 private:
   void MovePiece(const int& moving_player, const int& piece,
                  const int& start_sq, const int& end_sq,
-                 const int& promoted_piece = kNA);
+                 const int& promoted_to_piece = kNA);
 
   // Store bitboard board representations of each type
   // of piece that are still active in the game.
@@ -73,8 +73,10 @@ private:
   uint64_t black_to_move_rand_num;
 };
 
+int GetOtherPlayer(const int& player);
 int GetFileFromSq(const int& sq);
 int GetRankFromSq(const int& sq);
+int GetSqFromRankFile(const int& rank, const int& file);
 
 const Bitboard kFileMasks[kNumFiles] = {
   0X0101010101010101, 0X0202020202020202,
