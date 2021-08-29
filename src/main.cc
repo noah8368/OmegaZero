@@ -15,8 +15,6 @@ int main() {
   Game game;
   int player = kWhite;
   while (game.IsActive()) {
-    game.Play(player);
-    player = (player == kWhite) ? kBlack : kWhite;
+    game.Play();
   }
-  game.OutputGameResolution();
 }

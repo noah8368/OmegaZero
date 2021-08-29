@@ -26,17 +26,24 @@ public:
   Bitboard GetAttackMask(const int& attacking_player, const int& sq,
                          const int& attacking_piece) const;
   Bitboard GetPiecesByType(const int& piece_type, const int& player) const;
+
   bool GetCastlingRights(const int& player, const int& board_side) const;
   bool KingInCheck(const int& player) const;
   // Return false if the move was found to put the moving player's King in
   // check. Return true is the board state was succesfully updated.
   bool MakeMove (const Move& move, string& err_msg);
+
   int GetEpTargetSq() const;
+  int GetHalfmoveClock() const;
   int GetPieceOnSq(const int& rank, const int& file) const;
   int GetPlayerOnSq(const int& rank, const int& file) const;
+
+  // Compute and return a uniquely hash to represent the current board state.
+  uint64_t GetBoardHash(const int& side_to_move) const;
 private:
   void MovePiece(const int& moving_player, const int& piece,
-                 const int& start_sq, const int& end_sq);
+                 const int& start_sq, const int& end_sq,
+                 const int& promoted_piece = kNA);
 
   // Store bitboard board representations of each type
   // of piece that are still active in the game.
@@ -44,14 +51,30 @@ private:
   // Store bitboard board representations of the pieces
   // in each players' posession.
   Bitboard player_pieces_[kNumPlayers];
+
   bool castling_rights_[kNumPlayers][kNumBoardSides];
+  // Store which castling moves have been played so far.
+  bool castling_status_[kNumPlayers][kNumBoardSides];
+
+  // Keep track of the square (if it exists) an en passent move is elligible
+  // to land on during a given turn.
   int ep_target_sq_;
+  // Keep track of the number of moves since a pawn movement or capture to
+  // enfore the Fifty Move Rule.
+  int halfmove_clock_;
   // Store an 8x8 board representation.
   int piece_layout_[kNumRanks][kNumFiles];
   int player_layout_[kNumRanks][kNumFiles];
-  int bishop_magic_lengths_[kNumSq];
-  int rook_magic_lengths_[kNumSq];
+
+  // Store a set of pseudo-random numbers for Zobrist Hashing.
+  uint64_t castling_rights_rand_nums[kNumPlayers][kNumBoardSides];
+  uint64_t ep_file_rand_nums[kNumFiles];
+  uint64_t piece_rand_nums[kNumPieceTypes][kNumRanks][kNumFiles];
+  uint64_t black_to_move_rand_num;
 };
+
+int GetFileFromSq(const int& sq);
+int GetRankFromSq(const int& sq);
 
 const Bitboard kFileMasks[kNumFiles] = {
   0X0101010101010101, 0X0202020202020202,

@@ -7,9 +7,12 @@
 
 #include "board.h"
 
+#include <stdint.h>
+
 #include <boost/multiprecision/cpp_int.hpp>
 
-#include <cstdint>
+#include <chrono>
+#include <random>
 #include <unordered_map>
 
 #include "constants.h"
@@ -17,8 +20,6 @@
 
 // Debug library
 #include <iostream>
-
-using namespace boost::multiprecision;
 
 Board::Board() {
   // Index from LSB (square a1) to MSB (square f8).
@@ -28,7 +29,6 @@ Board::Board() {
   pieces_[kRook]   = 0X8100000000000081ULL;
   pieces_[kQueen]  = 0X0800000000000008ULL;
   pieces_[kKing]   = 0X1000000000000010ULL;
-
   player_pieces_[kWhite]  = 0X000000000000FFFFULL;
   player_pieces_[kBlack]  = 0XFFFF000000000000ULL;
 
@@ -36,13 +36,40 @@ Board::Board() {
   castling_rights_[kWhite][kKingSide] = true;
   castling_rights_[kBlack][kQueenSide] = true;
   castling_rights_[kBlack][kKingSide] = true;
+  castling_status_[kWhite][kQueenSide] = false;
+  castling_status_[kWhite][kKingSide] = false;
+  castling_status_[kBlack][kQueenSide] = false;
+  castling_status_[kBlack][kKingSide] = false;
 
+  ep_target_sq_ = kNA;
+  halfmove_clock_ = 0;
   for (int rank = kRank8; rank >= kRank1; --rank) {
     for (int file = kFileA; file <= kFileH; ++file) {
       piece_layout_[rank][file] = kInitialPieceLayout[rank][file];
       player_layout_[rank][file] = kInitialPlayerLayout[rank][file];
     }
   }
+
+  // Initialize the Mersenne Twister 64 bit pseudo-random number generator.
+  unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+  std::mt19937_64 rand_num_gen(seed);
+  // Generate a set of random numbers for Zobrist Hashing.
+  for (int player = kWhite; player < kNumPlayers; ++player) {
+    for (int board_side = kQueenSide; board_side <= kKingSide; ++board_side) {
+      castling_rights_rand_nums[player][board_side] = rand_num_gen();
+    }
+  }
+  for (int file = kFileA; file <= kFileH; ++file) {
+    ep_file_rand_nums[file] = rand_num_gen();
+  }
+  for (int piece = kPawn; piece <= kKing; ++piece) {
+    for (int rank = kRank1; rank <= kRank8; ++rank) {
+      for (int file = kFileA; file <= kFileH; ++file) {
+        piece_rand_nums[piece][rank][file] = rand_num_gen();
+      }
+    }
+  }
+  black_to_move_rand_num = rand_num_gen();
 }
 
 Bitboard Board::GetAttackersToSq(const int& sq,
@@ -105,9 +132,9 @@ Bitboard Board::GetAttackMask(const int& attacking_player, const int& sq,
       if (blockers == 0X0) {
         attack_mask = kUnblockedSliderAttackMasks[kBishopMoves][sq];
       } else {
-        uint128_t magic = kMagics[kBishopMoves][sq];
-        uint128_t magic_index_128b = (blockers * magic)
-                                     >> (kNumSq - kBishopMagicLengths[sq]);
+        boost::multiprecision::uint128_t magic = kMagics[kBishopMoves][sq];
+        boost::multiprecision::uint128_t magic_index_128b = 
+          (blockers * magic) >> (kNumSq - kBishopMagicLengths[sq]);
         uint64_t magic_index = static_cast<uint64_t>(magic_index_128b);
         attack_mask = kMagicIndexToAttackMap.at(magic_index);
       }
@@ -119,9 +146,9 @@ Bitboard Board::GetAttackMask(const int& attacking_player, const int& sq,
       if (blockers == 0X0) {
         attack_mask = kUnblockedSliderAttackMasks[kRookMoves][sq];
       } else {
-        uint128_t magic = kMagics[kRookMoves][sq];
-        uint128_t magic_index_128b = (blockers * magic)
-                                     >> (kNumSq - kRookMagicLengths[sq]);
+        boost::multiprecision::uint128_t magic = kMagics[kRookMoves][sq];
+        boost::multiprecision::uint128_t magic_index_128b =
+          (blockers * magic) >> (kNumSq - kRookMagicLengths[sq]);
         uint64_t magic_index = static_cast<uint64_t>(magic_index_128b);
         attack_mask = kMagicIndexToAttackMap.at(magic_index);
       }
@@ -156,32 +183,10 @@ bool Board::MakeMove(const Move& move, string& err_msg) {
   int end_file;
   // Handle all non-castling moves.
   if (move.castling_type == kNA) {
-    // Remove the piece from its starting position in the board.
-    Bitboard rm_start_mask = ~(1ULL << move.start_sq);
-    start_rank = move.start_sq >> 3;
-    start_file = move.start_sq & 7;
-    piece_layout_[start_rank][start_file] = kNA;
-    player_layout_[start_rank][start_file] = kNA;
-    pieces_[move.moving_piece] &= rm_start_mask;
-    player_pieces_[move.moving_player] &= rm_start_mask;
-
-    // Add the piece to its destination square on the board.
-    Bitboard end_mask = 1ULL << move.end_sq;
-    end_rank = move.end_sq >> 3;
-    end_file = move.end_sq & 7;
-    if (move.promoted_piece == kNA) {
-      piece_layout_[end_rank][end_file] = move.moving_piece;
-      pieces_[move.moving_piece] |= end_mask;
-    } else {
-      piece_layout_[end_rank][end_file] = move.promoted_piece;
-      pieces_[move.promoted_piece] |= end_mask;
-    }
-    player_layout_[end_rank][end_file] = move.moving_player;
-    player_pieces_[move.moving_player] |= end_mask;
-
     // Remove a captured piece from the board.
     if (move.captured_piece != kNA) {
       int other_player = (move.moving_player == kWhite) ? kBlack : kWhite;
+      // Compute the position to remove a pawn from in an en passent.
       if (move.is_ep) {
         int ep_capture_sq;
         if (move.moving_player == kWhite) {
@@ -197,26 +202,30 @@ bool Board::MakeMove(const Move& move, string& err_msg) {
         pieces_[move.captured_piece] &= ep_capture_mask;
         player_pieces_[other_player] &= ep_capture_mask;
       } else {
-        pieces_[move.captured_piece] &= ~end_mask;
-        player_pieces_[other_player] &= ~end_mask;
+        Bitboard piece_capture_mask = ~(1ULL << move.end_sq);
+        pieces_[move.captured_piece] &= piece_capture_mask;
+        player_pieces_[other_player] &= piece_capture_mask;
       }
     }
-  // Handle all castling moves.
+    MovePiece(move.moving_player, move.moving_piece, move.start_sq,
+              move.end_sq, move.promoted_piece);
+  // Handle queenside castling moves.
   } else if (move.castling_type == kQueenSide) {
     if (move.moving_player == kWhite) {
-      MovePiece(kWhite, kRook, kSq1, kSq4);
-      MovePiece(kWhite, kKing, kSq5, kSq3);
+      MovePiece(kWhite, kRook, kSqA1, kSqD1);
+      MovePiece(kWhite, kKing, kSqE1, kSqC1);
     } else if (move.moving_player == kBlack) {
-      MovePiece(kBlack, kRook, kSq57, kSq60);
-      MovePiece(kBlack, kKing, kSq61, kSq59);
+      MovePiece(kBlack, kRook, kSqA8, kSqD8);
+      MovePiece(kBlack, kKing, kSqE8, kSqC8);
     }
+  // Handle kingside castling moves.
   } else if (move.castling_type == kKingSide) {
     if (move.moving_player == kWhite) {
-      MovePiece(kWhite, kRook, kSq8, kSq6);
-      MovePiece(kWhite, kKing, kSq5, kSq7);
+      MovePiece(kWhite, kRook, kSqH1, kSqF1);
+      MovePiece(kWhite, kKing, kSqE1, kSqG1);
     } else if (move.moving_player == kBlack) {
-      MovePiece(kBlack, kRook, kSq64, kSq62);
-      MovePiece(kBlack, kKing, kSq61, kSq63);
+      MovePiece(kBlack, kRook, kSqH8, kSqF8);
+      MovePiece(kBlack, kKing, kSqE8, kSqG8);
     }
   }
 
@@ -249,7 +258,13 @@ bool Board::MakeMove(const Move& move, string& err_msg) {
         }
       }
     }
-    // TODO: Set Halfmove clock
+    // Reset the halfmove clock if a pawn was moved or if a move resulted in a
+    // capture.
+    if (move.captured_piece != kNA || move.moving_piece == kPawn) {
+      halfmove_clock_ = 0;
+    } else {
+      halfmove_clock_++;
+    }
     // TODO: Add to repitition queue
     return true;
   }
@@ -257,6 +272,10 @@ bool Board::MakeMove(const Move& move, string& err_msg) {
 
 int Board::GetEpTargetSq() const {
   return ep_target_sq_;
+}
+
+int Board::GetHalfmoveClock() const {
+  return halfmove_clock_;
 }
 
 int Board::GetPieceOnSq(const int& rank, const int& file) const {
@@ -276,22 +295,67 @@ Bitboard Board::GetPiecesByType(const int& piece_type,
   }
 }
 
+uint64_t Board::GetBoardHash(const int& side_to_move) const {
+  // Use the Zobrist Hashing algorithm to compute a unique hash of the board
+  // state. This involves hashing all stored pseudo-random numbers applicable
+  // to a given game state.
+  uint64_t board_hash = 0;
+  for (int player = kWhite; player < kNumPlayers; ++player) {
+    for (int board_side = kQueenSide; board_side <= kKingSide; ++board_side) {
+      if(castling_status_[player][board_side]) {
+        board_hash ^= castling_rights_rand_nums[player][board_side];
+      }
+    }
+  }
+  if (ep_target_sq_ != kNA) {
+    int ep_target_file = GetFileFromSq(ep_target_sq_);
+    board_hash ^= ep_file_rand_nums[ep_target_file];
+  }
+  int piece_type;
+  for(int rank = kRank1; rank <= kRank8; ++rank) {
+    for (int file = kFileA; file <= kFileH; ++file) {
+      piece_type = piece_layout_[rank][file];
+      if (piece_type != kNA) {
+        board_hash ^= piece_rand_nums[piece_type][rank][file];
+      }
+    }
+  }
+  if (side_to_move == kBlack) {
+    board_hash ^= black_to_move_rand_num;
+  }
+  return board_hash;
+}
+
 void Board::MovePiece(const int& moving_player, const int& piece,
-                      const int& start_sq, const int& end_sq) {
+                      const int& start_sq, const int& end_sq,
+                      const int& promoted_piece) {
   // Remove the selected piece from its start position on the board.
-  int start_rank = start_sq >> 3;
-  int start_file = start_sq & 7;
+  int start_rank = GetRankFromSq(start_sq);
+  int start_file = GetFileFromSq(start_sq);
   piece_layout_[start_rank][start_file] = kNA;
   player_layout_[start_rank][start_file] = kNA;
   Bitboard rm_piece_mask = ~(1ULL << start_sq);
   pieces_[piece] &= rm_piece_mask;
   player_pieces_[moving_player] &= rm_piece_mask;
   // Add the selected piece back at its end position on the board.
-  int end_rank = end_sq >> 3;
-  int end_file = end_sq & 7;
-  piece_layout_[end_rank][end_file] = piece;
+  Bitboard new_piece_pos_mask = 1ULL << end_sq;
+  int end_rank = GetRankFromSq(end_sq);
+  int end_file = GetFileFromSq(end_sq);
+  if (promoted_piece == kNA) {
+    piece_layout_[end_rank][end_file] = piece;
+    pieces_[piece] |= new_piece_pos_mask;
+  // Add a piece back as the type it promotes to if move is a pawn promotion.
+  } else {
+    piece_layout_[end_rank][end_file] = promoted_piece;
+    pieces_[promoted_piece] |= new_piece_pos_mask;
+  }
   player_layout_[end_rank][end_file] = moving_player;
-  Bitboard moved_piece_mask = 1ULL << end_sq;
-  pieces_[piece] |= moved_piece_mask;
-  player_pieces_[moving_player] |= moved_piece_mask;
+  player_pieces_[moving_player] |= new_piece_pos_mask;
+}
+
+int GetFileFromSq(const int& sq) {
+  return sq & 7;
+}
+int GetRankFromSq(const int& sq) {
+  return sq >> 3;
 }

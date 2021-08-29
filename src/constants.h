@@ -30,9 +30,9 @@ enum SliderPieceMask {
 };
 // Specify the squares necessary to perform castling moves.
 enum Square {
-  kSq1 = 0, kSq3 = 2, kSq4 = 3, kSq5 = 4, kSq6 = 5, kSq7 = 6, kSq8 = 7,
-  kSq57 = 56, kSq59 = 58, kSq60 = 59, kSq61 = 60, kSq62 = 61, kSq63 = 62,
-  kSq64 = 63,
+  kSqA1 = 0, kSqC1 = 2, kSqD1 = 3, kSqE1 = 4, kSqF1 = 5, kSqG1 = 6, kSqH1 = 7,
+  kSqA8 = 56, kSqC8 = 58, kSqD8 = 59, kSqE8 = 60, kSqF8 = 61, kSqG8 = 62,
+  kSqH8 = 63,
 };
 enum Piece {
   kPawn, kKnight, kBishop, kRook, kQueen, kKing,
@@ -41,12 +41,13 @@ enum Player {
   kWhite, kBlack,
 };
 
+const int kHalfmoveClockLimit = 75;
 const int kNA = -1;
 const int kNumBitboards = 8;
 const int kNumBoardSides = 2;
 const int kNumFiles = 8;
 const int kNumNonSliderMasks = 6;
-const int kNumPieces = 6;
+const int kNumPieceTypes = 6;
 const int kNumPlayers = 2;
 const int kNumRanks = 8;
 const int kNumSliderMasks = 2;

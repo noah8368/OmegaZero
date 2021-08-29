@@ -22,6 +22,10 @@ using namespace std;
 Game::Game() {
   game_active_ = true;
 
+  player_ = kWhite;
+  player_in_check_ = kNA;
+  winner_ = kNA;
+
   piece_symbols_ = {
     {make_pair(kNA, kNA), "."},
     {make_pair(kWhite, kPawn), "♙"},
@@ -37,53 +41,47 @@ Game::Game() {
     {make_pair(kBlack, kQueen), "♛"},
     {make_pair(kBlack, kKing), "♚"}
   };
-  int ep_target_sq_ = kNA;
-  int player_in_check_ = kNA;
-  int winner_ = kNA;
 }
 
-void Game::OutputGameResolution() const {
+void Game::Play() {
   DisplayBoard();
-
-  if (winner_ == kNA) {
-    cout << "Game has ended in a stalemate" << endl;
+  CheckGameStatus();
+  if (game_active_) {
+    string player_name = (player_ == kWhite) ? "WHITE" : "BLACK";
+    cout << "\n\n" << player_name << " to move" << endl;
+    bool move_legal;
+    Move user_move;
+    string err_msg, user_cmd;
+    do {
+      cout << "Enter move: ";
+      getline(cin, user_cmd);
+      // Check if the player has resigned.
+      if (user_cmd == "r") {
+        game_active_ = false;
+        winner_ = (player_ == kWhite) ? kBlack : kWhite;
+        break;
+      } else {
+        // Check if the move is pseudo-legal.
+        move_legal = CheckMove(user_cmd, user_move, err_msg, player_);
+        if (move_legal) {
+          // Make the move and check if it puts the player's king in check.
+          // If so, unmake the move and set err_msg accordingly.
+          move_legal = board_.MakeMove(user_move, err_msg);
+        }
+      }
+      // Output an appropriate error message for illegal moves.
+      if (!move_legal) {
+        cout << "ERROR: " << err_msg << endl;
+      }
+    } while (!move_legal);
+    cout << "\n\n";
+    player_ = (player_ == kWhite) ? kBlack : kWhite;
+  } else if (winner_ == kNA) {
+    cout << "Game has ended in a draw" << endl;
   } else {
     string winner_name = (winner_ == kWhite) ? "WHITE" : "BLACK";
     cout << winner_name << " wins" << endl;
   }
-}
-
-void Game::Play(const int& player) {
-  DisplayBoard();
-
-  string player_name = (player == kWhite) ? "WHITE" : "BLACK";
-  cout << "\n\n" << player_name << " to move" << endl;
-  bool move_legal;
-  Move user_move;
-  string err_msg, user_cmd;
-  do {
-    cout << "Enter move: ";
-    getline(cin, user_cmd);
-    // Check if the player has resigned.
-    if (user_cmd == "r") {
-      game_active_ = false;
-      break;
-    } else {
-      // Check if the move is pseudo-legal.
-      move_legal = CheckMove(user_cmd, user_move, err_msg, player);
-      if (move_legal) {
-        // Make the move and check if it puts the player's king in check.
-        // If so, unmake the move and set err_msg accordingly.
-        move_legal = board_.MakeMove(user_move, err_msg);
-      }
-    }
-    // Output an appropriate error message for illegal moves.
-    if (!move_legal) {
-      cout << "ERROR: " << err_msg << endl;
-    }
-  } while (!move_legal);
-  cout << "\n\n";
-  CheckFileGameStatus();
 }
 
 bool Game::IsActive() const {
@@ -110,12 +108,12 @@ bool Game::CheckMove(string user_cmd, Move& move,
              && board_.GetPieceOnSq(kRank1, kFileC) == kNA
              && board_.GetPieceOnSq(kRank1, kFileD) == kNA
              && board_.GetAttackersToSq(kNumFiles * kRank1 + kFileD,
-                                            kWhite) == 0X0)
+                                        kWhite) == 0X0)
             || (player == kBlack && board_.GetPieceOnSq(kRank8, kFileB) == kNA
                 && board_.GetPieceOnSq(kRank8, kFileC) == kNA
                 && board_.GetPieceOnSq(kRank8, kFileD) == kNA
                 && board_.GetAttackersToSq(kNumFiles * kRank8 + kFileD,
-                                               kBlack) == 0X0))) {
+                                           kBlack) == 0X0))) {
       move.castling_type = kQueenSide;
       return true;
     } else {
@@ -130,7 +128,7 @@ bool Game::CheckMove(string user_cmd, Move& move,
              && board_.GetPieceOnSq(kRank1, kFileG) == kNA)
             || (player == kBlack && board_.GetPieceOnSq(kRank8, kFileF) == kNA
                 && board_.GetAttackersToSq(kNumFiles * kRank8 + kFileF,
-                                               kBlack) == 0X0
+                                           kBlack) == 0X0
                 && board_.GetPieceOnSq(kRank8, kFileG) == kNA))) {
       move.castling_type = kKingSide;
       return true;
@@ -321,14 +319,19 @@ bool Game::CheckMove(string user_cmd, Move& move,
   }
 
   // Confirm a capturing move lands on a square occupied by the other player.
+  // or that a non-capturing move lands on a free square.
   int other_player = (player == kWhite) ? kBlack : kWhite;
   if (capture_indicated && !move.is_ep) {
     if (board_.GetPlayerOnSq(end_rank, end_file) != other_player) {
-      err_msg = "invalid capture indicated";
+      err_msg = "ambiguous or illegal piece movement specified";
       return false;
     } else {
       move.captured_piece = board_.GetPieceOnSq(end_rank, end_file);
     }
+  // Check that a non-capturing move or en passent lands on an open square.
+  } else if (board_.GetPlayerOnSq(end_rank, end_file) != kNA) {
+    err_msg = "ambiguous or illegal piece movement specified";
+    return false;
   }
   move.end_sq = kNumFiles * end_rank + end_file;
 
@@ -415,13 +418,37 @@ bool Game::CheckMove(string user_cmd, Move& move,
   }
 }
 
-void Game::CheckFileGameStatus() const {
+void Game::CheckGameStatus() {
   // TODO: Check if a player is now in check. If so, warn the player.
-  // TODO: Check if the game has just ended in a stalemate and set
-  //       game_active_ equal to false and winner_ to kNA. 
-  //       (Zobrist hashing happens here!)
   // TODO: Check if a player has been checkmated, set winner_ equal to the
-  //       player not in checkmate, and set game_active_ to false.
+  //       player not in checkmate, set game_active_ to false, then return.
+
+  // Check for threefold and fivefold move repititions.
+  uint64_t board_hash = board_.GetBoardHash(player_);
+  if (pos_rep_table_.find(board_hash) == pos_rep_table_.end()) {
+    pos_rep_table_[board_hash] = 1;
+  } else {
+    pos_rep_table_[board_hash]++;
+    int num_pos_rep = pos_rep_table_[board_hash];
+    if (num_pos_rep == 3) {
+      string draw_decision;
+      cout << "ALERT: Threefold repitition detected. Would you like to claim a draw? (y/n): ";
+      cin >> draw_decision;
+      cout << endl;
+      if (draw_decision == "y") {
+        game_active_ = false;
+      }
+    } else if (num_pos_rep == 5) {
+      game_active_ = false;
+    }
+  }
+  // Enforce the Fifty Move Rule.
+  if (board_.GetHalfmoveClock() >= 2*kHalfmoveClockLimit) {
+    game_active_ = false;
+  }
+
+  // TODO: Check if the player has no legal moves left and their king isn't
+  // in check. If this happens, end the game in a stalemate.
 }
 
 void Game::DisplayBoard() const {
