@@ -197,12 +197,12 @@ if __name__ == "__main__":
                     + "\n#include <unordered_map>\n\n")
     f = open(os.path.join(os.getcwd(), "src/magics.cc"), 'w')
     f.write(boiler_plate)
-    f.write("const uint64_t kMagics[kNumSliderMasks][kNumSquares] = {")
+    f.write("const U64 kMagics[kNumSliderMasks][kNumSquares] = {")
     write_magics(f, "bishop", magics_gen.bishop_magics)
     f.write(",\n")
     write_magics(f, "rook", magics_gen.rook_magics)
     f.write("\n};")
-    f.write("\n\nconst std::unordered_map<uint64_t, Bitboard> "
+    f.write("\n\nconst std::unordered_map<U64, Bitboard> "
             + "kMagicIndexToAttackMap = {\n")
     write_magic_index_hashmap(f, magics_gen.index_to_attack_mask_map)
     f.write("\n")

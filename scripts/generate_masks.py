@@ -35,7 +35,7 @@ class MaskGenerator:
 
     def get_pawn_push_mask(self, rank, file, color):
         """Gets bitboards for forward pawn pushes, excluding captures.
-        
+
         This includes any non-diagonal pawn movement.
         """
         if color == "WHITE":

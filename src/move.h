@@ -9,7 +9,7 @@
 #ifndef OMEGAZERO_SRC_MOVE_H
 #define OMEGAZERO_SRC_MOVE_H
 
-#include "constants.h"
+const int kNA = -1;
 
 struct Move {
   bool is_ep = false;
@@ -17,7 +17,6 @@ struct Move {
   // Indicate if the move is not a castling move, queenside castling, or
   // kingside castling.
   int castling_type = kNA;
-  int end_sq;
   int moving_piece;
   int moving_player;
   // Indicate a new en passent target square when a double pawn push
@@ -25,6 +24,7 @@ struct Move {
   int new_ep_target_sq = kNA;
   int promoted_to_piece = kNA;
   int start_sq;
+  int target_sq;
 };
 
 #endif // OMEGAZERO_SRC_MOVE_H

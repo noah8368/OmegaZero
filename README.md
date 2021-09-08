@@ -24,11 +24,11 @@ to [Bradon Hsu](https://github.com/2brandonh) for designing the logo for this pr
 #### Prerequisites
 
 The included `Makefile` is designed to run on GNU/Linux machines. The [Boost library](https://www.boost.org/)
-is a requirement, and should be installed locally before compilation. 
+is a requirement, and should be installed locally before compilation.
 On Ubuntu systems, users may use the `apt-get` package manager to
 install Boost, like so:
 ```
-    sudo apt-get install libboost-all-dev
+sudo apt-get install libboost-all-dev
 ```
 
 #### User Input

@@ -1,6 +1,9 @@
-OBJECTS = build/main.o build/game.o build/board.o build/masks.o build/magics.o
 CC = g++
-FLAGS = -g -O0 -std=c++11
+FLAGS = -g -lboost_program_options -O0 -pedantic -std=c++11 -Wall -Wconversion \
+        -Werror -Wextra -Wshadow
+
+OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \
+          build/main.o build/masks.o
 
 all : build $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS)
