@@ -1,176 +1,203 @@
 /* Noah Himed
-*
-* Define a Board object, which includes both bitboard and 8x8 board
-* representations to store piece locations.
-*
-* Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
-*/
+ *
+ * Define a Board object, which includes both bitboard and 8x8 board
+ * representations to store piece locations.
+ *
+ * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
+ */
 
 #ifndef OMEGAZERO_SRC_BOARD_H_
 #define OMEGAZERO_SRC_BOARD_H_
 
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 
 #include "move.h"
 
+namespace omegazero {
+
+using std::invalid_argument;
+
 typedef uint64_t Bitboard;
 typedef uint64_t U64;
 
-enum BoardSide {
-  kQueenSide, kKingSide
+enum BoardSide : S8 { kQueenSide, kKingSide };
+enum File : S8 {
+  kFileA,
+  kFileB,
+  kFileC,
+  kFileD,
+  kFileE,
+  kFileF,
+  kFileG,
+  kFileH,
 };
-enum File {
-  kFileA, kFileB, kFileC, kFileD, kFileE, kFileF, kFileG, kFileH,
+enum NonSliderAttackMapIndex : S8 {
+  kWhitePawnPush,
+  kWhitePawnCapture,
+  kBlackPawnPush,
+  kBlackPawnCapture,
+  kKnightAttack,
+  kKingAttack,
 };
-enum NonSliderAttackMap {
-  kWhitePawnPush, kWhitePawnCapture, kBlackPawnPush,
-  kBlackPawnCapture, kKnightAttack, kKingAttack,
+enum Rank : S8 {
+  kRank1,
+  kRank2,
+  kRank3,
+  kRank4,
+  kRank5,
+  kRank6,
+  kRank7,
+  kRank8,
 };
-enum Rank {
-  kRank1, kRank2, kRank3, kRank4, kRank5, kRank6, kRank7, kRank8,
-};
-enum SliderPieceMask {
-  kBishopMoves, kRookMoves,
+enum SliderPieceMapIndex : S8 {
+  kBishopMoves,
+  kRookMoves,
 };
 // Specify the squares necessary to perform castling moves.
-enum Square {
-  kSqA1 = 0, kSqB1 = 1, kSqC1 = 2, kSqD1 = 3, kSqE1 = 4, kSqF1 = 5, kSqG1 = 6,
-  kSqH1 = 7, kSqA8 = 56, kSqB8 = 57, kSqC8 = 58, kSqD8 = 59, kSqE8 = 60,
-  kSqF8 = 61, kSqG8 = 62, kSqH8 = 63,
+enum Square : S8 {
+  kSqA1 = 0,
+  kSqB1 = 1,
+  kSqC1 = 2,
+  kSqD1 = 3,
+  kSqE1 = 4,
+  kSqF1 = 5,
+  kSqG1 = 6,
+  kSqH1 = 7,
+  kSqA8 = 56,
+  kSqB8 = 57,
+  kSqC8 = 58,
+  kSqD8 = 59,
+  kSqE8 = 60,
+  kSqF8 = 61,
+  kSqG8 = 62,
+  kSqH8 = 63,
 };
-enum Piece {
-  kPawn, kKnight, kBishop, kRook, kQueen, kKing,
+enum Piece : S8 {
+  kPawn,
+  kKnight,
+  kBishop,
+  kRook,
+  kQueen,
+  kKing,
 };
-enum Player {
-  kWhite, kBlack,
-};
-
-const int kNumBoardSides = 2;
-const int kNumFiles = 8;
-const int kNumNonSliderMasks = 6;
-const int kNumPieceTypes = 6;
-const int kNumPlayers = 2;
-const int kNumRanks = 8;
-const int kNumSliderMasks = 2;
-const int kNumSq = 64;
-
-const U64 kDebruijn64bitSeq = 0x03F79D71B4CB0A89ULL;
-
-const Bitboard kFileMasks[kNumFiles] = {
-  0X0101010101010101, 0X0202020202020202,
-  0X0404040404040404, 0X0808080808080808,
-  0X1010101010101010, 0X2020202020202020,
-  0X4040404040404040, 0X8080808080808080
-};
-const Bitboard kRankMasks[kNumRanks] = {
-  0X00000000000000FF, 0X000000000000FF00,
-  0X0000000000FF0000, 0X00000000FF000000,
-  0X000000FF00000000, 0X0000FF0000000000,
-  0X00FF000000000000, 0XFF00000000000000
+enum Player : S8 {
+  kWhite,
+  kBlack,
 };
 
-const int kBitscanForwardLookupTable[64] = {
-    0,  1, 48,  2, 57, 49, 28,  3,
-   61, 58, 50, 42, 38, 29, 17,  4,
-   62, 55, 59, 36, 53, 51, 43, 22,
-   45, 39, 33, 30, 24, 18, 12,  5,
-   63, 47, 56, 27, 60, 41, 37, 16,
-   54, 35, 52, 21, 44, 32, 23, 11,
-   46, 26, 40, 15, 34, 20, 31, 10,
-   25, 14, 19,  9, 13,  8,  7,  6
-};
+constexpr S8 kDebruijn64bitSeqRightShiftAmt = 58;
+constexpr S8 kFileMask = 7;
+constexpr S8 kNumBoardSides = 2;
+constexpr S8 kNumFiles = 8;
+constexpr S8 kNumNonSliderMaps = 6;
+constexpr S8 kNumPieceTypes = 6;
+constexpr S8 kNumPlayers = 2;
+constexpr S8 kNumRanks = 8;
+constexpr S8 kNumSliderMaps = 2;
+constexpr S8 kNumSq = 64;
+constexpr S8 kSquareRightShiftAmt = 3;
+
+constexpr U64 kDebruijn64bitSeq = 0x03F79D71B4CB0A89ULL;
+
+constexpr Bitboard kFileMaps[kNumFiles] = {
+    0X0101010101010101, 0X0202020202020202, 0X0404040404040404,
+    0X0808080808080808, 0X1010101010101010, 0X2020202020202020,
+    0X4040404040404040, 0X8080808080808080};
+constexpr Bitboard kRankMaps[kNumRanks] = {
+    0X00000000000000FF, 0X000000000000FF00, 0X0000000000FF0000,
+    0X00000000FF000000, 0X000000FF00000000, 0X0000FF0000000000,
+    0X00FF000000000000, 0XFF00000000000000};
+
+constexpr S8 kBitscanForwardLookupTable[64] = {
+    0,  1,  48, 2,  57, 49, 28, 3,  61, 58, 50, 42, 38, 29, 17, 4,
+    62, 55, 59, 36, 53, 51, 43, 22, 45, 39, 33, 30, 24, 18, 12, 5,
+    63, 47, 56, 27, 60, 41, 37, 16, 54, 35, 52, 21, 44, 32, 23, 11,
+    46, 26, 40, 15, 34, 20, 31, 10, 25, 14, 19, 9,  13, 8,  7,  6};
 // Store the length (in bits) of magic numbers for move generation.
-const int kBishopMagicLengths[kNumSq] = {
-  6, 5, 5, 5, 5, 5, 5, 6,
-  5, 5, 5, 5, 5, 5, 5, 5,
-  5, 5, 7, 7, 7, 7, 5, 5,
-  5, 5, 7, 9, 9, 7, 5, 5,
-  5, 5, 7, 9, 9, 7, 5, 5,
-  5, 5, 7, 7, 7, 7, 5, 5,
-  5, 5, 5, 5, 5, 5, 5, 5,
-  6, 5, 5, 5, 5, 5, 5, 6
-};
-const int kRookMagicLengths[kNumSq] = {
-  12, 11, 11, 11, 11, 11, 11, 12,
-  11, 10, 10, 10, 10, 10, 10, 11,
-  11, 10, 10, 10, 10, 10, 10, 11,
-  11, 10, 10, 10, 10, 10, 10, 11,
-  11, 10, 10, 10, 10, 10, 10, 11,
-  11, 10, 10, 10, 10, 10, 10, 11,
-  11, 10, 10, 10, 10, 10, 10, 11,
-  12, 11, 11, 11, 11, 11, 11, 12
-};
+const S8 kBishopMagicLengths[kNumSq] = {
+    6, 5, 5, 5, 5, 5, 5, 6, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 7, 7, 7, 7,
+    5, 5, 5, 5, 7, 9, 9, 7, 5, 5, 5, 5, 7, 9, 9, 7, 5, 5, 5, 5, 7, 7,
+    7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 5, 5, 5, 5, 5, 5, 6};
+constexpr S8 kRookMagicLengths[kNumSq] = {
+    12, 11, 11, 11, 11, 11, 11, 12, 11, 10, 10, 10, 10, 10, 10, 11,
+    11, 10, 10, 10, 10, 10, 10, 11, 11, 10, 10, 10, 10, 10, 10, 11,
+    11, 10, 10, 10, 10, 10, 10, 11, 11, 10, 10, 10, 10, 10, 10, 11,
+    11, 10, 10, 10, 10, 10, 10, 11, 12, 11, 11, 11, 11, 11, 11, 12};
 
-extern const Bitboard kNonSliderAttackMaps[kNumNonSliderMasks][kNumSq];
+extern const Bitboard kNonSliderAttackMaps[kNumNonSliderMaps][kNumSq];
 // Store all positions bishop and rook pieces can move to on an empty board,
 // excluding endpoints.
-extern const Bitboard kSliderPieceMasks[kNumSliderMasks][kNumSq];
+extern const Bitboard kSliderPieceMaps[kNumSliderMaps][kNumSq];
 // Store all positions bishop and rook pieces can move to on an empty board,
 // including endpoints.
-extern const Bitboard kUnblockedSliderAttackMaps[kNumSliderMasks][kNumSq];
+extern const Bitboard kUnblockedSliderAttackMaps[kNumSliderMaps][kNumSq];
 
-extern const U64 kMagics[kNumSliderMasks][kNumSq];
+extern const U64 kMagics[kNumSliderMaps][kNumSq];
 
 extern const std::unordered_map<U64, Bitboard> kMagicIndexToAttackMap;
 
-bool RankOnBoard(const int& rank);
-bool FileOnBoard(const int& file);
-bool SqOnBoard(const int& sq);
+auto RankOnBoard(S8 rank) -> bool;
+auto FileOnBoard(S8 file) -> bool;
+auto SqOnBoard(S8 sq) -> bool;
 
-int GetOtherPlayer(const int& player);
-int GetFileFromSq(const int& sq);
-int GetRankFromSq(const int& sq);
-int GetSqFromRankFile(const int& rank, const int& file);
+auto GetOtherPlayer(S8 player) -> S8;
+auto GetFileFromSq(S8 sq) -> S8;
+auto GetRankFromSq(S8 sq) -> S8;
+auto GetSqFromRankFile(S8 rank, S8 file) -> S8;
 // A Bitscan Forward function based on Kim Walisch's implementation
 // of the De Bruijn Bitscan Routine.
-int GetSqOfFirstPiece(const Bitboard& board);
+auto GetSqOfFirstPiece(const Bitboard& board) -> S8;
 
 class Board {
-public:
-  Board(int& player_to_move, const std::string& init_pos);
+ public:
+  Board(S8* player_to_move, const std::string& init_pos);
   Board(const Board& src);
 
-  Board& operator=(const Board& src);
+  auto operator=(const Board& src) -> Board&;
 
   // Return possible attacks a specified piece can make on all other pieces.
-  Bitboard GetAttackMap(const int& attacking_player, const int& sq,
-                        const int& attacking_piece) const;
-  Bitboard GetPiecesByType(const int& piece_type, const int& player) const;
+  auto GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
+      -> Bitboard;
+  auto GetPiecesByType(S8 piece_type, S8 player) const -> Bitboard;
 
-  bool CastlingLegal(const int& player, const int& board_side) const;
-  bool DoublePawnPushLegal(const int& player, const int& file) const;
-  bool KingInCheck(const int& player) const;
-  // Return false if the move was found to put the moving player's King in
-  // check. Return true is the board state was succesfully updated.
-  bool MakeMove(const Move& move, std::string& err_msg);
-  bool MakeMove(const Move& move);
+  auto CastlingLegal(S8 player, S8 board_side) const -> bool;
+  auto DoublePawnPushLegal(S8 player, S8 file) const -> bool;
+  auto GetCastlingRight(S8 player, S8 board_side) const -> bool;
+  auto KingInCheck(S8 player) const -> bool;
 
-  int GetCastlingRight(const int& player, const int& board_side) const;
-  int GetEpTargetSq() const;
-  int GetHalfmoveClock() const;
-  int GetPieceOnSq(const int& sq) const;
-  int GetPlayerOnSq(const int& sq) const;
+  auto GetEpTargetSq() const -> S8;
+  auto GetHalfmoveClock() const -> S8;
+  auto GetPieceOnSq(S8 sq) const -> S8;
+  auto GetPlayerOnSq(S8 sq) const -> S8;
 
   // Return an (almost) unique hash that represents the current board state.
-  U64 GetBoardHash(const int& player_to_move) const;
+  auto GetBoardHash(S8 player_to_move) const -> U64;
 
+  auto MakeMove(const Move& move) -> void;
   // Unmake the given move, assuming it was already made with MakeMove().
-  void UnmakeMove(const Move& move, int og_ep_target_sq,
-                  int og_castling_right_white_queenside,
-                  int og_castling_right_white_kingside,
-                  int og_castling_right_black_queenside,
-                  int og_castling_right_black_kingside,
-                  int og_halfmove_clock);
-private:
-  Bitboard GetAttackersToSq(const int& sq, const int& attacked_player) const;
+  auto UnmakeMove(const Move& move, S8 og_ep_target_sq,
+                  bool og_castling_right_white_queenside,
+                  bool og_castling_right_white_kingside,
+                  bool og_castling_right_black_queenside,
+                  bool og_castling_right_black_kingside, S8 og_halfmove_clock)
+      -> void;
 
-  void AddPiece(const int& piece_type, const int& player, const int& sq);
-  void CopyBoard(const Board& src);
-  void MovePiece(const int& moving_player, const int& piece,
-                 const int& start_sq, const int& target_sq,
-                 const int& promoted_to_piece = kNA);
+ private:
+  auto GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard;
+
+  auto AddPiece(S8 piece_type, S8 player, S8 sq) -> void;
+  // Copy all value of all member vars in src into current object's member vars.
+  auto CopyBoard(const Board& src) -> void;
+  // Parse a FEN string to initialize the board state.
+  auto InitBoardPos(const std::string& init_pos, S8* player_to_move) -> void;
+  auto MakeNonCastlingMove(const Move& move) -> void;
+  auto MovePiece(S8 moving_player, S8 piece, S8 start_sq, S8 target_sq,
+                 S8 promoted_to_piece = kNA) -> void;
+  auto UnmakeNonCastlingMove(const Move& move) -> void;
+  auto UpdateCastlingRights(const Move& move) -> void;
 
   // Store bitboard board representations of each type
   // of piece that are still active in the game.
@@ -185,13 +212,13 @@ private:
 
   // Keep track of the square (if it exists) an en passent move is elligible
   // to land on during a given turn.
-  int ep_target_sq_;
+  S8 ep_target_sq_;
   // Keep track of the number of moves since a pawn movement or capture to
   // enfore the Fifty Move Rule.
-  int halfmove_clock_;
+  S8 halfmove_clock_;
   // Store an 8x8 board representation.
-  int piece_layout_[kNumSq];
-  int player_layout_[kNumSq];
+  S8 piece_layout_[kNumSq];
+  S8 player_layout_[kNumSq];
 
   // Store a set of pseudo-random numbers for Zobrist Hashing.
   U64 castling_rights_rand_nums_[kNumPlayers][kNumBoardSides];
@@ -200,4 +227,95 @@ private:
   U64 black_to_move_rand_num_;
 };
 
-#endif // OMEGAZERO_SRC_BOARD_H_
+// Implement public inline non-member functions.
+
+inline auto RankOnBoard(S8 rank) -> bool {
+  return rank >= kRank1 && rank <= kRank8;
+}
+inline auto FileOnBoard(S8 file) -> bool {
+  return file >= kFileA && file <= kFileH;
+}
+inline auto SqOnBoard(S8 sq) -> bool { return sq >= kSqA1 && sq <= kSqH8; }
+
+inline auto GetOtherPlayer(S8 player) -> S8 {
+  if (player == kWhite) {
+    return kBlack;
+  }
+  if (player == kBlack) {
+    return kWhite;
+  }
+
+  throw invalid_argument("player in GetOtherPlayer()");
+}
+inline auto GetFileFromSq(S8 sq) -> S8 {
+  if (!SqOnBoard(sq)) {
+    throw invalid_argument("sq in GetFileFromSq()");
+  }
+
+  return sq & kFileMask;
+}
+inline auto GetRankFromSq(S8 sq) -> S8 {
+  if (!SqOnBoard(sq)) {
+    throw invalid_argument("sq in GetRankFromSq()");
+  }
+
+  return static_cast<S8>(sq >> kSquareRightShiftAmt);
+}
+inline auto GetSqFromRankFile(S8 rank, S8 file) -> S8 {
+  if (!RankOnBoard(rank)) {
+    throw invalid_argument("rank in GetSqFromRankFile()");
+  }
+  if (!FileOnBoard(file)) {
+    throw invalid_argument("file in GetFileFromSq()");
+  }
+
+  return static_cast<S8>(rank * kNumFiles + file);
+}
+inline auto GetSqOfFirstPiece(const Bitboard& board) -> S8 {
+  if (board == 0X0) {
+    throw invalid_argument("board in GetSqOfFirstPiece()");
+  }
+
+  S8 bitscan_index = static_cast<S8>(((board & -board) * kDebruijn64bitSeq) >>
+                                     kDebruijn64bitSeqRightShiftAmt);
+  return kBitscanForwardLookupTable[bitscan_index];
+}
+
+// Implement inline member functions.
+
+inline auto Board::GetCastlingRight(S8 player, S8 board_side) const -> bool {
+  if (player != kWhite && player != kBlack) {
+    throw invalid_argument("player in Board::GetCastlingRight()");
+  }
+  if (board_side != kQueenSide && board_side != kKingSide) {
+    throw invalid_argument("board_side in Board::GetCastlingRight()");
+  }
+
+  return castling_rights_[player][board_side];
+}
+inline auto Board::KingInCheck(S8 player) const -> bool {
+  if (player != kWhite && player != kBlack) {
+    throw invalid_argument("player in Board::KingInCheck()");
+  }
+
+  Bitboard king_board = pieces_[kKing] & player_pieces_[player];
+  S8 king_sq = GetSqOfFirstPiece(king_board);
+  return static_cast<bool>(GetAttackersToSq(king_sq, player));
+}
+
+inline auto Board::GetEpTargetSq() const -> S8 { return ep_target_sq_; }
+inline auto Board::GetHalfmoveClock() const -> S8 { return halfmove_clock_; }
+inline auto Board::GetPieceOnSq(S8 sq) const -> S8 {
+  if (!SqOnBoard(sq)) {
+    throw invalid_argument("sq in Board::GetPieceOnSq()");
+  }
+
+  return piece_layout_[sq];
+}
+inline auto Board::GetPlayerOnSq(S8 sq) const -> S8 {
+  return player_layout_[sq];
+}
+
+}  // namespace omegazero
+
+#endif  // OMEGAZERO_SRC_BOARD_H_

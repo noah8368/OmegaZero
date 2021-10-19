@@ -164,14 +164,17 @@ if __name__ == "__main__":
                     + "\n* Define the bit masks used to denote the positions "
                     + "pieces can move \n* to in the bitboard representation "
                     + "of a chess board.\n*\n* Licensed under MIT License. "
-                    + "Terms and conditions enclosed in \"LICENSE.txt\".\n*/"
-                    + "\n\n#include \"board.h\"\n#include \"constants.h\"\n\n")
+                    + "Terms and conditions enclosed in \"LICENSE.txt\".\n"
+                    + "*/\n\n")
     mask_gen = MaskGenerator()
     f = open(os.path.join(os.getcwd(), "src/masks.cc"), 'w')
     f.write(boiler_plate)
 
+    f.write("#include \"board.h\"\n\n")
+    f.write("namespace omegazero {\n\n")
+
     f.write("const Bitboard "
-            + "kNonSliderAttackMasks[kNumNonSliderMasks][kNumSquares] = {")
+            + "kNonSliderAttackMaps[kNumNonSliderMaps][kNumSq] = {")
     write_mask_set(f, "white pawn push attack masks",
                    mask_gen.get_pawn_push_mask, ["WHITE"])
     f.write(",")
@@ -198,7 +201,7 @@ if __name__ == "__main__":
     f.write("\n};")
 
     f.write("\n\nconst Bitboard "
-            + "kUnblockedSliderAttackMasks[kNumSliderMasks][kNumSquares] = {")
+            + "kUnblockedSliderAttackMaps[kNumSliderMaps][kNumSq] = {")
     bishop_moves = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
     write_mask_set(f, "bishop piece masks",
                    mask_gen.get_slider_piece_mask, [bishop_moves, True])
@@ -209,7 +212,7 @@ if __name__ == "__main__":
     f.write("\n};\n")
 
     f.write("\n\nconst Bitboard "
-            + "kSliderPieceMasks[kNumSliderMasks][kNumSquares] = {")
+            + "kSliderPieceMaps[kNumSliderMaps][kNumSq] = {")
     bishop_moves = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
     write_mask_set(f, "bishop piece masks",
                    mask_gen.get_slider_piece_mask, [bishop_moves])
@@ -217,5 +220,7 @@ if __name__ == "__main__":
     rook_moves = [(0, 1), (1, 0), (0, -1), (-1, 0)]
     write_mask_set(f, "rook piece masks",
                    mask_gen.get_slider_piece_mask, [rook_moves])
-    f.write("\n};\n")
+    f.write("\n};\n\n")
+
+    f.write("} // namespace omegazero\n")
     f.close()

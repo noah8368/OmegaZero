@@ -6,18 +6,25 @@
 
 ### Project Summary
 
-OmegaZero is a terminal-based chess engine which allows a user to play against
-an AI. The engine uses a board representation that takes advantage of both
-bitboards and an 8x8 representation, and uses the magic bitboard technique
-to implement a psuedo-legal move generator. Search and evaluation is done by
-traversing a tree and using an evaluation function which takes into account
-material advantage and piece position on each board state. Alpha-beta pruning
-and a transposition table are the main optimizations made to this process.
+OmegaZero is an in-progress terminal-based chess engine which will allow a user
+to play against an AI. The name OmegaZero is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), a program
+developed by [DeepMind](https://deepmind.com/) that was used to create one of the world's
+best Chess engines. The [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during
+development. Credit goes to [Bradon Hsu](https://github.com/2brandonh) for designing the
+logo for this project.
 
-The name OmegaZero is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), a program developed by
-[DeepMind](https://deepmind.com/) that was used to create one of the world's best Chess engines. The
-[Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during development. Credit goes
-to [Bradon Hsu](https://github.com/2brandonh) for designing the logo for this project.
+### Status: In Progress
+
+The internal board representation for the engine is complete, allowing two
+players to play a legal game of chess between each other. All rules, including 
+the Fifty Move Rule, castling rights, and En Passent elligibility are enforced.
+At this point, however, the Engine does not have the ability to detect a
+checkmate, nor the ability to generate its own moves.
+
+Next steps in the project include debugging the move generation function,
+allowing the engine to generate a legal list of moves given a board state. This
+will allow checkmate detection and make possible the generation of a search
+tree of possible game to be searched for ideal moves.
 
 ### Usage
 
@@ -32,6 +39,8 @@ sudo apt-get install libboost-all-dev
 ```
 
 #### User Input
+
+**Playing a Game**
 
 The format used to denote entered moves is based around [FIDE standard algebraic
 notation](https://www.chessprogramming.org/Algebraic_Chess_Notation#Standard_Algebraic_Notation_.28SAN.29). The only exception to FIDE notation is that `e.p.` **must** immediately
@@ -52,6 +61,19 @@ to avoid ambiguity in a movement command. Some valid example moves are
  - Kingside castle: `0-0`
 
 To resign, a user must enter `r` on their turn.
+
+**Testing**
+
+To print out the [Perft](https://www.chessprogramming.org/Perft) results for engine. Invoke the program as follows:
+```
+build/OmegaZero -i [POSITION] -t [DEPTH]
+```
+`[POSITION]` is a [FEN](https://www.chessprogramming.org/Forsyth-Edwards_Notation) formatted string denoting the intial position to
+start counting nodes from in the search tree; not providing this will cause the
+program to default to the standard initial position in a chess game. 
+
+`[DEPTH]` is a positive integer denoting the number of levels to generate in
+the search tree.
 
 ### Implementation
 

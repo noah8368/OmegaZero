@@ -1,6 +1,8 @@
 CC = g++
-FLAGS = -g -lboost_program_options -O0 -pedantic -std=c++11 -Wall -Wconversion \
-        -Werror -Wextra -Wshadow
+FLAGS = -D_GLIBCXX_PARALLEL -g -fno-signed-zeros -fno-trapping-math -fopenmp \
+		-frename-registers -funroll-loops -lboost_program_options \
+		-march=native -Ofast -pedantic -std=c++11 -Wall -Wconversion -Werror \
+		-Wextra -Wshadow
 
 OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \
           build/main.o build/masks.o

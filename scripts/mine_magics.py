@@ -192,12 +192,15 @@ if __name__ == "__main__":
                     + "generate attack masks \n* for sliding pieces "
                     + "(bishop, rook, and queen).\n*\n* Licensed under "
                     + "MIT License. Terms and conditions enclosed in "
-                    + "\"LICENSE.txt\".\n*/\n\n#include \"board.h\""
-                    + "\n#include \"constants.h\"\n\n#include <cstdint>"
-                    + "\n#include <unordered_map>\n\n")
+                    + "\"LICENSE.txt\".\n*/\n\n")
     f = open(os.path.join(os.getcwd(), "src/magics.cc"), 'w')
     f.write(boiler_plate)
-    f.write("const U64 kMagics[kNumSliderMasks][kNumSquares] = {")
+
+    f.write("#include \"board.h\"\n\n#include <cstdint>"
+            + "\n#include <unordered_map>\n\n")
+    f.write("namespace omegazero {\n\n")
+
+    f.write("const U64 kMagics[kNumSliderMaps][kNumSq] = {")
     write_magics(f, "bishop", magics_gen.bishop_magics)
     f.write(",\n")
     write_magics(f, "rook", magics_gen.rook_magics)
@@ -205,5 +208,7 @@ if __name__ == "__main__":
     f.write("\n\nconst std::unordered_map<U64, Bitboard> "
             + "kMagicIndexToAttackMap = {\n")
     write_magic_index_hashmap(f, magics_gen.index_to_attack_mask_map)
-    f.write("\n")
+    f.write("\n\n")
+
+    f.write("} // namespace omegazero\n")
     f.close()
