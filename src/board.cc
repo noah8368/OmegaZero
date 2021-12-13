@@ -25,12 +25,14 @@ using std::string;
 
 typedef boost::multiprecision::uint128_t U128;
 
-Board::Board(S8* player_to_move, const string& init_pos) {
+Board::Board(S8& player_to_move, const string& init_pos) {
   for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
     pieces_[piece_type] = 0ULL;
   }
   for (S8 player = kWhite; player <= kBlack; ++player) {
     player_pieces_[player] = 0ULL;
+    // Initialize all castling rights to false before parsing the FEN string to
+    // set the board, which may reset some castling rights to true.
     for (S8 board_side = kQueenSide; board_side <= kKingSide; ++board_side) {
       castling_rights_[player][board_side] = false;
       castling_status_[player][board_side] = false;
@@ -39,26 +41,10 @@ Board::Board(S8* player_to_move, const string& init_pos) {
   ep_target_sq_ = kNA;
   halfmove_clock_ = kNA;
 
+  // Set the piece positions, castling rights, and player to move.
   InitBoardPos(init_pos, player_to_move);
 
-  // Initialize the Mersenne Twister 64 bit pseudo-random number generator.
-  U64 seed = std::chrono::system_clock::now().time_since_epoch().count();
-  std::mt19937_64 rand_num_gen(seed);
-  // Generate a set of random numbers for Zobrist Hashing.
-  for (S8 player = kWhite; player < kNumPlayers; ++player) {
-    for (S8 board_side = kQueenSide; board_side <= kKingSide; ++board_side) {
-      castling_rights_rand_nums_[player][board_side] = rand_num_gen();
-    }
-  }
-  for (S8 file = kFileA; file <= kFileH; ++file) {
-    ep_file_rand_nums_[file] = rand_num_gen();
-  }
-  for (S8 piece = kPawn; piece <= kKing; ++piece) {
-    for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
-      piece_rand_nums_[piece][sq] = rand_num_gen();
-    }
-  }
-  black_to_move_rand_num_ = rand_num_gen();
+  board_hash_ = InitBoardHash(player_to_move);
 }
 Board::Board(const Board& src) { CopyBoard(src); }
 
@@ -85,7 +71,7 @@ auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
       if (attacking_player == kWhite) {
         capture_attacks = kNonSliderAttackMaps[kWhitePawnCapture][sq];
         push_attacks = kNonSliderAttackMaps[kWhitePawnPush][sq];
-      } else if (attacking_player == kBlack) {
+      } else {
         capture_attacks = kNonSliderAttackMaps[kBlackPawnCapture][sq];
         push_attacks = kNonSliderAttackMaps[kBlackPawnPush][sq];
       }
@@ -216,42 +202,6 @@ auto Board::DoublePawnPushLegal(S8 player, S8 file) const -> bool {
   throw invalid_argument("player in Board::DoublePawnPushLegal()");
 }
 
-// TODO: Change this to update every move instead of recomputing the hash
-//       every time a move is made.
-auto Board::GetBoardHash(S8 player_to_move) const -> U64 {
-  if (player_to_move != kWhite && player_to_move != kBlack) {
-    throw invalid_argument("player_to_move in Board::GetBoardHash()");
-  }
-
-  // Use the Zobrist Hashing algorithm to compute a unique hash of the board
-  // state. This involves hashing all stored pseudo-random numbers applicable
-  // to a given game position. Note that there is a small chance of collisions
-  // which is mostly unavoidable.
-  U64 board_hash = 0;
-  for (S8 player = kWhite; player <= kBlack; ++player) {
-    for (S8 board_side = kQueenSide; board_side <= kKingSide; ++board_side) {
-      if (castling_status_[player][board_side]) {
-        board_hash ^= castling_rights_rand_nums_[player][board_side];
-      }
-    }
-  }
-  if (ep_target_sq_ != kNA) {
-    S8 ep_target_file = GetFileFromSq(ep_target_sq_);
-    board_hash ^= ep_file_rand_nums_[ep_target_file];
-  }
-  S8 piece_type;
-  for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
-    piece_type = piece_layout_[sq];
-    if (piece_type != kNA) {
-      board_hash ^= piece_rand_nums_[piece_type][sq];
-    }
-  }
-  if (player_to_move == kBlack) {
-    board_hash ^= black_to_move_rand_num_;
-  }
-  return board_hash;
-}
-
 auto Board::MakeMove(const Move& move) -> void {
   if (move.castling_type == kNA) {
     MakeNonCastlingMove(move);
@@ -275,47 +225,48 @@ auto Board::MakeMove(const Move& move) -> void {
     }
   }
 
-  S8 og_ep_target_sq = ep_target_sq_;
+  // Undo the move if it puts the king in check.
+  if (KingInCheck(move.moving_player)) {
+    UnmakeMove(move);
+    throw BadMove("move leaves king in check");
+  }
+
+  // Update the en passent target square and castling rights along with the
+  // board hash.
+  S8 prev_ep_target_file =
+      (ep_target_sq_ == kNA) ? kNA : GetFileFromSq(ep_target_sq_);
   ep_target_sq_ = move.new_ep_target_sq;
-  // Update castling rights and keep track of which castling moves
-  // have been made.
-  bool og_castling_right_white_queenside = castling_rights_[kWhite][kQueenSide];
-  bool og_castling_right_white_kingside = castling_rights_[kWhite][kKingSide];
-  bool og_castling_right_black_queenside = castling_rights_[kBlack][kQueenSide];
-  bool og_castling_right_black_kingside = castling_rights_[kBlack][kKingSide];
+  S8 curr_ep_target_file =
+      (ep_target_sq_ == kNA) ? kNA : GetFileFromSq(ep_target_sq_);
+  if (prev_ep_target_file != curr_ep_target_file) {
+    if (prev_ep_target_file != kNA) {
+      board_hash_ ^= ep_file_rand_nums_[prev_ep_target_file];
+    }
+    if (curr_ep_target_file != kNA) {
+      board_hash_ ^= ep_file_rand_nums_[curr_ep_target_file];
+    }
+  }
   UpdateCastlingRights(move);
 
   // Reset the halfmove clock if a pawn was moved or if a move resulted in a
   // capture.
-  S8 og_halfmove_clock = halfmove_clock_;
   if (move.captured_piece != kNA || move.moving_piece == kPawn) {
     halfmove_clock_ = 0;
   } else {
     halfmove_clock_++;
   }
 
-  // Undo the move if it puts the king in check.
-  if (KingInCheck(move.moving_player)) {
-    UnmakeMove(move, og_ep_target_sq, og_castling_right_white_queenside,
-               og_castling_right_white_kingside,
-               og_castling_right_black_queenside,
-               og_castling_right_black_kingside, og_halfmove_clock);
-    throw BadMove("move leaves king in check");
-  }
+  // Update the board hash to reflect player turnover.
+  board_hash_ ^= black_to_move_rand_num_;
 }
 // Assume the passed move has been made use MakeMove(). Calling UnmakeMove()
 // on a move that wasn't already made will result in undefined behavior.
-auto Board::UnmakeMove(const Move& move, S8 og_ep_target_sq,
-                       bool og_castling_right_white_queenside,
-                       bool og_castling_right_white_kingside,
-                       bool og_castling_right_black_queenside,
-                       bool og_castling_right_black_kingside,
-                       S8 og_halfmove_clock) -> void {
-  // Undo all non-castling moves.
+auto Board::UnmakeMove(const Move& move) -> void {
   if (move.castling_type == kNA) {
+    // Undo all non-castling moves.
     UnmakeNonCastlingMove(move);
-    // Undo queenside castling moves.
   } else if (move.castling_type == kQueenSide) {
+    // Undo queenside castling moves.
     if (move.moving_player == kWhite) {
       MovePiece(kWhite, kRook, kSqD1, kSqA1);
       MovePiece(kWhite, kKing, kSqC1, kSqE1);
@@ -323,8 +274,8 @@ auto Board::UnmakeMove(const Move& move, S8 og_ep_target_sq,
       MovePiece(kBlack, kRook, kSqD8, kSqA8);
       MovePiece(kBlack, kKing, kSqC8, kSqE8);
     }
-    // Undo kingside castling moves.
   } else if (move.castling_type == kKingSide) {
+    // Undo kingside castling moves.
     if (move.moving_player == kWhite) {
       MovePiece(kWhite, kRook, kSqF1, kSqH1);
       MovePiece(kWhite, kKing, kSqG1, kSqE1);
@@ -333,17 +284,6 @@ auto Board::UnmakeMove(const Move& move, S8 og_ep_target_sq,
       MovePiece(kBlack, kKing, kSqG8, kSqE8);
     }
   }
-  // Reset castling rights, which castling moves have been made,
-  // and the halfmove clock.
-  ep_target_sq_ = og_ep_target_sq;
-  if (move.castling_type != kNA) {
-    castling_status_[move.moving_player][move.castling_type] = false;
-  }
-  castling_rights_[kWhite][kQueenSide] = og_castling_right_white_queenside;
-  castling_rights_[kWhite][kKingSide] = og_castling_right_white_kingside;
-  castling_rights_[kBlack][kQueenSide] = og_castling_right_black_queenside;
-  castling_rights_[kWhite][kKingSide] = og_castling_right_black_kingside;
-  halfmove_clock_ = og_halfmove_clock;
 }
 
 // Implemement private member functions.
@@ -358,7 +298,7 @@ auto Board::GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard {
   // Capture only diagonal squares to sq in the direction of movement.
   if (attacked_player == kWhite) {
     potential_pawn_attacks = kNonSliderAttackMaps[kWhitePawnCapture][sq];
-  } else if (attacked_player == kBlack) {
+  } else {
     potential_pawn_attacks = kNonSliderAttackMaps[kBlackPawnCapture][sq];
   }
   // Compute the union (bitwise OR) of all pieces of each type that could
@@ -377,6 +317,51 @@ auto Board::GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard {
           GetPiecesByType(kQueen, attacking_player)) |
          (GetAttackMap(attacked_player, sq, kKing) &
           GetPiecesByType(kKing, attacking_player));
+}
+
+auto Board::InitBoardHash(S8 player_to_move) -> U64 {
+  board_hash_ = 0X0;
+  // Initialize the Mersenne Twister 64 bit pseudo-random number generator.
+  U64 seed = std::chrono::system_clock::now().time_since_epoch().count();
+  std::mt19937_64 rand_num_gen(seed);
+  // Generate a set of random numbers for Zobrist Hashing.
+  for (S8 player = kWhite; player < kNumPlayers; ++player) {
+    for (S8 board_side = kQueenSide; board_side <= kKingSide; ++board_side) {
+      castling_rights_rand_nums_[player][board_side] = rand_num_gen();
+      // Update the hash using current castling rights.
+      if (castling_status_[player][board_side]) {
+        board_hash_ ^= castling_rights_rand_nums_[player][board_side];
+      }
+    }
+  }
+
+  for (S8 file = kFileA; file <= kFileH; ++file) {
+    ep_file_rand_nums_[file] = rand_num_gen();
+  }
+  // Update the hash using the current en passent target square.
+  if (ep_target_sq_ != kNA) {
+    S8 ep_target_file = GetFileFromSq(ep_target_sq_);
+    board_hash_ ^= ep_file_rand_nums_[ep_target_file];
+  }
+
+  S8 piece_type;
+  for (S8 piece = kPawn; piece <= kKing; ++piece) {
+    for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
+      piece_rand_nums_[piece][sq] = rand_num_gen();
+      // Update the hash using the current piece placement.
+      piece_type = piece_layout_[sq];
+      if (piece_type != kNA) {
+        board_hash_ ^= piece_rand_nums_[piece_type][sq];
+      }
+    }
+  }
+
+  black_to_move_rand_num_ = rand_num_gen();
+  // Update the hash using the side to move.
+  if (player_to_move == kBlack) {
+    board_hash_ ^= black_to_move_rand_num_;
+  }
+  return board_hash_;
 }
 
 auto Board::AddPiece(S8 piece_type, S8 player, S8 sq) -> void {
@@ -400,6 +385,7 @@ auto Board::AddPiece(S8 piece_type, S8 player, S8 sq) -> void {
 }
 
 auto Board::CopyBoard(const Board& src) -> void {
+  board_hash_ = src.board_hash_;
   for (S8 piece = kPawn; piece <= kKing; ++piece) {
     pieces_[piece] = src.pieces_[piece];
 
@@ -435,7 +421,7 @@ auto Board::CopyBoard(const Board& src) -> void {
   black_to_move_rand_num_ = src.black_to_move_rand_num_;
 }
 
-auto Board::InitBoardPos(const std::string& init_pos, S8* player_to_move)
+auto Board::InitBoardPos(const std::string& init_pos, S8& player_to_move)
     -> void {
   S8 FEN_field = 0;
   S8 current_sq = kSqA8;
@@ -508,9 +494,9 @@ auto Board::InitBoardPos(const std::string& init_pos, S8* player_to_move)
     } else if (FEN_field == 1) {
       // Record the player to move.
       if (ch == 'w') {
-        *player_to_move = kWhite;
+        player_to_move = kWhite;
       } else if (ch == 'b') {
-        *player_to_move = kBlack;
+        player_to_move = kBlack;
       } else {
         throw invalid_argument("init_pos in Board::Board()");
       }
@@ -595,10 +581,14 @@ auto Board::MakeNonCastlingMove(const Move& move) -> void {
       Bitboard ep_capture_mask = ~(1ULL << ep_capture_sq);
       pieces_[kPawn] &= ep_capture_mask;
       player_pieces_[other_player] &= ep_capture_mask;
+      // Update the board hash to reflect piece removal.
+      board_hash_ ^= piece_rand_nums_[kPawn][ep_capture_sq];
     } else {
       Bitboard piece_capture_mask = ~(1ULL << move.target_sq);
       pieces_[move.captured_piece] &= piece_capture_mask;
       player_pieces_[other_player] &= piece_capture_mask;
+      // Update the board hash to reflect piece removal.
+      board_hash_ ^= piece_rand_nums_[kPawn][move.target_sq];
     }
   }
   MovePiece(move.moving_player, move.moving_piece, move.start_sq,
@@ -626,16 +616,21 @@ auto Board::MovePiece(S8 moving_player, S8 piece, S8 start_sq, S8 target_sq,
   Bitboard rm_piece_mask = ~(1ULL << start_sq);
   pieces_[piece] &= rm_piece_mask;
   player_pieces_[moving_player] &= rm_piece_mask;
+  // Update the board hash to reflect piece removal.
+  board_hash_ ^= piece_rand_nums_[piece][start_sq];
 
-  // Add the selected piece back at its end position on the board.
+  // Add the selected piece back at its target position on the board and update
+  // the board hash to reflect piece addition.
   Bitboard new_piece_pos_mask = 1ULL << target_sq;
   if (promoted_to_piece == kNA) {
     pieces_[piece] |= new_piece_pos_mask;
     piece_layout_[target_sq] = piece;
-    // Add a piece back as the type it promotes to if move is a pawn promotion.
+    board_hash_ ^= piece_rand_nums_[piece][target_sq];
   } else {
+    // Add a piece back as the type it promotes to if move is a pawn promotion.
     pieces_[promoted_to_piece] |= new_piece_pos_mask;
     piece_layout_[target_sq] = promoted_to_piece;
+    board_hash_ ^= piece_rand_nums_[promoted_to_piece][target_sq];
   }
   player_layout_[target_sq] = moving_player;
   player_pieces_[moving_player] |= new_piece_pos_mask;
@@ -655,6 +650,8 @@ auto Board::UnmakeNonCastlingMove(const Move& move) -> void {
     player_pieces_[move.moving_player] &= piece_promotion_rm_mask;
     piece_layout_[move.target_sq] = kNA;
     player_layout_[move.target_sq] = kNA;
+    // Update the board hash to reflect piece removal.
+    board_hash_ ^= piece_rand_nums_[move.promoted_to_piece][move.target_sq];
 
     // Add the original pawn back to its start position.
     Bitboard og_piece_pos_mask = 1ULL << move.start_sq;
@@ -662,6 +659,8 @@ auto Board::UnmakeNonCastlingMove(const Move& move) -> void {
     player_pieces_[move.moving_player] |= og_piece_pos_mask;
     piece_layout_[move.start_sq] = kPawn;
     player_layout_[move.start_sq] = move.moving_player;
+    // Update the board hash to reflect piece addition.
+    board_hash_ ^= piece_rand_nums_[kPawn][move.start_sq];
   }
   // Place a captured piece back onto the board.
   if (move.captured_piece != kNA) {
@@ -681,21 +680,36 @@ auto Board::UnmakeNonCastlingMove(const Move& move) -> void {
       Bitboard undo_ep_capture_mask = 1ULL << ep_capture_sq;
       pieces_[kPawn] |= undo_ep_capture_mask;
       player_pieces_[other_player] |= undo_ep_capture_mask;
+      // Update the board hash to reflect piece addition.
+      board_hash_ ^= piece_rand_nums_[kPawn][ep_capture_sq];
     } else {
       Bitboard undo_capture_mask = 1ULL << move.target_sq;
       pieces_[move.captured_piece] |= undo_capture_mask;
       player_pieces_[other_player] |= undo_capture_mask;
+      // Update the board hash to reflect piece addition.
+      board_hash_ ^= piece_rand_nums_[move.captured_piece][move.target_sq];
     }
   }
 }
 
 auto Board::UpdateCastlingRights(const Move& move) -> void {
   if (move.castling_type != kNA) {
+    // Revoke castling rights after castling. Assume the appropriate castling
+    // rights were set to true before this.
     castling_status_[move.moving_player][move.castling_type] = true;
     castling_rights_[move.moving_player][move.castling_type] = false;
+    board_hash_ ^=
+        castling_rights_rand_nums_[move.moving_player][move.castling_type];
   } else if (move.moving_piece == kKing) {
-    castling_rights_[move.moving_player][kQueenSide] = false;
-    castling_rights_[move.moving_player][kKingSide] = false;
+    // Revoke all castling rights for a player after moving the king.
+    if (castling_rights_[move.moving_player][kQueenSide]) {
+      castling_rights_[move.moving_player][kQueenSide] = false;
+      board_hash_ ^= castling_rights_rand_nums_[move.moving_player][kQueenSide];
+    }
+    if (castling_rights_[move.moving_player][kKingSide]) {
+      castling_rights_[move.moving_player][kKingSide] = false;
+      board_hash_ ^= castling_rights_rand_nums_[move.moving_player][kKingSide];
+    }
   } else if (move.moving_piece == kRook) {
     S8 start_rank = GetRankFromSq(move.start_sq);
     S8 start_file = GetFileFromSq(move.start_sq);
@@ -707,9 +721,13 @@ auto Board::UpdateCastlingRights(const Move& move) -> void {
       if (start_file == kFileA &&
           castling_rights_[move.moving_player][kQueenSide]) {
         castling_rights_[move.moving_player][kQueenSide] = false;
+        board_hash_ ^=
+            castling_rights_rand_nums_[move.moving_player][kQueenSide];
       } else if (start_file == kFileH &&
                  castling_rights_[move.moving_player][kKingSide]) {
         castling_rights_[move.moving_player][kKingSide] = false;
+        board_hash_ ^=
+            castling_rights_rand_nums_[move.moving_player][kKingSide];
       }
     }
   } else if (move.captured_piece == kRook) {
@@ -717,16 +735,20 @@ auto Board::UpdateCastlingRights(const Move& move) -> void {
     if (move.moving_player == kWhite) {
       if (move.target_sq == kSqA8 && castling_rights_[kBlack][kQueenSide]) {
         castling_rights_[kBlack][kQueenSide] = false;
+        board_hash_ ^= castling_rights_rand_nums_[kBlack][kKingSide];
       } else if (move.target_sq == kSqH8 &&
                  castling_rights_[kBlack][kKingSide]) {
         castling_rights_[kBlack][kKingSide] = false;
+        board_hash_ ^= castling_rights_rand_nums_[kBlack][kKingSide];
       }
     } else if (move.moving_player == kBlack) {
       if (move.target_sq == kSqA1 && castling_rights_[kWhite][kQueenSide]) {
         castling_rights_[kWhite][kQueenSide] = false;
+        board_hash_ ^= castling_rights_rand_nums_[kWhite][kQueenSide];
       } else if (move.target_sq == kSqH1 &&
                  castling_rights_[kWhite][kKingSide]) {
         castling_rights_[kWhite][kKingSide] = false;
+        board_hash_ ^= castling_rights_rand_nums_[kWhite][kKingSide];
       }
     }
   }

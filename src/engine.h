@@ -24,11 +24,11 @@ class Engine {
 
  private:
   auto AddCastlingMoves(S8 moving_player, const Board& board,
-                        std::vector<Move>* move_list) const -> void;
+                        std::vector<Move>& move_list) const -> void;
   auto AddEpMoves(S8 moving_player, S8 other_player, const Board& board,
-                  std::vector<Move>* move_list) const -> void;
-  auto AddMovesForPiece(Bitboard* attack_map, const Board& board,
-                        std::vector<Move>* move_list, S8 other_player,
+                  std::vector<Move>& move_list) const -> void;
+  auto AddMovesForPiece(Bitboard& attack_map, const Board& board,
+                        std::vector<Move>& move_list, S8 other_player,
                         S8 start_sq, S8 moving_piece, S8 moving_player) const
       -> void;
 };

@@ -27,7 +27,11 @@ using std::string;
 constexpr S8 kHalfmoveClockLimit = 75;
 constexpr S8 kMaxPerftDepth = 14;
 
+auto OneSqSet(const Bitboard& board) -> bool;
+
 auto GetPlayerStr(S8 player) -> std::string;
+
+auto GetPieceType(char piece_ch) -> S8;
 
 class Game {
  public:
@@ -43,21 +47,21 @@ class Game {
   auto Play() -> void;
 
  private:
-  // Parse algebraic notation denoting a chess move, return if the move is
-  // peudo-legal, and construct a corresponding Move struct.
+  // Construct a Move struct from a user command.
   auto ParseMoveCmd(const std::string& user_cmd) -> Move;
 
   auto GetPerftMoveStr(const Move& move) const -> std::string;
 
-  auto AddStartSqToMove(Move* move, S8 other_player, S8 start_rank,
-                        S8 start_file, S8 target_rank, S8 target_file,
+  auto AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
+                        S8 target_rank, S8 target_file,
                         bool capture_indicated) const -> void;
-  // Parse the command to check that it's formatted correctly.
-  auto CheckCmdFormat(const std::string& user_cmd, Move* move, S8* start_rank,
-                      S8* start_file, S8* target_rank, S8* target_file,
-                      bool* capture_indicated) -> void;
   auto CheckGameStatus() -> void;
   auto DisplayBoard() const -> void;
+  auto CheckMove(Move& move, S8 start_rank, S8 start_file, S8 target_rank,
+                 S8 target_file, bool capture_indicated) -> void;
+  auto InterpAlgNotation(const std::string& user_cmd, Move& move,
+                         S8& start_rank, S8& start_file, S8& target_rank,
+                         S8& target_file, bool& capture_indicated) -> void;
 
   Board board_;
 
@@ -72,10 +76,14 @@ class Game {
   std::string piece_symbols_[kNumPlayers][kNumPieceTypes];
 
   // Keep track of the number of times positions have occured during a game.
-  std::unordered_map<U64, S8> pos_rep_table_;
+  std::unordered_map<U64, S8> transposition_table_;
 };
 
 // Implement inline non-member functions.
+
+inline auto OneSqSet(const Bitboard& board) -> bool {
+  return board && !static_cast<bool>(board & (board - 1));
+}
 
 inline auto GetPlayerStr(S8 player) -> string {
   if (player == kWhite) {

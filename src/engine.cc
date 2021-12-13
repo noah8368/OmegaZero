@@ -32,14 +32,14 @@ auto Engine::GenerateMoves(S8 moving_player, const Board& board) const
         board.GetAttackMap(moving_player, start_sq, moving_piece);
     // Remove all squares in the attack map occupied by friendly pieces.
     attack_map &= rm_friendly_pieces_mask;
-    AddMovesForPiece(&attack_map, board, &move_list, other_player, start_sq,
+    AddMovesForPiece(attack_map, board, move_list, other_player, start_sq,
                      moving_piece, moving_player);
     // Remove the piece from the map of all available moving pieces.
     moving_pieces &= moving_pieces - 1;
   }
 
-  AddCastlingMoves(moving_player, board, &move_list);
-  AddEpMoves(moving_player, other_player, board, &move_list);
+  AddCastlingMoves(moving_player, board, move_list);
+  AddEpMoves(moving_player, other_player, board, move_list);
 
   return move_list;
 }
@@ -47,21 +47,21 @@ auto Engine::GenerateMoves(S8 moving_player, const Board& board) const
 // Implement private member functions.
 
 auto Engine::AddCastlingMoves(S8 moving_player, const Board& board,
-                              std::vector<Move>* move_list) const -> void {
+                              std::vector<Move>& move_list) const -> void {
   if (board.CastlingLegal(moving_player, kQueenSide)) {
     Move queenside_castle;
     queenside_castle.castling_type = kQueenSide;
-    move_list->push_back(queenside_castle);
+    move_list.push_back(queenside_castle);
   }
   if (board.CastlingLegal(moving_player, kKingSide)) {
     Move kingside_castle;
     kingside_castle.castling_type = kKingSide;
-    move_list->push_back(kingside_castle);
+    move_list.push_back(kingside_castle);
   }
 }
 
 auto Engine::AddEpMoves(S8 moving_player, S8 other_player, const Board& board,
-                        std::vector<Move>* move_list) const -> void {
+                        std::vector<Move>& move_list) const -> void {
   S8 ep_target_sq = board.GetEpTargetSq();
   if (ep_target_sq != kNA) {
     // Get the squares pawns can move from onto the en passent target square.
@@ -80,7 +80,7 @@ auto Engine::AddEpMoves(S8 moving_player, S8 other_player, const Board& board,
       // one pawn elligible to en passent.
       if (!(attack_map & (attack_map - 1))) {
         ep.start_sq = GetSqOfFirstPiece(attack_map);
-        move_list->push_back(ep);
+        move_list.push_back(ep);
         // Assume two pawns are elligible to en passent in this case.
       } else {
         S8 ep_rank = kNA;
@@ -94,28 +94,28 @@ auto Engine::AddEpMoves(S8 moving_player, S8 other_player, const Board& board,
         // Compute the start square for the leftmost en passent move.
         ep_file = static_cast<S8>(ep_target_sq_file - 1);
         ep.start_sq = GetSqFromRankFile(ep_rank, ep_file);
-        move_list->push_back(ep);
+        move_list.push_back(ep);
         // Compute the start square for the rightmost en passent move.
         ep_file = static_cast<S8>(ep_target_sq_file + 1);
         ep.start_sq = GetSqFromRankFile(ep_rank, ep_file);
-        move_list->push_back(ep);
+        move_list.push_back(ep);
       }
     }
   }
 }
 
-auto Engine::AddMovesForPiece(Bitboard* attack_map, const Board& board,
-                              std::vector<Move>* move_list, S8 other_player,
+auto Engine::AddMovesForPiece(Bitboard& attack_map, const Board& board,
+                              std::vector<Move>& move_list, S8 other_player,
                               S8 start_sq, S8 moving_piece,
                               S8 moving_player) const -> void {
   // Loop over all set bits in the attack map, with each representing
   // one elligible target square for a move.
-  while (*attack_map) {
+  while (attack_map) {
     Move move;
     move.moving_piece = moving_piece;
     move.moving_player = moving_player;
     move.start_sq = start_sq;
-    move.target_sq = GetSqOfFirstPiece(*attack_map);
+    move.target_sq = GetSqOfFirstPiece(attack_map);
     S8 target_player = board.GetPlayerOnSq(move.target_sq);
 
     // Check for captures.
@@ -135,7 +135,7 @@ auto Engine::AddMovesForPiece(Bitboard* attack_map, const Board& board,
         } else if (target_rank == kRank8) {
           for (S8 piece = kKnight; piece <= kQueen; ++piece) {
             move.promoted_to_piece = piece;
-            move_list->push_back(move);
+            move_list.push_back(move);
           }
           continue;
         }
@@ -146,15 +146,15 @@ auto Engine::AddMovesForPiece(Bitboard* attack_map, const Board& board,
         } else if (target_rank == kRank1) {
           for (S8 piece = kKnight; piece <= kQueen; ++piece) {
             move.promoted_to_piece = piece;
-            move_list->push_back(move);
+            move_list.push_back(move);
           }
           continue;
         }
       }
     }
-    move_list->push_back(move);
+    move_list.push_back(move);
     // Remove a piece from the attack map of the moving piece.
-    *attack_map &= *attack_map - 1;
+    attack_map &= attack_map - 1;
   }
 }
 

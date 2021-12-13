@@ -117,7 +117,7 @@ constexpr S8 kBitscanForwardLookupTable[64] = {
     63, 47, 56, 27, 60, 41, 37, 16, 54, 35, 52, 21, 44, 32, 23, 11,
     46, 26, 40, 15, 34, 20, 31, 10, 25, 14, 19, 9,  13, 8,  7,  6};
 // Store the length (in bits) of magic numbers for move generation.
-const S8 kBishopMagicLengths[kNumSq] = {
+constexpr S8 kBishopMagicLengths[kNumSq] = {
     6, 5, 5, 5, 5, 5, 5, 6, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 7, 7, 7, 7,
     5, 5, 5, 5, 7, 9, 9, 7, 5, 5, 5, 5, 7, 9, 9, 7, 5, 5, 5, 5, 7, 7,
     7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 5, 5, 5, 5, 5, 5, 6};
@@ -153,7 +153,7 @@ auto GetSqOfFirstPiece(const Bitboard& board) -> S8;
 
 class Board {
  public:
-  Board(S8* player_to_move, const std::string& init_pos);
+  Board(S8& player_to_move, const std::string& init_pos);
   Board(const Board& src);
 
   auto operator=(const Board& src) -> Board&;
@@ -174,25 +174,26 @@ class Board {
   auto GetPlayerOnSq(S8 sq) const -> S8;
 
   // Return an (almost) unique hash that represents the current board state.
-  auto GetBoardHash(S8 player_to_move) const -> U64;
+  auto GetBoardHash() const -> U64;
 
   auto MakeMove(const Move& move) -> void;
   // Unmake the given move, assuming it was already made with MakeMove().
-  auto UnmakeMove(const Move& move, S8 og_ep_target_sq,
-                  bool og_castling_right_white_queenside,
-                  bool og_castling_right_white_kingside,
-                  bool og_castling_right_black_queenside,
-                  bool og_castling_right_black_kingside, S8 og_halfmove_clock)
-      -> void;
+  auto UnmakeMove(const Move& move) -> void;
 
  private:
   auto GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard;
+
+  // Use the Zobrist Hashing algorithm to compute a unique hash of the board
+  // state. This involves hashing all stored pseudo-random numbers applicable
+  // to a given game position. Note that there is a small chance of collisions
+  // which is mostly unavoidable.
+  auto InitBoardHash(S8 player_to_move) -> U64;
 
   auto AddPiece(S8 piece_type, S8 player, S8 sq) -> void;
   // Copy all value of all member vars in src into current object's member vars.
   auto CopyBoard(const Board& src) -> void;
   // Parse a FEN string to initialize the board state.
-  auto InitBoardPos(const std::string& init_pos, S8* player_to_move) -> void;
+  auto InitBoardPos(const std::string& init_pos, S8& player_to_move) -> void;
   auto MakeNonCastlingMove(const Move& move) -> void;
   auto MovePiece(S8 moving_player, S8 piece, S8 start_sq, S8 target_sq,
                  S8 promoted_to_piece = kNA) -> void;
@@ -221,6 +222,7 @@ class Board {
   S8 player_layout_[kNumSq];
 
   // Store a set of pseudo-random numbers for Zobrist Hashing.
+  U64 board_hash_;
   U64 castling_rights_rand_nums_[kNumPlayers][kNumBoardSides];
   U64 ep_file_rand_nums_[kNumFiles];
   U64 piece_rand_nums_[kNumPieceTypes][kNumSq];
@@ -315,6 +317,8 @@ inline auto Board::GetPieceOnSq(S8 sq) const -> S8 {
 inline auto Board::GetPlayerOnSq(S8 sq) const -> S8 {
   return player_layout_[sq];
 }
+
+inline auto Board::GetBoardHash() const -> U64 { return board_hash_; }
 
 }  // namespace omegazero
 
