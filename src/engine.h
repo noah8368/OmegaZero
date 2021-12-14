@@ -17,20 +17,21 @@
 
 namespace omegazero {
 
+using std::vector;
+
 class Engine {
  public:
-  // Return a vector of pseudo-legal moves.
-  auto GenerateMoves(S8 player, const Board& board) const -> std::vector<Move>;
+  Engine(Board* board);
+
+  // Count the number of leaves of the tree of specified depth whose root
+  // node is is the current board state.
+  auto Perft(int depth) -> U64;
+
+  // Find all pseudo-legal moves able to be played at the current board state.
+  auto GenerateMoves() const -> vector<Move>;
 
  private:
-  auto AddCastlingMoves(S8 moving_player, const Board& board,
-                        std::vector<Move>& move_list) const -> void;
-  auto AddEpMoves(S8 moving_player, S8 other_player, const Board& board,
-                  std::vector<Move>& move_list) const -> void;
-  auto AddMovesForPiece(Bitboard& attack_map, const Board& board,
-                        std::vector<Move>& move_list, S8 other_player,
-                        S8 start_sq, S8 moving_piece, S8 moving_player) const
-      -> void;
+  Board* board_;
 };
 
 }  // namespace omegazero

@@ -60,7 +60,7 @@ to avoid ambiguity in a movement command. Some valid example moves are
  - Queenside castle: `0-0-0`
  - Kingside castle: `0-0`
 
-To resign, a user must enter `r` on their turn.
+To resign, a user must enter `q` on their turn.
 
 **Testing**
 

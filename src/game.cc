@@ -7,20 +7,16 @@
 
 #include "game.h"
 
-#include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <stack>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include "bad_move.h"
 #include "board.h"
 #include "move.h"
-#include "node.h"
 
 namespace omegazero {
 
@@ -29,6 +25,7 @@ using std::cout;
 using std::endl;
 using std::invalid_argument;
 using std::string;
+using std::vector;
 
 auto GetPieceType(char piece_ch) -> S8 {
   switch (piece_ch) {
@@ -52,10 +49,9 @@ auto GetPieceType(char piece_ch) -> S8 {
   }
 }
 
-Game::Game(const string& init_pos) : board_(player_to_move_, init_pos) {
+Game::Game(const string& init_pos) : board_(init_pos), engine_(&board_) {
   game_active_ = true;
 
-  player_in_check_ = kNA;
   winner_ = kNA;
 
   piece_symbols_[kWhite][kPawn] = "♙";
@@ -72,76 +68,12 @@ Game::Game(const string& init_pos) : board_(player_to_move_, init_pos) {
   piece_symbols_[kBlack][kKing] = "♚";
 }
 
-auto Game::Perft(S8 depth) -> void {
-  if (depth < 0) {
-    throw std::out_of_range("depth in Game::Perft() must be non-negative");
-  }
-
-  S8 next_player;
-  std::stack<Node> search_tree;
-  string move_str;
-  U64 subtree_root_board_hash;
-  U64 node_count = 0ULL;
-  // Associate board hashes with a string representing the move that resulted
-  // in the current board state and a count of the nodes in this subtree.
-  std::unordered_map<U64, U64> subtree_node_counts;
-  std::unordered_map<U64, string> subtree_moves;
-  std::vector<Move> move_list;
-
-  // Perform a depth-first search on the game tree to count the legal moves.
-  search_tree.emplace(board_, 0, player_to_move_);
-  while (!search_tree.empty()) {
-    Node node = search_tree.top();
-    search_tree.pop();
-
-    if (node.curr_depth < depth) {
-      // Keep track of which subtree whose root lies in the first layer of the
-      // search tree is currently being traversed.
-      if (node.curr_depth == 1) {
-        subtree_root_board_hash = node.game_state.GetBoardHash();
-      }
-
-      board_ = node.game_state;
-      move_list = engine_.GenerateMoves(node.moving_player, node.game_state);
-      next_player = GetOtherPlayer(node.moving_player);
-      for (Move move : move_list) {
-        try {
-          board_.MakeMove(move);
-        } catch (BadMove& e) {
-          continue;
-        }
-
-        // Update the node counts of the subtrees whose roots consist of the
-        // nodes in the first layer of the search tree.
-        if (node.curr_depth == 0) {
-          subtree_root_board_hash = board_.GetBoardHash();
-          subtree_node_counts[subtree_root_board_hash] = 0ULL;
-          subtree_moves[subtree_root_board_hash] = GetPerftMoveStr(move);
-        } else {
-          subtree_node_counts[subtree_root_board_hash]++;
-        }
-
-        search_tree.emplace(board_, node.curr_depth + 1, next_player);
-        node_count++;
-        // Reset board state to the parent node after adding a child node.
-        board_ = node.game_state;
-      }
-    }
-  }
-
-  // Output subtree node counts and the total node count.
-  for (std::pair<U64, U64> subtree_count : subtree_node_counts) {
-    cout << subtree_moves[subtree_count.first] << " " << subtree_count.second
-         << endl;
-  }
-  cout << endl << node_count << endl;
-}
-
 void Game::Play() {
   DisplayBoard();
   CheckGameStatus();
 
-  string player_name = GetPlayerStr(player_to_move_);
+  S8 player_to_move = board_.GetPlayerToMove();
+  string player_name = GetPlayerStr(player_to_move);
   cout << "\n\n" << player_name << " to move" << endl;
   Move user_move;
   string err_msg, user_cmd;
@@ -153,12 +85,11 @@ GetMove:
   // Check if the player has resigned.
   if (user_cmd == "q") {
     game_active_ = false;
-    winner_ = GetOtherPlayer(player_to_move_);
+    winner_ = GetOtherPlayer(player_to_move);
   } else {
     try {
       user_move = ParseMoveCmd(user_cmd);
       board_.MakeMove(user_move);
-      cout << "HASH: " << hex << board_.GetBoardHash() << endl;
     } catch (BadMove& e) {
       cout << "ERROR: Bad Move: " << e.what() << endl;
       goto GetMove;
@@ -166,25 +97,51 @@ GetMove:
   }
 
   cout << "\n\n";
-  player_to_move_ = GetOtherPlayer(player_to_move_);
+}
+
+auto Game::Test(S8 depth) -> void {
+  if (depth < 1) {
+    throw invalid_argument("Perft depth must be at least one");
+  }
+
+  DisplayBoard();
+  cout << endl;
+
+  // Generate a list of pseudo-legal moves.
+  vector<Move> move_list = engine_.GenerateMoves();
+  U64 subtree_node_count = 0;
+  U64 total_node_count = 0;
+  for (const Move& move : move_list) {
+    try {
+      board_.MakeMove(move);
+      subtree_node_count = engine_.Perft(depth - 1);
+      cout << GetUCIMoveStr(move) << " " << subtree_node_count << endl;
+      total_node_count += subtree_node_count;
+      board_.UnmakeMove(move);
+      // Revert back to the previous player.
+      board_.SwitchPlayer();
+    } catch (BadMove& e) {
+      // Ignore moves that put the player's king in check.
+      continue;
+    }
+  }
+  cout << "Nodes visited: " << total_node_count << endl;
 }
 
 // Implement private member functions.
 
 auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
   Move move;
-  move.moving_player = player_to_move_;
-
   // Check for castling moves.
   if (user_cmd == "0-0-0") {
-    if (board_.CastlingLegal(player_to_move_, kQueenSide)) {
+    if (board_.CastlingLegal(kQueenSide)) {
       move.castling_type = kQueenSide;
       return move;
     }
     throw BadMove("invalid queenside castling request");
   }
   if (user_cmd == "0-0") {
-    if (board_.CastlingLegal(player_to_move_, kKingSide)) {
+    if (board_.CastlingLegal(kKingSide)) {
       move.castling_type = kKingSide;
       return move;
     }
@@ -208,7 +165,7 @@ auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
   return move;
 }
 
-auto Game::GetPerftMoveStr(const Move& move) const -> string {
+auto Game::GetUCIMoveStr(const Move& move) const -> string {
   string move_str;
   if (move.castling_type == kNA) {
     move_str += static_cast<char>('a' + GetFileFromSq(move.start_sq));
@@ -232,6 +189,7 @@ auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
   // to from its ending position (start_sqs) and remove all positions
   // where a piece of this type doesn't exist on the board before the move.
   Bitboard start_sqs;
+  S8 player_to_move = board_.GetPlayerToMove();
   if (move.moving_piece == kPawn) {
     // Handle en passent moves. Note that we needn't check if all the
     // conditions for an en passent have been met here because ep_target_sq_
@@ -242,7 +200,7 @@ auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
       S8 black_ep_start_sq = GetSqFromRankFile(kRank4, start_file);
       // Handle the case of White making an en passent.
       if (move.target_sq == ep_target_sq &&
-          abs(start_file - target_file) == 1 && player_to_move_ == kWhite &&
+          abs(start_file - target_file) == 1 && player_to_move == kWhite &&
           board_.GetPieceOnSq(white_ep_start_sq) == kPawn &&
           board_.GetPlayerOnSq(white_ep_start_sq) == kWhite) {
         move.start_sq = white_ep_start_sq;
@@ -251,7 +209,7 @@ auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
       }
       // Handle the case of Black making an en passent.
       if (move.target_sq == ep_target_sq &&
-          abs(start_file - target_file) == 1 && player_to_move_ == kBlack &&
+          abs(start_file - target_file) == 1 && player_to_move == kBlack &&
           board_.GetPieceOnSq(black_ep_start_sq) == kPawn &&
           board_.GetPlayerOnSq(black_ep_start_sq) == kBlack) {
         move.start_sq = black_ep_start_sq;
@@ -261,21 +219,21 @@ auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
       throw BadMove("illegal en passent specified");
     }
     // Handle the case of White making a double pawn push.
-    if (player_to_move_ == kWhite && target_rank == kRank4 &&
-        !capture_indicated && board_.DoublePawnPushLegal(kWhite, target_file)) {
+    if (player_to_move == kWhite && target_rank == kRank4 &&
+        !capture_indicated && board_.DoublePawnPushLegal(target_file)) {
       move.start_sq = GetSqFromRankFile(kRank2, target_file);
       move.new_ep_target_sq = GetSqFromRankFile(kRank3, target_file);
       return;
     }
     // Handle the case of Black making a double pawn push.
-    if (player_to_move_ == kBlack && target_rank == kRank5 &&
-        !capture_indicated && board_.DoublePawnPushLegal(kBlack, target_file)) {
+    if (player_to_move == kBlack && target_rank == kRank5 &&
+        !capture_indicated && board_.DoublePawnPushLegal(target_file)) {
       move.start_sq = GetSqFromRankFile(kRank7, target_file);
       move.new_ep_target_sq = GetSqFromRankFile(kRank6, target_file);
       return;
     }
 
-    S8 other_player = GetOtherPlayer(player_to_move_);
+    S8 other_player = GetOtherPlayer(player_to_move);
     start_sqs = board_.GetAttackMap(other_player, move.target_sq, kPawn);
     // Clear off pieces on or off the same file as the ending position
     // depending on if the move is a capture or not.
@@ -286,9 +244,9 @@ auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
     }
   } else {
     start_sqs =
-        board_.GetAttackMap(player_to_move_, move.target_sq, move.moving_piece);
+        board_.GetAttackMap(player_to_move, move.target_sq, move.moving_piece);
   }
-  start_sqs &= board_.GetPiecesByType(move.moving_piece, player_to_move_);
+  start_sqs &= board_.GetPiecesByType(move.moving_piece, player_to_move);
   if (start_file != kNA) {
     start_sqs &= kFileMaps[start_file];
   }
@@ -307,8 +265,8 @@ auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
 
 auto Game::CheckGameStatus() -> void {
   // Detect if a player is now in check. If so, warn the player.
-  if (board_.KingInCheck(player_to_move_)) {
-    string player_name = GetPlayerStr(player_to_move_);
+  if (board_.KingInCheck()) {
+    string player_name = GetPlayerStr(board_.GetPlayerToMove());
     cout << "ALERT: " << player_name << " is in check" << endl;
   }
 
@@ -317,13 +275,13 @@ auto Game::CheckGameStatus() -> void {
   //   * If king is in check, we have a checkmate! Set winner_ equal
   //     to the other player and game_active_ to false
 
-  // Check for threefold and fivefold move repititions.
+  // Check for threefold and fivefold position repititions.
   U64 board_hash = board_.GetBoardHash();
-  if (transposition_table_.find(board_hash) == transposition_table_.end()) {
-    transposition_table_[board_hash] = 1;
+  if (pos_rep_table_.find(board_hash) == pos_rep_table_.end()) {
+    pos_rep_table_[board_hash] = 1;
   } else {
-    transposition_table_[board_hash]++;
-    S8 num_pos_rep = transposition_table_[board_hash];
+    pos_rep_table_[board_hash]++;
+    S8 num_pos_rep = pos_rep_table_[board_hash];
     if (num_pos_rep == 3) {
       string draw_decision;
       cout << "ALERT: Threefold repitition detected. "
@@ -368,16 +326,17 @@ auto Game::DisplayBoard() const -> void {
 
 auto Game::CheckMove(Move& move, S8 start_rank, S8 start_file, S8 target_rank,
                      S8 target_file, bool capture_indicated) -> void {
+  S8 player_to_move = board_.GetPlayerToMove();
   // Check for valid pawn promotion.
   if (move.moving_piece == kPawn) {
     if (move.promoted_to_piece == kNA) {
-      if ((move.moving_player == kWhite && target_rank == kRank8) ||
-          (move.moving_player == kBlack && target_rank == kRank1)) {
+      if ((player_to_move == kWhite && target_rank == kRank8) ||
+          (player_to_move == kBlack && target_rank == kRank1)) {
         throw BadMove("no pawn promotion indicated");
       }
     } else {
-      if ((move.moving_player == kWhite && target_rank != kRank8) ||
-          (move.moving_player == kBlack && target_rank != kRank1)) {
+      if ((player_to_move == kWhite && target_rank != kRank8) ||
+          (player_to_move == kBlack && target_rank != kRank1)) {
         throw BadMove("invalid pawn promotion indicated");
       }
     }
@@ -388,12 +347,12 @@ auto Game::CheckMove(Move& move, S8 start_rank, S8 start_file, S8 target_rank,
       (start_rank != kNA && (start_rank < kRank1 || start_rank > kRank8)) ||
       (target_file != kNA && (target_file < kFileA || target_file > kFileH)) ||
       (target_rank != kNA && (target_rank < kRank1 || target_rank > kRank8))) {
-    throw BadMove("off-of-board square indicated");
+    throw BadMove("bad command formatting");
   }
 
   // Confirm a capturing move lands on a square occupied by the other player,
   // or that a non-capturing move lands on a free square.
-  S8 other_player = GetOtherPlayer(player_to_move_);
+  S8 other_player = GetOtherPlayer(player_to_move);
   if (capture_indicated && !move.is_ep) {
     if (board_.GetPlayerOnSq(move.target_sq) != other_player) {
       throw BadMove("ambiguous or illegal piece movement specified");

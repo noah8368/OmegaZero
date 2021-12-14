@@ -23,6 +23,7 @@ namespace omegazero {
 using std::cout;
 using std::endl;
 using std::string;
+using std::unordered_map;
 
 constexpr S8 kHalfmoveClockLimit = 75;
 constexpr S8 kMaxPerftDepth = 14;
@@ -40,17 +41,15 @@ class Game {
   auto IsActive() const -> bool;
 
   auto OutputWinner() const -> void;
-  // Debugging function to walk the move generation tree of strictly legal
-  // moves to count all leaf nodes of a certain depth, which can be compared to
-  // predetermined values and used to isolate bugs.
-  auto Perft(S8 depth) -> void;
   auto Play() -> void;
+  // Output the results of Perft in readable format.
+  auto Test(S8 depth) -> void;
 
  private:
   // Construct a Move struct from a user command.
   auto ParseMoveCmd(const std::string& user_cmd) -> Move;
 
-  auto GetPerftMoveStr(const Move& move) const -> std::string;
+  auto GetUCIMoveStr(const Move& move) const -> std::string;
 
   auto AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
                         S8 target_rank, S8 target_file,
@@ -69,14 +68,12 @@ class Game {
 
   Engine engine_;
 
-  S8 player_to_move_;
-  S8 player_in_check_;
   S8 winner_;
 
-  std::string piece_symbols_[kNumPlayers][kNumPieceTypes];
+  string piece_symbols_[kNumPlayers][kNumPieceTypes];
 
   // Keep track of the number of times positions have occured during a game.
-  std::unordered_map<U64, S8> transposition_table_;
+  unordered_map<U64, S8> pos_rep_table_;
 };
 
 // Implement inline non-member functions.

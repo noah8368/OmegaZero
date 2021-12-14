@@ -10,6 +10,7 @@
 #define OMEGAZERO_SRC_BOARD_H_
 
 #include <cstdint>
+#include <stack>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -19,6 +20,7 @@
 namespace omegazero {
 
 using std::invalid_argument;
+using std::stack;
 
 typedef uint64_t Bitboard;
 typedef uint64_t U64;
@@ -153,7 +155,7 @@ auto GetSqOfFirstPiece(const Bitboard& board) -> S8;
 
 class Board {
  public:
-  Board(S8& player_to_move, const std::string& init_pos);
+  Board(const std::string& init_pos);
   Board(const Board& src);
 
   auto operator=(const Board& src) -> Board&;
@@ -163,39 +165,41 @@ class Board {
       -> Bitboard;
   auto GetPiecesByType(S8 piece_type, S8 player) const -> Bitboard;
 
-  auto CastlingLegal(S8 player, S8 board_side) const -> bool;
-  auto DoublePawnPushLegal(S8 player, S8 file) const -> bool;
+  auto CastlingLegal(S8 board_side) const -> bool;
+  auto DoublePawnPushLegal(S8 file) const -> bool;
   auto GetCastlingRight(S8 player, S8 board_side) const -> bool;
-  auto KingInCheck(S8 player) const -> bool;
+  auto KingInCheck() const -> bool;
 
   auto GetEpTargetSq() const -> S8;
   auto GetHalfmoveClock() const -> S8;
   auto GetPieceOnSq(S8 sq) const -> S8;
   auto GetPlayerOnSq(S8 sq) const -> S8;
+  auto GetPlayerToMove() const -> S8;
 
   // Return an (almost) unique hash that represents the current board state.
   auto GetBoardHash() const -> U64;
 
+  auto SwitchPlayer() -> void;
   auto MakeMove(const Move& move) -> void;
-  // Unmake the given move, assuming it was already made with MakeMove().
+  // Unmake the given move, assuming it was already made with MakeMove(). Note
+  // that this function does not flip the player to move variable.
   auto UnmakeMove(const Move& move) -> void;
 
  private:
   auto GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard;
 
+  auto AddPiece(S8 piece_type, S8 player, S8 sq) -> void;
+  // Copy all value of all member vars in src into current object's member vars.
+  auto CopyBoard(const Board& src) -> void;
   // Use the Zobrist Hashing algorithm to compute a unique hash of the board
   // state. This involves hashing all stored pseudo-random numbers applicable
   // to a given game position. Note that there is a small chance of collisions
   // which is mostly unavoidable.
-  auto InitBoardHash(S8 player_to_move) -> U64;
-
-  auto AddPiece(S8 piece_type, S8 player, S8 sq) -> void;
-  // Copy all value of all member vars in src into current object's member vars.
-  auto CopyBoard(const Board& src) -> void;
+  auto InitBoardHash() -> void;
   // Parse a FEN string to initialize the board state.
-  auto InitBoardPos(const std::string& init_pos, S8& player_to_move) -> void;
+  auto InitBoardPos(const std::string& init_pos) -> void;
   auto MakeNonCastlingMove(const Move& move) -> void;
-  auto MovePiece(S8 moving_player, S8 piece, S8 start_sq, S8 target_sq,
+  auto MovePiece(S8 piece, S8 start_sq, S8 target_sq,
                  S8 promoted_to_piece = kNA) -> void;
   auto UnmakeNonCastlingMove(const Move& move) -> void;
   auto UpdateCastlingRights(const Move& move) -> void;
@@ -220,6 +224,15 @@ class Board {
   // Store an 8x8 board representation.
   S8 piece_layout_[kNumSq];
   S8 player_layout_[kNumSq];
+  S8 player_to_move_;
+
+  // Store a history of irreversible position aspects for UnmakeMove().
+  stack<S8> ep_target_sq_history_;
+  stack<S8> halfmove_clock_history_;
+  stack<bool> white_queenside_castling_rights_history_;
+  stack<bool> white_kingside_castling_rights_history_;
+  stack<bool> black_queenside_castling_rights_history_;
+  stack<bool> black_kingside_castling_rights_history_;
 
   // Store a set of pseudo-random numbers for Zobrist Hashing.
   U64 board_hash_;
@@ -295,14 +308,10 @@ inline auto Board::GetCastlingRight(S8 player, S8 board_side) const -> bool {
 
   return castling_rights_[player][board_side];
 }
-inline auto Board::KingInCheck(S8 player) const -> bool {
-  if (player != kWhite && player != kBlack) {
-    throw invalid_argument("player in Board::KingInCheck()");
-  }
-
-  Bitboard king_board = pieces_[kKing] & player_pieces_[player];
+inline auto Board::KingInCheck() const -> bool {
+  Bitboard king_board = pieces_[kKing] & player_pieces_[player_to_move_];
   S8 king_sq = GetSqOfFirstPiece(king_board);
-  return static_cast<bool>(GetAttackersToSq(king_sq, player));
+  return static_cast<bool>(GetAttackersToSq(king_sq, player_to_move_));
 }
 
 inline auto Board::GetEpTargetSq() const -> S8 { return ep_target_sq_; }
@@ -318,7 +327,13 @@ inline auto Board::GetPlayerOnSq(S8 sq) const -> S8 {
   return player_layout_[sq];
 }
 
+inline auto Board::GetPlayerToMove() const -> S8 { return player_to_move_; }
+
 inline auto Board::GetBoardHash() const -> U64 { return board_hash_; }
+
+inline auto Board::SwitchPlayer() -> void {
+  player_to_move_ = (player_to_move_ == kWhite) ? kBlack : kWhite;
+}
 
 }  // namespace omegazero
 

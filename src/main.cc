@@ -43,7 +43,7 @@ auto main(int argc, char* argv[]) -> int {
   try {
     omegazero::Game game(init_pos);
     if (var_map.count("test")) {
-      game.Perft(depth);
+      game.Test(depth);
     } else {
       while (game.IsActive()) {
         game.Play();

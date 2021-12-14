@@ -24,7 +24,6 @@ struct Move {
   // kingside castling.
   S8 castling_type = kNA;
   S8 moving_piece;
-  S8 moving_player;
   // Indicate a new en passent target square when a double pawn push
   // is made by either player.
   S8 new_ep_target_sq = kNA;
