@@ -22,13 +22,13 @@ auto main(int argc, char* argv[]) -> int {
   namespace prog_opt = boost::program_options;
   prog_opt::options_description desc("Options");
   std::string init_pos;
-  omegazero::S8 depth;
+  int depth;
   desc.add_options()(
       "initial-position,i",
       prog_opt::value<std::string>(&init_pos)->default_value(
           "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
       "FEN formatted string specifying the initial game position")(
-      "test,t", prog_opt::value<omegazero::S8>(&depth),
+      "test,t", prog_opt::value<int>(&depth),
       "Depth to run Perft testing function to");
   prog_opt::variables_map var_map;
   try {

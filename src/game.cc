@@ -27,6 +27,23 @@ using std::invalid_argument;
 using std::string;
 using std::vector;
 
+auto GetUCIMoveStr(const Move& move) -> string {
+  string move_str;
+  if (move.castling_type == kNA) {
+    move_str += static_cast<char>('a' + GetFileFromSq(move.start_sq));
+    move_str += static_cast<char>('1' + GetRankFromSq(move.start_sq));
+    move_str += static_cast<char>('a' + GetFileFromSq(move.target_sq));
+    move_str += static_cast<char>('1' + GetRankFromSq(move.target_sq));
+  } else if (move.castling_type == kQueenSide) {
+    move_str = "0-0-0";
+  } else if (move.castling_type == kKingSide) {
+    move_str = "0-0";
+  } else {
+    throw invalid_argument("move in Game::GetPerftMoveStr()");
+  }
+  return move_str;
+}
+
 auto GetPieceType(char piece_ch) -> S8 {
   switch (piece_ch) {
     case 'N':
@@ -99,18 +116,20 @@ GetMove:
   cout << "\n\n";
 }
 
-auto Game::Test(S8 depth) -> void {
+auto Game::Test(int depth) -> void {
   if (depth < 1) {
     throw invalid_argument("Perft depth must be at least one");
   }
 
+  Move user_move;
+  string user_cmd;
+  U64 subtree_node_count;
+  U64 total_node_count = 0;
+RunPerft:
   DisplayBoard();
   cout << endl;
-
   // Generate a list of pseudo-legal moves.
   vector<Move> move_list = engine_.GenerateMoves();
-  U64 subtree_node_count = 0;
-  U64 total_node_count = 0;
   for (const Move& move : move_list) {
     try {
       board_.MakeMove(move);
@@ -118,14 +137,38 @@ auto Game::Test(S8 depth) -> void {
       cout << GetUCIMoveStr(move) << " " << subtree_node_count << endl;
       total_node_count += subtree_node_count;
       board_.UnmakeMove(move);
-      // Revert back to the previous player.
-      board_.SwitchPlayer();
     } catch (BadMove& e) {
       // Ignore moves that put the player's king in check.
       continue;
     }
   }
   cout << "Nodes visited: " << total_node_count << endl;
+  total_node_count = 0;
+
+GetNextNode:
+  if (depth - 1 > 0) {
+    cout << endl << "Enter command: ";
+    getline(cin, user_cmd);
+
+    // Check if the user would like to exit the program.
+    if (user_cmd != "q") {
+      try {
+        user_move = ParseMoveCmd(user_cmd);
+        board_.MakeMove(user_move);
+        // Decrease the depth by one to preserve the search space.
+        depth--;
+        cout << endl;
+        goto RunPerft;
+      } catch (BadMove& e) {
+        cout << "ERROR: Bad Move: " << e.what() << endl;
+        goto GetNextNode;
+      }
+    }
+  } else {
+    cout << "ALERT: Maximum depth has been reached. Rerun the program to "
+            "re-walk tree."
+         << endl;
+  }
 }
 
 // Implement private member functions.
@@ -159,27 +202,11 @@ auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
   // Check a few requirements for the move's pseudo-legality.
   CheckMove(move, start_rank, start_file, target_rank, target_file,
             capture_indicated);
-  // Check that there is exactly one possible start square for the move.
+  // Check that there is exactly one possible start square for the move, and set
+  // the move's start square to this square if so.
   AddStartSqToMove(move, start_rank, start_file, target_rank, target_file,
                    capture_indicated);
   return move;
-}
-
-auto Game::GetUCIMoveStr(const Move& move) const -> string {
-  string move_str;
-  if (move.castling_type == kNA) {
-    move_str += static_cast<char>('a' + GetFileFromSq(move.start_sq));
-    move_str += static_cast<char>('1' + GetRankFromSq(move.start_sq));
-    move_str += static_cast<char>('a' + GetFileFromSq(move.target_sq));
-    move_str += static_cast<char>('1' + GetRankFromSq(move.target_sq));
-  } else if (move.castling_type == kQueenSide) {
-    move_str = "0-0-0";
-  } else if (move.castling_type == kKingSide) {
-    move_str = "0-0";
-  } else {
-    throw invalid_argument("move in Game::GetPerftMoveStr()");
-  }
-  return move_str;
 }
 
 auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
@@ -196,47 +223,49 @@ auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
     // will only be initialized to a valid square in this scenario.
     if (move.is_ep) {
       S8 ep_target_sq = board_.GetEpTargetSq();
-      S8 white_ep_start_sq = GetSqFromRankFile(kRank5, start_file);
-      S8 black_ep_start_sq = GetSqFromRankFile(kRank4, start_file);
-      // Handle the case of White making an en passent.
       if (move.target_sq == ep_target_sq &&
-          abs(start_file - target_file) == 1 && player_to_move == kWhite &&
-          board_.GetPieceOnSq(white_ep_start_sq) == kPawn &&
-          board_.GetPlayerOnSq(white_ep_start_sq) == kWhite) {
-        move.start_sq = white_ep_start_sq;
-        move.captured_piece = kPawn;
-        return;
-      }
-      // Handle the case of Black making an en passent.
-      if (move.target_sq == ep_target_sq &&
-          abs(start_file - target_file) == 1 && player_to_move == kBlack &&
-          board_.GetPieceOnSq(black_ep_start_sq) == kPawn &&
-          board_.GetPlayerOnSq(black_ep_start_sq) == kBlack) {
-        move.start_sq = black_ep_start_sq;
-        move.captured_piece = kPawn;
-        return;
+          abs(start_file - target_file) == 1) {
+        // Handle the case of White making an en passent.
+        S8 white_ep_start_sq = GetSqFromRankFile(kRank5, start_file);
+        if (player_to_move == kWhite &&
+            board_.GetPieceOnSq(white_ep_start_sq) == kPawn &&
+            board_.GetPlayerOnSq(white_ep_start_sq) == kWhite) {
+          move.start_sq = white_ep_start_sq;
+          move.captured_piece = kPawn;
+          return;
+        }
+        // Handle the case of Black making an en passent.
+        S8 black_ep_start_sq = GetSqFromRankFile(kRank4, start_file);
+        if (player_to_move == kBlack &&
+            board_.GetPieceOnSq(black_ep_start_sq) == kPawn &&
+            board_.GetPlayerOnSq(black_ep_start_sq) == kBlack) {
+          move.start_sq = black_ep_start_sq;
+          move.captured_piece = kPawn;
+          return;
+        }
       }
       throw BadMove("illegal en passent specified");
     }
-    // Handle the case of White making a double pawn push.
-    if (player_to_move == kWhite && target_rank == kRank4 &&
-        !capture_indicated && board_.DoublePawnPushLegal(target_file)) {
-      move.start_sq = GetSqFromRankFile(kRank2, target_file);
-      move.new_ep_target_sq = GetSqFromRankFile(kRank3, target_file);
-      return;
-    }
-    // Handle the case of Black making a double pawn push.
-    if (player_to_move == kBlack && target_rank == kRank5 &&
-        !capture_indicated && board_.DoublePawnPushLegal(target_file)) {
-      move.start_sq = GetSqFromRankFile(kRank7, target_file);
-      move.new_ep_target_sq = GetSqFromRankFile(kRank6, target_file);
-      return;
+
+    if (!capture_indicated && board_.DoublePawnPushLegal(target_file)) {
+      // Handle the case of White making a double pawn push.
+      if (player_to_move == kWhite && target_rank == kRank4) {
+        move.start_sq = GetSqFromRankFile(kRank2, target_file);
+        move.new_ep_target_sq = GetSqFromRankFile(kRank3, target_file);
+        return;
+      }
+      // Handle the case of Black making a double pawn push.
+      if (player_to_move == kBlack && target_rank == kRank5) {
+        move.start_sq = GetSqFromRankFile(kRank7, target_file);
+        move.new_ep_target_sq = GetSqFromRankFile(kRank6, target_file);
+        return;
+      }
     }
 
+    // Clear off pieces on or off the same file as the ending position
+    // depending on if the pawn move captures a piece or not.
     S8 other_player = GetOtherPlayer(player_to_move);
     start_sqs = board_.GetAttackMap(other_player, move.target_sq, kPawn);
-    // Clear off pieces on or off the same file as the ending position
-    // depending on if the move is a capture or not.
     if (capture_indicated) {
       start_sqs &= ~kFileMaps[target_file];
     } else {
@@ -246,6 +275,7 @@ auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
     start_sqs =
         board_.GetAttackMap(player_to_move, move.target_sq, move.moving_piece);
   }
+
   start_sqs &= board_.GetPiecesByType(move.moving_piece, player_to_move);
   if (start_file != kNA) {
     start_sqs &= kFileMaps[start_file];

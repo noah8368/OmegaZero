@@ -45,16 +45,6 @@ Board::Board(const string& init_pos) {
   InitBoardHash();
 }
 
-Board::Board(const Board& src) { CopyBoard(src); }
-
-auto Board::operator=(const Board& src) -> Board& {
-  if (&src != this) {
-    CopyBoard(src);
-  }
-
-  return *this;
-}
-
 auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
     -> Bitboard {
   if (!SqOnBoard(sq)) {
@@ -74,7 +64,10 @@ auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
         capture_attacks = kNonSliderAttackMaps[kBlackPawnCapture][sq];
         push_attacks = kNonSliderAttackMaps[kBlackPawnPush][sq];
       }
-      // Include capture attacks that attack occupied squares only.
+      // Include captures that attack occupied squares and push moves that move
+      // onto empty squares only. Note that the resulting attack map may include
+      // squares in front of the pawn occupied by other pieces. This is
+      // necessary due to how the function is used by other parts of the engine.
       attack_map =
           (capture_attacks & player_pieces_[attacked_player]) | push_attacks;
       break;
@@ -83,7 +76,7 @@ auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
       attack_map = kNonSliderAttackMaps[kKnightAttack][sq];
       break;
     // Use the magic bitboard method to get possible moves for bishops and
-    // rooks. The Boost library's 128 bit unsigned int data type "uint128_t"
+    // rooks. The Boost library's 128 bit unsigned int data type "U128"
     // is used here to avoid integer overflow.
     case kBishop: {
       Bitboard all_pieces = player_pieces_[kWhite] | player_pieces_[kBlack];
@@ -123,6 +116,7 @@ auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
     default:
       throw invalid_argument("attacking_piece in Board::GetAttackMap()");
   }
+
   return attack_map;
 }
 
@@ -251,6 +245,7 @@ auto Board::MakeMove(const Move& move) -> void {
 
   // Undo the move if it puts the king in check.
   if (KingInCheck()) {
+    SwitchPlayer();
     UnmakeMove(move);
     throw BadMove("move leaves king in check");
   }
@@ -261,6 +256,9 @@ auto Board::MakeMove(const Move& move) -> void {
 // Assume the passed move has been made use MakeMove(). Calling UnmakeMove()
 // on a move that wasn't already made will result in undefined behavior.
 auto Board::UnmakeMove(const Move& move) -> void {
+  // Revert back to the previous player.
+  SwitchPlayer();
+
   if (move.castling_type == kNA) {
     // Undo all non-castling moves.
     UnmakeNonCastlingMove(move);
@@ -387,44 +385,6 @@ auto Board::AddPiece(S8 piece_type, S8 player, S8 sq) -> void {
   }
 }
 
-auto Board::CopyBoard(const Board& src) -> void {
-  board_hash_ = src.board_hash_;
-  for (S8 piece = kPawn; piece <= kKing; ++piece) {
-    pieces_[piece] = src.pieces_[piece];
-
-    for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
-      piece_rand_nums_[piece][sq] = src.piece_rand_nums_[piece][sq];
-    }
-  }
-
-  for (S8 player = kWhite; player <= kBlack; ++player) {
-    player_pieces_[player] = src.player_pieces_[player];
-
-    for (S8 board_side = kQueenSide; board_side <= kKingSide; ++board_side) {
-      castling_rights_[player][board_side] =
-          src.castling_rights_[player][board_side];
-      castling_status_[player][board_side] =
-          src.castling_rights_[player][board_side];
-
-      castling_rights_rand_nums_[player][board_side] =
-          src.castling_rights_rand_nums_[player][board_side];
-    }
-  }
-
-  ep_target_sq_ = src.ep_target_sq_;
-  halfmove_clock_ = src.halfmove_clock_;
-  for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
-    piece_layout_[sq] = src.piece_layout_[sq];
-    player_layout_[sq] = src.player_layout_[sq];
-  }
-  player_to_move_ = src.player_to_move_;
-
-  for (S8 file = kFileA; file <= kFileH; ++file) {
-    ep_file_rand_nums_[file] = src.ep_file_rand_nums_[file];
-  }
-  black_to_move_rand_num_ = src.black_to_move_rand_num_;
-}
-
 auto Board::InitBoardHash() -> void {
   board_hash_ = 0X0;
   // Initialize the Mersenne Twister 64 bit pseudo-random number generator.
@@ -522,7 +482,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
             AddPiece(kKing, kBlack, current_sq);
             break;
           default:
-            throw invalid_argument("init_pos in Board::Board()");
+            throw invalid_argument("init_pos in Board::InitBoardPos()");
         }
         current_sq++;
       } else if (ch - '0' >= 0 && ch - '0' <= 8) {
@@ -536,7 +496,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
         // Set the current square to the rank below the current position.
         current_sq = static_cast<S8>(current_sq - 2 * kNumFiles);
       } else {
-        throw invalid_argument("init_pos in Board::Board()");
+        throw invalid_argument("init_pos in Board::InitBoardPos()");
       }
     } else if (FEN_field == 1) {
       // Record the player to move.
@@ -545,7 +505,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
       } else if (ch == 'b') {
         player_to_move_ = kBlack;
       } else {
-        throw invalid_argument("init_pos in Board::Board()");
+        throw invalid_argument("init_pos in Board::InitBoardPos()");
       }
     } else if (FEN_field == 2) {
       // Assign castling rights for each player and board side.
@@ -565,7 +525,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
         case '-':
           break;
         default:
-          throw invalid_argument("init_pos in Board::Board()");
+          throw invalid_argument("init_pos in Board::InitBoardPos()");
       }
     } else if (FEN_field == 3) {
       // Assign the en passent target square.
@@ -574,7 +534,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
         if (FileOnBoard(ep_target_sq_file)) {
           ep_target_sq_ = ep_target_sq_file;
         } else if (ch != '-') {
-          throw invalid_argument("init_pos in Board::Board()");
+          throw invalid_argument("init_pos in Board::InitBoardPos()");
         }
       } else {
         // Assume ep_target_sq_ is initialized to the target
@@ -583,7 +543,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
         if (RankOnBoard(ep_target_sq_rank)) {
           ep_target_sq_ = GetSqFromRankFile(ep_target_sq_rank, ep_target_sq_);
         } else {
-          throw invalid_argument("init_pos in Board::Board()");
+          throw invalid_argument("init_pos in Board::InitBoardPos()");
         }
       }
     } else if (FEN_field == 4) {
@@ -596,13 +556,13 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
           halfmove_clock_ = static_cast<S8>(10 * halfmove_clock_ + next_digit);
         }
       } else {
-        throw invalid_argument("init_pos in Board::Board()");
+        throw invalid_argument("init_pos in Board::InitBoardPos()");
       }
     } else if (FEN_field == 5) {
       // Ignore the fullmove counter.
       ;
     } else {
-      throw invalid_argument("init_pos in Board::Board()");
+      throw invalid_argument("init_pos in Board::InitBoardPos()");
     }
   }
 }
@@ -729,8 +689,11 @@ auto Board::UnmakeNonCastlingMove(const Move& move) -> void {
       board_hash_ ^= piece_rand_nums_[kPawn][ep_capture_sq];
     } else {
       Bitboard undo_capture_mask = 1ULL << move.target_sq;
+      // Add the captured piece back to its original position.
       pieces_[move.captured_piece] |= undo_capture_mask;
       player_pieces_[other_player] |= undo_capture_mask;
+      piece_layout_[move.target_sq] = move.captured_piece;
+      player_layout_[move.target_sq] = other_player;
       // Update the board hash to reflect piece addition.
       board_hash_ ^= piece_rand_nums_[move.captured_piece][move.target_sq];
     }

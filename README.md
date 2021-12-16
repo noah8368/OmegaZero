@@ -75,13 +75,15 @@ program to default to the standard initial position in a chess game.
 `[DEPTH]` is a positive integer denoting the number of levels to generate in
 the search tree.
 
+After doing this, users have the choice of entering either a move formatted as
+previously outlined to walk the search tree, or `q` to exit the program.
+
 ### Implementation
 
 #### Board Representation
 
-64 bit unsigned integers are used to represent board states, with a `1` in the
-number representing the presence of a piece on a board. Squares are indexed in
-the Little Endian Rank File (LERF) format.   
+The engine uses both [Bitboards](https://www.chessprogramming.org/Bitboards) and an [8x8 Board](https://www.chessprogramming.org/8x8_Board) to represent board.
+states. Squares are indexed in the Little Endian Rank File (LERF) format.
 
 #### Move Generation
 
@@ -90,10 +92,10 @@ a piece can move to on an empty board for every square are computed
 by `generate_masks.py`. For sliding pieces, move generation is implemented
 through the [magic bitboard technique](http://pradu.us/old/Nov27_2008/Buzz/research/magic/Bitboards.pdf).
 
-The move generation function is implemented as a [pseudo-legal generator](https://www.chessprogramming.org/Move_Generation#Pseudo-legal). A
-full legality check is made in `Board::MakeMove()` to ensure that a move does not
-put the moving player in check; illegal moves are unmade if they are found to
-do this.
+The move generation function `Engine::GenerateMoves()` is implemented as a
+[pseudo-legal generator](https://www.chessprogramming.org/Move_Generation#Pseudo-legal). A full legality check is made in `Board::MakeMove()`
+to ensure that a move does not put the moving player in check; illegal moves are
+unmade if they are found to do this.
 
 #### Board Hashing
 

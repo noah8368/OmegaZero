@@ -30,6 +30,7 @@ constexpr S8 kMaxPerftDepth = 14;
 
 auto OneSqSet(const Bitboard& board) -> bool;
 
+auto GetUCIMoveStr(const Move& move) -> std::string;
 auto GetPlayerStr(S8 player) -> std::string;
 
 auto GetPieceType(char piece_ch) -> S8;
@@ -43,13 +44,11 @@ class Game {
   auto OutputWinner() const -> void;
   auto Play() -> void;
   // Output the results of Perft in readable format.
-  auto Test(S8 depth) -> void;
+  auto Test(int depth) -> void;
 
  private:
   // Construct a Move struct from a user command.
   auto ParseMoveCmd(const std::string& user_cmd) -> Move;
-
-  auto GetUCIMoveStr(const Move& move) const -> std::string;
 
   auto AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
                         S8 target_rank, S8 target_file,

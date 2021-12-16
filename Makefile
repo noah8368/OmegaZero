@@ -1,6 +1,6 @@
 CC = g++
 FLAGS = -g -lboost_program_options \
-		-march=native -Og -pedantic -std=c++11 -Wall -Wconversion -Werror \
+		-march=native -O0 -pedantic -std=c++11 -Wall -Wconversion -Werror \
 		-Wextra -Wshadow
 
 OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \

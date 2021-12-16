@@ -153,12 +153,12 @@ auto GetSqFromRankFile(S8 rank, S8 file) -> S8;
 // of the De Bruijn Bitscan Routine.
 auto GetSqOfFirstPiece(const Bitboard& board) -> S8;
 
+// Clear the least significant bit set of the passed in bitboard.
+auto RemoveFirstSq(Bitboard& board) -> void;
+
 class Board {
  public:
   Board(const std::string& init_pos);
-  Board(const Board& src);
-
-  auto operator=(const Board& src) -> Board&;
 
   // Return possible attacks a specified piece can make on all other pieces.
   auto GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
@@ -189,9 +189,7 @@ class Board {
   auto GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard;
 
   auto AddPiece(S8 piece_type, S8 player, S8 sq) -> void;
-  // Copy all value of all member vars in src into current object's member vars.
-  auto CopyBoard(const Board& src) -> void;
-  // Use the Zobrist Hashing algorithm to compute a unique hash of the board
+  // Use the Zobrist Hashing algorithm to compute a hash of the board
   // state. This involves hashing all stored pseudo-random numbers applicable
   // to a given game position. Note that there is a small chance of collisions
   // which is mostly unavoidable.
@@ -295,6 +293,8 @@ inline auto GetSqOfFirstPiece(const Bitboard& board) -> S8 {
                                      kDebruijn64bitSeqRightShiftAmt);
   return kBitscanForwardLookupTable[bitscan_index];
 }
+
+inline auto RemoveFirstPiece(Bitboard& board) -> void { board &= (board - 1); }
 
 // Implement inline member functions.
 
