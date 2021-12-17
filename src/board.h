@@ -210,8 +210,6 @@ class Board {
   Bitboard player_pieces_[kNumPlayers];
 
   bool castling_rights_[kNumPlayers][kNumBoardSides];
-  // Store which castling moves have been played so far.
-  bool castling_status_[kNumPlayers][kNumBoardSides];
 
   // Keep track of the square (if it exists) an en passent move is elligible
   // to land on during a given turn.

@@ -35,7 +35,6 @@ Board::Board(const string& init_pos) {
     // set the board, which may reset some castling rights to true.
     for (S8 board_side = kQueenSide; board_side <= kKingSide; ++board_side) {
       castling_rights_[player][board_side] = false;
-      castling_status_[player][board_side] = false;
     }
   }
   ep_target_sq_ = kNA;
@@ -394,13 +393,8 @@ auto Board::InitBoardHash() -> void {
   for (S8 player = kWhite; player < kNumPlayers; ++player) {
     for (S8 board_side = kQueenSide; board_side <= kKingSide; ++board_side) {
       castling_rights_rand_nums_[player][board_side] = rand_num_gen();
-      // Update the hash using current castling rights.
-      if (castling_status_[player][board_side]) {
-        board_hash_ ^= castling_rights_rand_nums_[player][board_side];
-      }
     }
   }
-
   for (S8 file = kFileA; file <= kFileH; ++file) {
     ep_file_rand_nums_[file] = rand_num_gen();
   }
@@ -409,7 +403,6 @@ auto Board::InitBoardHash() -> void {
     S8 ep_target_file = GetFileFromSq(ep_target_sq_);
     board_hash_ ^= ep_file_rand_nums_[ep_target_file];
   }
-
   S8 piece_type;
   for (S8 piece = kPawn; piece <= kKing; ++piece) {
     for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
@@ -421,7 +414,6 @@ auto Board::InitBoardHash() -> void {
       }
     }
   }
-
   black_to_move_rand_num_ = rand_num_gen();
   // Update the hash using the side to move.
   if (player_to_move_ == kBlack) {
@@ -714,7 +706,6 @@ auto Board::UpdateCastlingRights(const Move& move) -> void {
   if (move.castling_type != kNA) {
     // Revoke castling rights after castling. Assume the appropriate castling
     // rights were set to true before this.
-    castling_status_[player_to_move_][move.castling_type] = true;
     castling_rights_[player_to_move_][move.castling_type] = false;
     board_hash_ ^=
         castling_rights_rand_nums_[player_to_move_][move.castling_type];

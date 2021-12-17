@@ -40,7 +40,7 @@ sudo apt-get install libboost-all-dev
 
 #### User Input
 
-**Playing a Game**
+##### Playing a Game
 
 The format used to denote entered moves is based around [FIDE standard algebraic
 notation](https://www.chessprogramming.org/Algebraic_Chess_Notation#Standard_Algebraic_Notation_.28SAN.29). The only exception to FIDE notation is that `e.p.` **must** immediately
@@ -62,7 +62,7 @@ to avoid ambiguity in a movement command. Some valid example moves are
 
 To resign, a user must enter `q` on their turn.
 
-**Testing**
+##### Testing
 
 To print out the [Perft](https://www.chessprogramming.org/Perft) results for engine. Invoke the program as follows:
 ```

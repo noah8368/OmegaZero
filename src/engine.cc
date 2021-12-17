@@ -71,10 +71,25 @@ auto Engine::GenerateMoves() const -> vector<Move> {
     RemoveFirstPiece(moving_pieces);
   }
 
+  AddCastlingMoves(move_list);
+
   return move_list;
 }
 
 // Implement private member functions.
+
+auto Engine::AddCastlingMoves(vector<Move>& move_list) const -> void {
+  if (board_->CastlingLegal(kQueenSide)) {
+    Move queenside_castle;
+    queenside_castle.castling_type = kQueenSide;
+    move_list.push_back(queenside_castle);
+  }
+  if (board_->CastlingLegal(kKingSide)) {
+    Move kingside_castle;
+    kingside_castle.castling_type = kKingSide;
+    move_list.push_back(kingside_castle);
+  }
+}
 
 auto Engine::AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
                               S8 enemy_player, S8 moving_player,
