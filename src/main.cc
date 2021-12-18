@@ -29,7 +29,10 @@ auto main(int argc, char* argv[]) -> int {
           "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
       "FEN formatted string specifying the initial game position")(
       "test,t", prog_opt::value<int>(&depth),
-      "Depth to run Perft testing function to");
+      "Depth to run Perft testing function to")("stats,s",
+                                                prog_opt::value<int>(&depth),
+                                                "depth to use when timing "
+                                                "search");
   prog_opt::variables_map var_map;
   try {
     prog_opt::store(prog_opt::parse_command_line(argc, argv, desc), var_map);
@@ -44,6 +47,8 @@ auto main(int argc, char* argv[]) -> int {
     omegazero::Game game(init_pos);
     if (var_map.count("test")) {
       game.Test(depth);
+    } else if (var_map.count("stats")) {
+      game.TimeSearch(depth);
     } else {
       while (game.IsActive()) {
         game.Play();

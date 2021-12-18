@@ -44,6 +44,8 @@ class Game {
   auto Play() -> void;
   // Output the results of Perft in readable format.
   auto Test(int depth) -> void;
+  // Output speed statistics from searching for the best move.
+  auto TimeSearch(int depth) -> void;
 
  private:
   // Construct a Move struct from a user command.

@@ -7,6 +7,7 @@
 
 #include "game.h"
 
+#include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <stack>
@@ -140,7 +141,7 @@ GetNextNode:
         user_move = ParseMoveCmd(user_cmd);
         board_.MakeMove(user_move);
         // Decrease the depth by one to preserve the search space.
-        depth--;
+        --depth;
         cout << endl;
         goto RunPerft;
       } catch (BadMove& e) {
@@ -153,6 +154,18 @@ GetNextNode:
             "re-walk tree."
          << endl;
   }
+}
+auto Game::TimeSearch(int depth) -> void {
+  auto search_start_time = std::chrono::high_resolution_clock::now();
+  U64 num_legal_moves = engine_.Perft(depth);
+  auto search_end_time = std::chrono::high_resolution_clock::now();
+  auto search_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             search_end_time - search_start_time)
+                             .count();
+  double search_time = std::chrono::duration<double>(search_duration).count();
+  cout << "Evaluated ~"
+       << 1000 * (static_cast<double>(num_legal_moves) / search_time)
+       << " moves/sec" << endl;
 }
 
 // Implement private member functions.
@@ -339,7 +352,7 @@ auto Game::CheckGameStatus() -> void {
   if (pos_rep_table_.find(board_hash) == pos_rep_table_.end()) {
     pos_rep_table_[board_hash] = 1;
   } else {
-    pos_rep_table_[board_hash]++;
+    ++pos_rep_table_[board_hash];
     S8 num_pos_rep = pos_rep_table_[board_hash];
     if (num_pos_rep == 3) {
       string draw_decision;

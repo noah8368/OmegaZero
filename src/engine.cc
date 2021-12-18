@@ -8,6 +8,7 @@
 #include "engine.h"
 
 #include <cstdint>
+#include <iostream>
 #include <vector>
 
 #include "bad_move.h"
@@ -17,6 +18,8 @@
 
 namespace omegazero {
 
+using std::cout;
+using std::endl;
 using std::vector;
 
 // Implement public member functions.

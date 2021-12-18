@@ -81,6 +81,13 @@ previously outlined to walk the search tree, or `q` to exit the program.
 The positions on [this page](https://www.chessprogramming.org/Perft_Results) were used to confirm the correctness of the move
 generator.
 
+To print out statistics of the search and evaluation of board states in the search tree, invoke the program as follows:
+```
+build/OmegaZero -i [POSITION] -s [DEPTH]
+```
+where `[POSITION]` is defined above, and `[DEPTH]` is the maximum depth of the
+search used to evaluate search statistics.
+
 ### Implementation
 
 #### Board Representation
@@ -110,3 +117,9 @@ transposition table. This technique carries with it a small risk for collisions,
 an expected collision rate of one in 2^32 ≈ 4.29 billion. Relatively little can be done
 to mitigate this risk, and as such is a known and unavoidable bug with this
 implementation.
+
+### Performance
+
+#### Move Generation
+
+The move generator is capable of producing up to ~7,000,000 moves/sec.

@@ -234,7 +234,7 @@ auto Board::MakeMove(const Move& move) -> void {
   if (move.captured_piece != kNA || move.moving_piece == kPawn) {
     halfmove_clock_ = 0;
   } else {
-    halfmove_clock_++;
+    ++halfmove_clock_;
   }
 
   UpdateCastlingRights(move);
@@ -427,7 +427,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
   for (char ch : init_pos) {
     // Keep track of which of the six fields is currently being parsed.
     if (ch == ' ') {
-      FEN_field++;
+      ++FEN_field;
       continue;
     }
 
@@ -476,7 +476,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
           default:
             throw invalid_argument("init_pos in Board::InitBoardPos()");
         }
-        current_sq++;
+        ++current_sq;
       } else if (ch - '0' >= 0 && ch - '0' <= 8) {
         S8 empty_sq_count = static_cast<S8>(ch - '0');
         S8 empty_sq = current_sq;
