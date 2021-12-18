@@ -167,7 +167,6 @@ class Board {
 
   auto CastlingLegal(S8 board_side) const -> bool;
   auto DoublePawnPushLegal(S8 file) const -> bool;
-  auto GetCastlingRight(S8 player, S8 board_side) const -> bool;
   auto KingInCheck() const -> bool;
 
   auto GetEpTargetSq() const -> S8;
@@ -296,16 +295,6 @@ inline auto RemoveFirstPiece(Bitboard& board) -> void { board &= (board - 1); }
 
 // Implement inline member functions.
 
-inline auto Board::GetCastlingRight(S8 player, S8 board_side) const -> bool {
-  if (player != kWhite && player != kBlack) {
-    throw invalid_argument("player in Board::GetCastlingRight()");
-  }
-  if (board_side != kQueenSide && board_side != kKingSide) {
-    throw invalid_argument("board_side in Board::GetCastlingRight()");
-  }
-
-  return castling_rights_[player][board_side];
-}
 inline auto Board::KingInCheck() const -> bool {
   Bitboard king_board = pieces_[kKing] & player_pieces_[player_to_move_];
   S8 king_sq = GetSqOfFirstPiece(king_board);

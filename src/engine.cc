@@ -8,9 +8,6 @@
 #include "engine.h"
 
 #include <cstdint>
-#include <iomanip>   // DEBUG
-#include <iostream>  // DEBUG
-#include <string>    // DEBUG
 #include <vector>
 
 #include "bad_move.h"
@@ -70,8 +67,8 @@ auto Engine::GenerateMoves() const -> vector<Move> {
                      moving_piece, start_sq);
     RemoveFirstPiece(moving_pieces);
   }
-
   AddCastlingMoves(move_list);
+  AddEpMoves(move_list, enemy_player, moving_player);
 
   return move_list;
 }
@@ -88,6 +85,39 @@ auto Engine::AddCastlingMoves(vector<Move>& move_list) const -> void {
     Move kingside_castle;
     kingside_castle.castling_type = kKingSide;
     move_list.push_back(kingside_castle);
+  }
+}
+
+auto Engine::AddEpMoves(vector<Move>& move_list, S8 enemy_player,
+                        S8 moving_player) const -> void {
+  // Capture only diagonal squares to En Passent target sq in the direction of
+  // movement.
+  Bitboard potential_ep_pawns;
+  S8 ep_target_sq = board_->GetEpTargetSq();
+  if (enemy_player == kWhite) {
+    potential_ep_pawns = kNonSliderAttackMaps[kWhitePawnCapture][ep_target_sq];
+  } else {
+    potential_ep_pawns = kNonSliderAttackMaps[kBlackPawnCapture][ep_target_sq];
+  }
+
+  if (ep_target_sq != kNA) {
+    // Get the squares pawns can move from onto the en passent target square.
+    // Note that because the target square is set, a single pawn push onto the
+    // target square won't be possible, so this case can be safely ignored.
+    Bitboard attack_map =
+        potential_ep_pawns & board_->GetPiecesByType(kPawn, moving_player);
+    if (attack_map) {
+      Move ep;
+      ep.is_ep = true;
+      ep.moving_piece = kPawn;
+      ep.target_sq = ep_target_sq;
+      while (attack_map) {
+        ep.start_sq = GetSqOfFirstPiece(attack_map);
+        ep.captured_piece = kPawn;
+        move_list.push_back(ep);
+        RemoveFirstPiece(attack_map);
+      }
+    }
   }
 }
 

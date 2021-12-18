@@ -30,14 +30,13 @@ constexpr S8 kMaxPerftDepth = 14;
 
 auto OneSqSet(const Bitboard& board) -> bool;
 
-auto GetUCIMoveStr(const Move& move) -> std::string;
-auto GetPlayerStr(S8 player) -> std::string;
+auto GetPlayerStr(S8 player) -> string;
 
 auto GetPieceType(char piece_ch) -> S8;
 
 class Game {
  public:
-  Game(const std::string& init_pos);
+  Game(const string& init_pos);
 
   auto IsActive() const -> bool;
 
@@ -48,7 +47,9 @@ class Game {
 
  private:
   // Construct a Move struct from a user command.
-  auto ParseMoveCmd(const std::string& user_cmd) -> Move;
+  auto ParseMoveCmd(const string& user_cmd) -> Move;
+
+  auto GetUCIMoveStr(const Move& move) -> string;
 
   auto AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
                         S8 target_rank, S8 target_file,
@@ -57,9 +58,9 @@ class Game {
   auto DisplayBoard() const -> void;
   auto CheckMove(Move& move, S8 start_rank, S8 start_file, S8 target_rank,
                  S8 target_file, bool capture_indicated) -> void;
-  auto InterpAlgNotation(const std::string& user_cmd, Move& move,
-                         S8& start_rank, S8& start_file, S8& target_rank,
-                         S8& target_file, bool& capture_indicated) -> void;
+  auto InterpAlgNotation(const string& user_cmd, Move& move, S8& start_rank,
+                         S8& start_file, S8& target_rank, S8& target_file,
+                         bool& capture_indicated) -> void;
 
   Board board_;
 

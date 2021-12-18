@@ -18,13 +18,13 @@ logo for this project.
 The internal board representation for the engine is complete, allowing two
 players to play a legal game of chess between each other. All rules, including 
 the Fifty Move Rule, castling rights, and En Passent elligibility are enforced.
-At this point, however, the Engine does not have the ability to detect a
-checkmate, nor the ability to generate its own moves.
+A pseudo-legal move generator which has passed all Perft tests its been given
+has been implemented as well, giving the Engine the ability to generate its own
+moves.
 
-Next steps in the project include debugging the move generation function,
-allowing the engine to generate a legal list of moves given a board state. This
-will allow checkmate detection and make possible the generation of a search
-tree of possible game to be searched for ideal moves.
+Next steps in the project mainly consist of using the aforementioned move
+generator to generate a tree of possible board states which will be searched for
+a best possible move.
 
 ### Usage
 
@@ -77,6 +77,9 @@ the search tree.
 
 After doing this, users have the choice of entering either a move formatted as
 previously outlined to walk the search tree, or `q` to exit the program.
+
+The positions on [this page](https://www.chessprogramming.org/Perft_Results) were used to confirm the correctness of the move
+generator.
 
 ### Implementation
 

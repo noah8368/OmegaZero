@@ -27,23 +27,6 @@ using std::invalid_argument;
 using std::string;
 using std::vector;
 
-auto GetUCIMoveStr(const Move& move) -> string {
-  string move_str;
-  if (move.castling_type == kNA) {
-    move_str += static_cast<char>('a' + GetFileFromSq(move.start_sq));
-    move_str += static_cast<char>('1' + GetRankFromSq(move.start_sq));
-    move_str += static_cast<char>('a' + GetFileFromSq(move.target_sq));
-    move_str += static_cast<char>('1' + GetRankFromSq(move.target_sq));
-  } else if (move.castling_type == kQueenSide) {
-    move_str = "0-0-0";
-  } else if (move.castling_type == kKingSide) {
-    move_str = "0-0";
-  } else {
-    throw invalid_argument("move in Game::GetPerftMoveStr()");
-  }
-  return move_str;
-}
-
 auto GetPieceType(char piece_ch) -> S8 {
   switch (piece_ch) {
     case 'N':
@@ -133,10 +116,11 @@ RunPerft:
   for (const Move& move : move_list) {
     try {
       board_.MakeMove(move);
+      // Bug happens here.
       subtree_node_count = engine_.Perft(depth - 1);
-      cout << GetUCIMoveStr(move) << " " << subtree_node_count << endl;
       total_node_count += subtree_node_count;
       board_.UnmakeMove(move);
+      cout << GetUCIMoveStr(move) << ": " << subtree_node_count << endl;
     } catch (BadMove& e) {
       // Ignore moves that put the player's king in check.
       continue;
@@ -207,6 +191,51 @@ auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
   AddStartSqToMove(move, start_rank, start_file, target_rank, target_file,
                    capture_indicated);
   return move;
+}
+
+auto Game::GetUCIMoveStr(const Move& move) -> string {
+  string move_str;
+  if (move.castling_type == kNA) {
+    move_str += static_cast<char>('a' + GetFileFromSq(move.start_sq));
+    move_str += static_cast<char>('1' + GetRankFromSq(move.start_sq));
+    move_str += static_cast<char>('a' + GetFileFromSq(move.target_sq));
+    move_str += static_cast<char>('1' + GetRankFromSq(move.target_sq));
+
+    if (move.promoted_to_piece != kNA) {
+      switch (move.promoted_to_piece) {
+        case kKnight:
+          move_str += 'k';
+          break;
+        case kBishop:
+          move_str += 'b';
+          break;
+        case kRook:
+          move_str += 'r';
+          break;
+        case kQueen:
+          move_str += 'q';
+          break;
+        default:
+          throw invalid_argument(
+              "move.promoted_to_piece in Game::GetUCIMoveStr()");
+      }
+    }
+  } else if (move.castling_type == kQueenSide) {
+    if (board_.GetPlayerToMove() == kWhite) {
+      move_str = "e1c1";
+    } else {
+      move_str = "e8c8";
+    }
+  } else if (move.castling_type == kKingSide) {
+    if (board_.GetPlayerToMove() == kWhite) {
+      move_str = "e1g1";
+    } else {
+      move_str = "e8g8";
+    }
+  } else {
+    throw invalid_argument("move.castling_type in Game::GetUCIMoveStr()");
+  }
+  return move_str;
 }
 
 auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,

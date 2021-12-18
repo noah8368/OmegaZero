@@ -298,31 +298,31 @@ auto Board::UnmakeMove(const Move& move) -> void {
   }
 
   // Revert all castling rights and update the board hash.
-  if (castling_rights_[kQueenSide][kWhite] !=
+  if (castling_rights_[kWhite][kQueenSide] !=
       white_queenside_castling_rights_history_.top()) {
-    board_hash_ ^= castling_rights_rand_nums_[kQueenSide][kWhite];
-    castling_rights_[kQueenSide][kWhite] =
+    board_hash_ ^= castling_rights_rand_nums_[kWhite][kQueenSide];
+    castling_rights_[kWhite][kQueenSide] =
         white_queenside_castling_rights_history_.top();
   }
   white_queenside_castling_rights_history_.pop();
-  if (castling_rights_[kKingSide][kWhite] !=
+  if (castling_rights_[kWhite][kKingSide] !=
       white_kingside_castling_rights_history_.top()) {
-    board_hash_ ^= castling_rights_rand_nums_[kKingSide][kWhite];
-    castling_rights_[kKingSide][kWhite] =
+    board_hash_ ^= castling_rights_rand_nums_[kWhite][kKingSide];
+    castling_rights_[kWhite][kKingSide] =
         white_kingside_castling_rights_history_.top();
   }
   white_kingside_castling_rights_history_.pop();
-  if (castling_rights_[kQueenSide][kBlack] !=
+  if (castling_rights_[kBlack][kQueenSide] !=
       black_queenside_castling_rights_history_.top()) {
-    board_hash_ ^= castling_rights_rand_nums_[kQueenSide][kBlack];
-    castling_rights_[kQueenSide][kBlack] =
+    board_hash_ ^= castling_rights_rand_nums_[kBlack][kQueenSide];
+    castling_rights_[kBlack][kQueenSide] =
         black_queenside_castling_rights_history_.top();
   }
   black_queenside_castling_rights_history_.pop();
-  if (castling_rights_[kKingSide][kBlack] !=
+  if (castling_rights_[kBlack][kKingSide] !=
       black_kingside_castling_rights_history_.top()) {
-    board_hash_ ^= castling_rights_rand_nums_[kKingSide][kBlack];
-    castling_rights_[kKingSide][kBlack] =
+    board_hash_ ^= castling_rights_rand_nums_[kBlack][kKingSide];
+    castling_rights_[kBlack][kKingSide] =
         black_kingside_castling_rights_history_.top();
   }
   black_kingside_castling_rights_history_.pop();
@@ -703,13 +703,7 @@ auto Board::UpdateCastlingRights(const Move& move) -> void {
   black_kingside_castling_rights_history_.push(
       castling_rights_[kBlack][kKingSide]);
 
-  if (move.castling_type != kNA) {
-    // Revoke castling rights after castling. Assume the appropriate castling
-    // rights were set to true before this.
-    castling_rights_[player_to_move_][move.castling_type] = false;
-    board_hash_ ^=
-        castling_rights_rand_nums_[player_to_move_][move.castling_type];
-  } else if (move.moving_piece == kKing) {
+  if (move.castling_type != kNA || move.moving_piece == kKing) {
     // Revoke all castling rights for a player after moving the king.
     if (castling_rights_[player_to_move_][kQueenSide]) {
       castling_rights_[player_to_move_][kQueenSide] = false;

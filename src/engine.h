@@ -32,6 +32,8 @@ class Engine {
 
  private:
   auto AddCastlingMoves(vector<Move>& move_list) const -> void;
+  auto AddEpMoves(vector<Move>& move_list, S8 moving_player,
+                  S8 other_player) const -> void;
   auto AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
                         S8 enemy_player, S8 moving_player, S8 moving_piece,
                         S8 start_sq) const -> void;
