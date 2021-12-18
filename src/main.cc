@@ -23,6 +23,7 @@ auto main(int argc, char* argv[]) -> int {
   prog_opt::options_description desc("Options");
   std::string init_pos;
   int depth;
+  char player_side;
   desc.add_options()(
       "initial-position,i",
       prog_opt::value<std::string>(&init_pos)->default_value(
@@ -32,7 +33,13 @@ auto main(int argc, char* argv[]) -> int {
       "Depth to run Perft testing function to")("stats,s",
                                                 prog_opt::value<int>(&depth),
                                                 "depth to use when timing "
-                                                "search");
+                                                "search")("player-side,p",
+                                                          prog_opt::value<char>(
+                                                              &player_side)
+                                                              ->default_value(
+                                                                  'w'),
+                                                          "side user will "
+                                                          "play");
   prog_opt::variables_map var_map;
   try {
     prog_opt::store(prog_opt::parse_command_line(argc, argv, desc), var_map);
@@ -44,7 +51,7 @@ auto main(int argc, char* argv[]) -> int {
 
   // Initialize the engine and either test it or begin a game.
   try {
-    omegazero::Game game(init_pos);
+    omegazero::Game game(init_pos, player_side);
     if (var_map.count("test")) {
       game.Test(depth);
     } else if (var_map.count("stats")) {

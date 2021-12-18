@@ -8,6 +8,7 @@
 #include "engine.h"
 
 #include <cstdint>
+#include <ctime>
 #include <iostream>
 #include <vector>
 
@@ -25,6 +26,21 @@ using std::vector;
 // Implement public member functions.
 
 Engine::Engine(Board* board) { board_ = board; }
+
+auto Engine::TakeTurn() -> Move {
+  vector<Move> move_list = GenerateMoves();
+  // Choose a random move.
+  int move_choice;
+ChooseMove:
+  srand(static_cast<unsigned int>(time(0)));
+  move_choice = rand() % static_cast<int>(move_list.size());
+  try {
+    board_->MakeMove(move_list[move_choice]);
+  } catch (BadMove& e) {
+    goto ChooseMove;
+  }
+  return move_list[move_choice];
+}
 
 auto Engine::Perft(int depth) -> U64 {
   // Add to the node count if maximum depth is reached.

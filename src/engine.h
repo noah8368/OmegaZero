@@ -23,6 +23,9 @@ class Engine {
  public:
   Engine(Board* board);
 
+  // Calculate the best move and make it on the board.
+  auto TakeTurn() -> Move;
+
   // Count the number of leaves of the tree of specified depth whose root
   // node is is the current board state.
   auto Perft(int depth) -> U64;

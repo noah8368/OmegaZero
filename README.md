@@ -15,16 +15,7 @@ logo for this project.
 
 ### Status: In Progress
 
-The internal board representation for the engine is complete, allowing two
-players to play a legal game of chess between each other. All rules, including 
-the Fifty Move Rule, castling rights, and En Passent elligibility are enforced.
-A pseudo-legal move generator which has passed all Perft tests its been given
-has been implemented as well, giving the Engine the ability to generate its own
-moves.
-
-Next steps in the project mainly consist of using the aforementioned move
-generator to generate a tree of possible board states which will be searched for
-a best possible move.
+A basic AI has been implemented which makes random moves.
 
 ### Usage
 
@@ -41,6 +32,13 @@ sudo apt-get install libboost-all-dev
 #### User Input
 
 ##### Playing a Game
+
+To begin a game, a user invokes the program as follows:
+```
+build/OmegaZero -p [SIDE]
+```
+where `[SIDE]` is the side the user would like to player. This may be `w` for
+White, `b` for Black, or `r` for a random selection.
 
 The format used to denote entered moves is based around [FIDE standard algebraic
 notation](https://www.chessprogramming.org/Algebraic_Chess_Notation#Standard_Algebraic_Notation_.28SAN.29). The only exception to FIDE notation is that `e.p.` **must** immediately

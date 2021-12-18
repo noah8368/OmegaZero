@@ -36,7 +36,7 @@ auto GetPieceType(char piece_ch) -> S8;
 
 class Game {
  public:
-  Game(const string& init_pos);
+  Game(const string& init_pos, char player_side);
 
   auto IsActive() const -> bool;
 
@@ -70,6 +70,7 @@ class Game {
 
   Engine engine_;
 
+  S8 user_side_;
   S8 winner_;
 
   string piece_symbols_[kNumPlayers][kNumPieceTypes];
@@ -101,10 +102,10 @@ inline auto Game::IsActive() const -> bool { return game_active_; }
 
 inline auto Game::OutputWinner() const -> void {
   if (winner_ == kNA) {
-    cout << "Draw" << endl;
+    cout << "\nDraw" << endl;
   } else {
     string player_name = GetPlayerStr(winner_);
-    cout << player_name << " wins" << endl;
+    cout << "\n" << player_name << " wins" << endl;
   }
 }
 
