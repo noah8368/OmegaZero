@@ -12,7 +12,6 @@
 #include <iostream>
 #include <map>
 #include <string>
-#include <unordered_map>
 
 #include "board.h"
 #include "engine.h"
@@ -25,8 +24,11 @@ using std::endl;
 using std::string;
 using std::unordered_map;
 
+constexpr int kSearchDepth = 5;
+
 constexpr S8 kHalfmoveClockLimit = 75;
-constexpr S8 kMaxPerftDepth = 14;
+constexpr S8 kNumMoveRepForOptionalDraw = 3;
+constexpr S8 kMaxMoveRep = 5;
 
 auto OneSqSet(const Bitboard& board) -> bool;
 
@@ -56,7 +58,6 @@ class Game {
   auto AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
                         S8 target_rank, S8 target_file,
                         bool capture_indicated) const -> void;
-  auto CheckGameStatus() -> void;
   auto DisplayBoard() const -> void;
   auto CheckMove(Move& move, S8 start_rank, S8 start_file, S8 target_rank,
                  S8 target_file, bool capture_indicated) -> void;
@@ -70,13 +71,9 @@ class Game {
 
   Engine engine_;
 
-  S8 user_side_;
   S8 winner_;
 
   string piece_symbols_[kNumPlayers][kNumPieceTypes];
-
-  // Keep track of the number of times positions have occured during a game.
-  unordered_map<U64, S8> pos_rep_table_;
 };
 
 // Implement inline non-member functions.

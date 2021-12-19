@@ -102,7 +102,17 @@ constexpr S8 kNumSliderMaps = 2;
 constexpr S8 kNumSq = 64;
 constexpr S8 kSquareRightShiftAmt = 3;
 
-constexpr U64 kDebruijn64bitSeq = 0x03F79D71B4CB0A89ULL;
+// Constant needed for forward bitscan function.
+constexpr U64 kDebruijn64bitSeq = 0X03F79D71B4CB0A89ULL;
+// Constants needed for population count function.
+constexpr U64 kOddBitsMask = 0X5555555555555555ULL;
+constexpr U64 kDuoCountMask = 0X3333333333333333ULL;
+constexpr U64 kBitSumMask = 0X0F0F0F0F0F0F0F0FULL;
+constexpr U64 kDigitSumMask = 0X0101010101010101ULL;
+
+// Worth of pieces expressed in centipawns for evaluation function. Piece order
+// in array is pawn, knight, bishop, rook, queen, king.
+constexpr int kPieceVals[kNumPieceTypes] = {100, 320, 330, 500, 900, 20000};
 
 constexpr Bitboard kFileMaps[kNumFiles] = {
     0X0101010101010101, 0X0202020202020202, 0X0404040404040404,
@@ -146,6 +156,7 @@ auto FileOnBoard(S8 file) -> bool;
 auto SqOnBoard(S8 sq) -> bool;
 
 auto GetOtherPlayer(S8 player) -> S8;
+auto GetNumSetSq(const Bitboard& board) -> S8;
 auto GetFileFromSq(S8 sq) -> S8;
 auto GetRankFromSq(S8 sq) -> S8;
 auto GetSqFromRankFile(S8 rank, S8 file) -> S8;
@@ -168,6 +179,11 @@ class Board {
   auto CastlingLegal(S8 board_side) const -> bool;
   auto DoublePawnPushLegal(S8 file) const -> bool;
   auto KingInCheck() const -> bool;
+
+  // Compute and return a score of the board state, with positive scores being
+  // better for White than Black, and negative scores being better for Black
+  // White. This is the "evaluation" function.
+  auto EvalPos() const -> int;
 
   auto GetEpTargetSq() const -> S8;
   auto GetHalfmoveClock() const -> S8;
@@ -242,9 +258,11 @@ class Board {
 inline auto RankOnBoard(S8 rank) -> bool {
   return rank >= kRank1 && rank <= kRank8;
 }
+
 inline auto FileOnBoard(S8 file) -> bool {
   return file >= kFileA && file <= kFileH;
 }
+
 inline auto SqOnBoard(S8 sq) -> bool { return sq >= kSqA1 && sq <= kSqH8; }
 
 inline auto GetOtherPlayer(S8 player) -> S8 {
@@ -257,6 +275,16 @@ inline auto GetOtherPlayer(S8 player) -> S8 {
 
   throw invalid_argument("player in GetOtherPlayer()");
 }
+
+inline auto GetNumSetSq(Bitboard& board) -> S8 {
+  board = board - ((board >> 1) & kOddBitsMask);
+  board = (board & kDuoCountMask) + ((board >> 2) & kDuoCountMask);
+  board = (board + (board >> 4)) & kBitSumMask;
+  board = (board * kDigitSumMask) >> 56;
+
+  return static_cast<S8>(board);
+}
+
 inline auto GetFileFromSq(S8 sq) -> S8 {
   if (!SqOnBoard(sq)) {
     throw invalid_argument("sq in GetFileFromSq()");
@@ -264,6 +292,7 @@ inline auto GetFileFromSq(S8 sq) -> S8 {
 
   return sq & kFileMask;
 }
+
 inline auto GetRankFromSq(S8 sq) -> S8 {
   if (!SqOnBoard(sq)) {
     throw invalid_argument("sq in GetRankFromSq()");
@@ -271,6 +300,7 @@ inline auto GetRankFromSq(S8 sq) -> S8 {
 
   return static_cast<S8>(sq >> kSquareRightShiftAmt);
 }
+
 inline auto GetSqFromRankFile(S8 rank, S8 file) -> S8 {
   if (!RankOnBoard(rank)) {
     throw invalid_argument("rank in GetSqFromRankFile()");
@@ -281,6 +311,7 @@ inline auto GetSqFromRankFile(S8 rank, S8 file) -> S8 {
 
   return static_cast<S8>(rank * kNumFiles + file);
 }
+
 inline auto GetSqOfFirstPiece(const Bitboard& board) -> S8 {
   if (board == 0X0) {
     throw invalid_argument("board in GetSqOfFirstPiece()");
@@ -302,7 +333,9 @@ inline auto Board::KingInCheck() const -> bool {
 }
 
 inline auto Board::GetEpTargetSq() const -> S8 { return ep_target_sq_; }
+
 inline auto Board::GetHalfmoveClock() const -> S8 { return halfmove_clock_; }
+
 inline auto Board::GetPieceOnSq(S8 sq) const -> S8 {
   if (!SqOnBoard(sq)) {
     throw invalid_argument("sq in Board::GetPieceOnSq()");
@@ -310,6 +343,7 @@ inline auto Board::GetPieceOnSq(S8 sq) const -> S8 {
 
   return piece_layout_[sq];
 }
+
 inline auto Board::GetPlayerOnSq(S8 sq) const -> S8 {
   return player_layout_[sq];
 }

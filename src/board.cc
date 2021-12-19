@@ -11,6 +11,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <iostream>  // DEBUG
 #include <random>
 #include <string>
 #include <unordered_map>
@@ -168,6 +169,7 @@ auto Board::CastlingLegal(S8 board_side) const -> bool {
 
   throw invalid_argument("board_side in Board::CastlingLegal()");
 }
+
 auto Board::DoublePawnPushLegal(S8 file) const -> bool {
   if (!FileOnBoard(file)) {
     throw invalid_argument("file in Board::DoublePawnPushLegal()");
@@ -186,6 +188,19 @@ auto Board::DoublePawnPushLegal(S8 file) const -> bool {
   return piece_layout_[rank6_double_pawn_push_sq] == kNA &&
          piece_layout_[rank7_double_pawn_push_sq] == kPawn &&
          player_layout_[rank7_double_pawn_push_sq] == kBlack;
+}
+
+auto Board::EvalPos() const -> int {
+  int board_score = 0;
+  Bitboard white_pieces;
+  Bitboard black_pieces;
+  for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
+    white_pieces = pieces_[piece_type] & player_pieces_[kWhite];
+    black_pieces = pieces_[piece_type] & player_pieces_[kBlack];
+    board_score += kPieceVals[piece_type] *
+                   (GetNumSetSq(white_pieces) - GetNumSetSq(black_pieces));
+  }
+  return board_score;
 }
 
 auto Board::MakeMove(const Move& move) -> void {

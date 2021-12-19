@@ -8,8 +8,9 @@
 #include "engine.h"
 
 #include <cstdint>
-#include <ctime>
 #include <iostream>
+#include <stdexcept>
+#include <unordered_map>
 #include <vector>
 
 #include "bad_move.h"
@@ -19,27 +20,124 @@
 
 namespace omegazero {
 
+using std::cin;
 using std::cout;
 using std::endl;
+using std::unordered_map;
 using std::vector;
 
 // Implement public member functions.
 
-Engine::Engine(Board* board) { board_ = board; }
-
-auto Engine::TakeTurn() -> Move {
-  vector<Move> move_list = GenerateMoves();
-  // Choose a random move.
-  int move_choice;
-ChooseMove:
-  srand(static_cast<unsigned int>(time(0)));
-  move_choice = rand() % static_cast<int>(move_list.size());
-  try {
-    board_->MakeMove(move_list[move_choice]);
-  } catch (BadMove& e) {
-    goto ChooseMove;
+Engine::Engine(Board* board, S8 player_side) {
+  board_ = board;
+  if (tolower(player_side) == 'w') {
+    user_side_ = kWhite;
+  } else if (tolower(player_side) == 'b') {
+    user_side_ = kBlack;
+  } else if (tolower(player_side) == 'r') {
+    srand(static_cast<int>(time(0)));
+    user_side_ = static_cast<S8>(rand() % static_cast<int>(kNumPlayers));
+  } else {
+    throw invalid_argument("invalid side choice");
   }
-  return move_list[move_choice];
+}
+
+auto Engine::GetBestMove(int depth) -> Move {
+  // Traverse and score the search tree using the minimax algorithm.
+  int score;
+  vector<Move> move_list = GenerateMoves();
+  Move best_move = move_list[0];
+  if (board_->GetPlayerToMove() == kWhite) {
+    // Select the move that maximizes the score of resulting board states.
+    int max_score = INT32_MIN;
+    for (const Move& move : move_list) {
+      try {
+        board_->MakeMove(move);
+      } catch (BadMove& e) {
+        // Ignore moves that put the player's king in check.
+        continue;
+      }
+      score = GetMinScore(depth - 1);
+      board_->UnmakeMove(move);
+      if (score > max_score) {
+        max_score = score;
+        best_move = move;
+      }
+    }
+  } else {
+    // Select the move that minimizes the score of resulting board states.
+    int min_score = INT32_MAX;
+    for (const Move& move : move_list) {
+      try {
+        board_->MakeMove(move);
+      } catch (BadMove& e) {
+        // Ignore moves that put the player's king in check.
+        continue;
+      }
+      score = GetMaxScore(depth - 1);
+      board_->UnmakeMove(move);
+      if (score < min_score) {
+        min_score = score;
+        best_move = move;
+      }
+    }
+  }
+  return best_move;
+}
+
+auto Engine::TakeTurn(int search_depth) -> Move {
+  Move move = GetBestMove(search_depth);
+  board_->MakeMove(move);
+  return move;
+}
+
+auto Engine::GetGameStatus() -> S8 {
+  // Check for checks, checkmates, and draws.
+  vector<Move> move_list = GenerateMoves();
+  bool no_legal_moves = true;
+  for (const Move& move : move_list) {
+    try {
+      board_->MakeMove(move);
+    } catch (BadMove& e) {
+      // Ignore moves that leave the king in check.
+      continue;
+    }
+    board_->UnmakeMove(move);
+    no_legal_moves = false;
+    break;
+  }
+  if (board_->KingInCheck()) {
+    string player_name = GetPlayerStr(board_->GetPlayerToMove());
+    if (no_legal_moves) {
+      return kPlayerCheckmated;
+    }
+    return kPlayerInCheck;
+  } else if (no_legal_moves) {
+    // Indicate that the game has ended in a draw.
+    return kDraw;
+  }
+
+  // Check for threefold and fivefold position repititions.
+  U64 board_hash = board_->GetBoardHash();
+  if (pos_rep_table_.find(board_hash) == pos_rep_table_.end()) {
+    pos_rep_table_[board_hash] = 1;
+  } else {
+    ++pos_rep_table_[board_hash];
+    S8 num_pos_rep = pos_rep_table_[board_hash];
+    if (num_pos_rep == kNumMoveRepForOptionalDraw) {
+      if (board_->GetPlayerToMove() == user_side_) {
+        return kOptionalDraw;
+      }
+    } else if (num_pos_rep == kMaxMoveRep) {
+      // Enforce a draw due to board reptititions.
+      return kDraw;
+    }
+  }
+  // Enforce the Fifty Move Rule.
+  if (board_->GetHalfmoveClock() >= 2 * kHalfmoveClockLimit) {
+    return kDraw;
+  }
+  return kPlayerToMove;
 }
 
 auto Engine::Perft(int depth) -> U64 {
@@ -55,12 +153,12 @@ auto Engine::Perft(int depth) -> U64 {
   for (Move& move : move_list) {
     try {
       board_->MakeMove(move);
-      node_count += Perft(depth - 1);
-      board_->UnmakeMove(move);
     } catch (BadMove& e) {
       // Ignore all moves that put the player's king in check.
       continue;
     }
+    node_count += Perft(depth - 1);
+    board_->UnmakeMove(move);
   }
   return node_count;
 }
@@ -93,6 +191,72 @@ auto Engine::GenerateMoves() const -> vector<Move> {
 }
 
 // Implement private member functions.
+
+auto Engine::GetMaxScore(int depth) -> int {
+  if (depth == 0) {
+    return board_->EvalPos();
+  }
+
+  S8 game_status = GetGameStatus();
+  if (game_status == kPlayerCheckmated) {
+    // Return the worst possible score if White has been checkmated.
+    return INT32_MIN;
+  } else if (game_status == kDraw) {
+    // Return a neutral score in the case of a draw.
+    return 0;
+  }
+
+  int max_score = INT32_MIN;
+  int score;
+  vector<Move> move_list = GenerateMoves();
+  for (const Move& move : move_list) {
+    try {
+      board_->MakeMove(move);
+    } catch (BadMove& e) {
+      // Ignore moves that put the player's king in check.
+      continue;
+    }
+    score = GetMinScore(depth - 1);
+    board_->UnmakeMove(move);
+    if (score > max_score) {
+      max_score = score;
+    }
+  }
+  return max_score;
+}
+
+auto Engine::GetMinScore(int depth) -> int {
+  if (depth == 0) {
+    return board_->EvalPos();
+  }
+
+  S8 game_status = GetGameStatus();
+  if (game_status == kPlayerCheckmated) {
+    // Return the worst possible score if Black has been checkmated.
+    return INT32_MAX;
+  } else if (game_status == kDraw) {
+    // Return a neutral score in the case of a draw.
+    return 0;
+  }
+
+  int min_score = INT32_MAX;
+  int score;
+  vector<Move> move_list = GenerateMoves();
+  for (const Move& move : move_list) {
+    try {
+      board_->MakeMove(move);
+    } catch (BadMove& e) {
+      // Ignore moves that put the player's king in check.
+      continue;
+    }
+    score = GetMaxScore(depth - 1);
+    board_->UnmakeMove(move);
+    if (score < min_score) {
+      min_score = score;
+    }
+  }
+  return min_score;
+}
 
 auto Engine::AddCastlingMoves(vector<Move>& move_list) const -> void {
   if (board_->CastlingLegal(kQueenSide)) {

@@ -52,18 +52,7 @@ auto GetPieceType(char piece_ch) -> S8 {
 }
 
 Game::Game(const string& init_pos, char player_side)
-    : board_(init_pos), engine_(&board_) {
-  if (tolower(player_side) == 'w') {
-    user_side_ = kWhite;
-  } else if (tolower(player_side) == 'b') {
-    user_side_ = kBlack;
-  } else if (tolower(player_side) == 'r') {
-    srand(static_cast<int>(time(0)));
-    user_side_ = static_cast<S8>(rand() % static_cast<int>(kNumPlayers));
-  } else {
-    throw invalid_argument("invalid side choice");
-  }
-
+    : board_(init_pos), engine_(&board_, player_side) {
   game_active_ = true;
 
   winner_ = kNA;
@@ -84,13 +73,33 @@ Game::Game(const string& init_pos, char player_side)
 
 void Game::Play() {
   DisplayBoard();
-  CheckGameStatus();
-  if (!game_active_) {
+
+  // Check game status.
+  S8 game_status = engine_.GetGameStatus();
+  S8 player_to_move = board_.GetPlayerToMove();
+  if (game_status == kPlayerInCheck) {
+    cout << GetPlayerStr(player_to_move) << " is in check" << endl;
+  } else if (game_status == kDraw) {
+    game_active_ = false;
+    return;
+  } else if (game_status == kOptionalDraw) {
+    string draw_decision;
+    cout << "Threefold repitition detected. "
+         << "Would you like to claim a draw? (y/): ";
+    getline(cin, draw_decision);
+    if (draw_decision == "y") {
+      game_active_ = false;
+      return;
+    }
+  } else if (game_status == kPlayerCheckmated) {
+    cout << GetPlayerStr(player_to_move) << " has been checkmated" << endl;
+    game_active_ = false;
+    winner_ = GetOtherPlayer(player_to_move);
     return;
   }
 
-  S8 player_to_move = board_.GetPlayerToMove();
-  if (player_to_move == user_side_) {
+  S8 user_side = engine_.GetUserSide();
+  if (player_to_move == user_side) {
     string player_name = GetPlayerStr(player_to_move);
     cout << "\n\n" << player_name << " to move" << endl;
     Move user_move;
@@ -113,7 +122,7 @@ void Game::Play() {
       }
     }
   } else {
-    Move engine_move = engine_.TakeTurn();
+    Move engine_move = engine_.TakeTurn(kSearchDepth);
     cout << "\n\n"
          << GetPlayerStr(player_to_move)
          << "'s move: " << GetUCIMoveStr(engine_move) << endl;
@@ -137,15 +146,14 @@ RunPerft:
   for (const Move& move : move_list) {
     try {
       board_.MakeMove(move);
-      // Bug happens here.
-      subtree_node_count = engine_.Perft(depth - 1);
-      total_node_count += subtree_node_count;
-      board_.UnmakeMove(move);
-      cout << GetUCIMoveStr(move) << ": " << subtree_node_count << endl;
     } catch (BadMove& e) {
       // Ignore moves that put the player's king in check.
       continue;
     }
+    subtree_node_count = engine_.Perft(depth - 1);
+    total_node_count += subtree_node_count;
+    board_.UnmakeMove(move);
+    cout << GetUCIMoveStr(move) << ": " << subtree_node_count << endl;
   }
   cout << "Nodes visited: " << total_node_count << endl;
   total_node_count = 0;
@@ -160,14 +168,14 @@ GetNextNode:
       try {
         user_move = ParseMoveCmd(user_cmd);
         board_.MakeMove(user_move);
-        // Decrease the depth by one to preserve the search space.
-        --depth;
-        cout << endl;
-        goto RunPerft;
       } catch (BadMove& e) {
         cout << "ERROR: Bad Move: " << e.what() << endl;
         goto GetNextNode;
       }
+      // Decrease the depth by one to preserve the search space.
+      --depth;
+      cout << endl;
+      goto RunPerft;
     }
   } else {
     cout << "Maximum depth has been reached. Rerun the program to "
@@ -175,17 +183,23 @@ GetNextNode:
          << endl;
   }
 }
+
 auto Game::TimeSearch(int depth) -> void {
   auto search_start_time = std::chrono::high_resolution_clock::now();
-  U64 num_legal_moves = engine_.Perft(depth);
+  engine_.GetBestMove(depth);
   auto search_end_time = std::chrono::high_resolution_clock::now();
   auto search_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                              search_end_time - search_start_time)
                              .count();
   double search_time = std::chrono::duration<double>(search_duration).count();
-  cout << "Evaluated ~"
-       << 1000 * (static_cast<double>(num_legal_moves) / search_time)
-       << " moves/sec" << endl;
+  string time_unit = "ms";
+  if (search_time > 1000) {
+    // Express search time in seconds.
+    search_time /= 1000;
+    time_unit = "s";
+  }
+  cout << "Time for search of depth " << depth << ": " << search_time
+       << time_unit << endl;
 }
 
 // Implement private member functions.
@@ -353,70 +367,6 @@ auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
     return;
   }
   throw BadMove("ambiguous or illegal piece movement specified");
-}
-
-auto Game::CheckGameStatus() -> void {
-  // Detect if a player is now in check. If so, warn the player.
-  if (board_.KingInCheck()) {
-  }
-
-  // Check for checks, checkmates, and draws.
-  vector<Move> move_list = engine_.GenerateMoves();
-  bool no_legal_moves = true;
-  for (const Move& move : move_list) {
-    try {
-      board_.MakeMove(move);
-      board_.UnmakeMove(move);
-      no_legal_moves = false;
-      break;
-    } catch (BadMove& e) {
-      // Ignore moves that leave the king in check.
-      continue;
-    }
-  }
-  if (board_.KingInCheck()) {
-    string player_name = GetPlayerStr(board_.GetPlayerToMove());
-    if (no_legal_moves) {
-      winner_ = GetOtherPlayer(board_.GetPlayerToMove());
-      game_active_ = false;
-      cout << player_name << " has been checkmated" << endl;
-    } else {
-      cout << player_name << " is in check" << endl;
-    }
-  } else if (no_legal_moves) {
-    game_active_ = false;
-  }
-
-  // Check for threefold and fivefold position repititions.
-  U64 board_hash = board_.GetBoardHash();
-  if (pos_rep_table_.find(board_hash) == pos_rep_table_.end()) {
-    pos_rep_table_[board_hash] = 1;
-  } else {
-    ++pos_rep_table_[board_hash];
-    S8 num_pos_rep = pos_rep_table_[board_hash];
-    if (num_pos_rep == 3) {
-      if (board_.GetPlayerToMove() == user_side_) {
-        string draw_decision;
-        cout << "Threefold repitition detected. "
-             << "Would you like to claim a draw? (y/): ";
-        cin >> draw_decision;
-        cout << endl;
-        if (draw_decision == "y") {
-          game_active_ = false;
-        }
-      } else {
-        // TODO: Allow the engine to choose whether or not it would like to
-        // draw. Currently, the engine will always choose a draw.
-        game_active_ = false;
-      }
-    } else if (num_pos_rep == 5) {
-      game_active_ = false;
-    }
-  }
-  // Enforce the Fifty Move Rule.
-  if (board_.GetHalfmoveClock() >= 2 * kHalfmoveClockLimit) {
-    game_active_ = false;
-  }
 }
 
 auto Game::DisplayBoard() const -> void {

@@ -7,7 +7,7 @@
 ### Project Summary
 
 OmegaZero is an in-progress terminal-based chess engine which will allow a user
-to play against an AI. The name OmegaZero is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), a program
+to play against an AI. The name "OmegaZero" is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), a program
 developed by [DeepMind](https://deepmind.com/) that was used to create one of the world's
 best Chess engines. The [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during
 development. Credit goes to [Bradon Hsu](https://github.com/2brandonh) for designing the
@@ -15,7 +15,11 @@ logo for this project.
 
 ### Status: In Progress
 
-A basic AI has been implemented which makes random moves.
+A basic AI has been implemented using an unoptimized version of the Minimax
+search algorithm an evaluation function based purely on computing material
+advantage. This basic evaluation implementation's purpose is to serve as a
+placeholder for developing the search algorithm. Once development is finished
+with search, a more advanced evaluation function will be implemented.
 
 ### Usage
 
@@ -24,7 +28,7 @@ A basic AI has been implemented which makes random moves.
 The included `Makefile` is designed to run on GNU/Linux machines. The [Boost library](https://www.boost.org/)
 is a requirement, and should be installed locally before compilation.
 On Ubuntu systems, users may use the `apt-get` package manager to
-install Boost, like so:
+install Boost like so:
 ```
 sudo apt-get install libboost-all-dev
 ```
@@ -116,8 +120,36 @@ an expected collision rate of one in 2^32 ≈ 4.29 billion. Relatively little ca
 to mitigate this risk, and as such is a known and unavoidable bug with this
 implementation.
 
+#### Search
+
+The search algorithm used is an unoptimized version of the [Minimax](https://www.chessprogramming.org/Minimax) algorithm.
+
+#### Evaluation
+
+The evaluation function scores the board based purely on material. The formula
+for board scores is
+```
+score = pawn_value * (#white_pawns - #black_pawns)
+        + knight_value * (#white_knights - #black_knights)
+        + bishop_value * (#white_bishops - #black_bishops)
+        + rook_value * (#white_roooks - #black_rooks)
+        + queen_value * (#white_queens - #black_queens)
+        + king_value * (#white_kings - #black_kings)
+```
+Here, a positive score favors White, while a negative score favors Black. The
+piece values are expressed in centipawns, listed below:
+
+| Piece | Value |
+|-------|-------|
+| Pawn  | 100   |
+| Knight| 320   |
+| Bishop| 330   |
+| Rook  | 500   |
+| Queen | 900   |
+| King  | 20000 |
+
 ### Performance
 
 #### Move Generation
 
-The move generator is capable of producing up to ~7,000,000 moves/sec.
+The move generator is capable of producing up to ~7 million moves/sec.
