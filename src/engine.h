@@ -36,8 +36,6 @@ class Engine {
   // Search possible games in a search tree to find the best move. This is the
   // "search" function. This returns a legal move.
   auto GetBestMove(int depth) -> Move;
-  // Calculate the best move, make it on the board, then return it.
-  auto TakeTurn(int search_depth) -> Move;
 
   auto GetGameStatus() -> S8;
   auto GetUserSide() const -> S8;

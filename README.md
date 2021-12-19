@@ -66,7 +66,7 @@ To resign, a user must enter `q` on their turn.
 
 ##### Testing
 
-To print out the [Perft](https://www.chessprogramming.org/Perft) results for engine. Invoke the program as follows:
+To print out the [Perft](https://www.chessprogramming.org/Perft) results for engine, invoke the program as follows:
 ```
 build/OmegaZero -i [POSITION] -t [DEPTH]
 ```

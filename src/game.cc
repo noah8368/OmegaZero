@@ -29,6 +29,21 @@ using std::invalid_argument;
 using std::string;
 using std::vector;
 
+auto GetPieceLetter(S8 piece) -> char {
+  switch (piece) {
+    case kKnight:
+      return 'N';
+    case kBishop:
+      return 'B';
+    case kRook:
+      return 'R';
+    case kQueen:
+      return 'Q';
+    default:
+      throw invalid_argument("piece in GetPieceLetter()");
+  }
+}
+
 auto GetPieceType(char piece_ch) -> S8 {
   switch (piece_ch) {
     case 'N':
@@ -122,10 +137,11 @@ void Game::Play() {
       }
     }
   } else {
-    Move engine_move = engine_.TakeTurn(kSearchDepth);
+    Move engine_move = engine_.GetBestMove(kSearchDepth);
     cout << "\n\n"
          << GetPlayerStr(player_to_move)
-         << "'s move: " << GetUCIMoveStr(engine_move) << endl;
+         << "'s move: " << GetFideMoveStr(engine_move) << endl;
+    board_.MakeMove(engine_move);
   }
 }
 
@@ -151,9 +167,9 @@ RunPerft:
       continue;
     }
     subtree_node_count = engine_.Perft(depth - 1);
-    total_node_count += subtree_node_count;
     board_.UnmakeMove(move);
-    cout << GetUCIMoveStr(move) << ": " << subtree_node_count << endl;
+    cout << GetUciMoveStr(move) << ": " << subtree_node_count << endl;
+    total_node_count += subtree_node_count;
   }
   cout << "Nodes visited: " << total_node_count << endl;
   total_node_count = 0;
@@ -240,8 +256,63 @@ auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
   return move;
 }
 
-auto Game::GetUCIMoveStr(const Move& move) -> string {
+auto Game::GetFideMoveStr(const Move& move) -> string {
   string move_str;
+  S8 start_file = GetFileFromSq(move.start_sq);
+  S8 target_file = GetFileFromSq(move.target_sq);
+  S8 target_rank = GetRankFromSq(move.target_sq);
+  if (move.castling_type == kNA) {
+    if (move.moving_piece == kPawn && move.captured_piece != kNA) {
+      move_str += static_cast<char>(start_file + 'a');
+      move_str += 'x';
+    } else if (move.moving_piece != kPawn) {
+      move_str += GetPieceLetter(move.moving_piece);
+
+      // Add clarifying information to the move string if the move is ambiguous.
+      S8 moving_player = board_.GetPlayerToMove();
+      Bitboard start_sqs =
+          board_.GetAttackMap(moving_player, move.target_sq, move.moving_piece);
+      start_sqs &= board_.GetPiecesByType(move.moving_piece, moving_player);
+      if (!OneSqSet(start_sqs)) {
+        S8 start_rank = GetRankFromSq(move.start_sq);
+        if (OneSqSet(start_sqs & kRankMasks[start_rank])) {
+          move_str += static_cast<char>(start_file + 'a');
+        } else if (OneSqSet(start_sqs & kFileMasks[start_file])) {
+          move_str += static_cast<char>(start_rank + '1');
+        } else {
+          move_str += static_cast<char>(start_file + 'a');
+          move_str += static_cast<char>(start_rank + '1');
+        }
+      }
+
+      if (move.captured_piece != kNA) {
+        move_str += 'x';
+      }
+    }
+
+    move_str += static_cast<char>(target_file + 'a');
+    move_str += static_cast<char>(target_rank + '1');
+
+    if (move.promoted_to_piece != kNA) {
+      move_str += GetPieceLetter(move.promoted_to_piece);
+    } else if (move.is_ep) {
+      move_str += "e.p.";
+    }
+  } else if (move.castling_type == kQueenSide) {
+    move_str = "0-0-0";
+  } else if (move.castling_type == kKingSide) {
+    move_str = "0-0";
+  } else {
+    throw invalid_argument("move.castling_type in Game::GetFideMoveStr()");
+  }
+  return move_str;
+}
+
+auto Game::GetUciMoveStr(const Move& move) -> string {
+  string move_str;
+  // Denote the moving player for the move as the player that just finished
+  // their turn.
+  S8 moving_player = board_.GetPlayerToMove();
   if (move.castling_type == kNA) {
     move_str += static_cast<char>('a' + GetFileFromSq(move.start_sq));
     move_str += static_cast<char>('1' + GetRankFromSq(move.start_sq));
@@ -264,23 +335,23 @@ auto Game::GetUCIMoveStr(const Move& move) -> string {
           break;
         default:
           throw invalid_argument(
-              "move.promoted_to_piece in Game::GetUCIMoveStr()");
+              "move.promoted_to_piece in Game::GetUciMoveStr()");
       }
     }
   } else if (move.castling_type == kQueenSide) {
-    if (board_.GetPlayerToMove() == kWhite) {
+    if (moving_player == kWhite) {
       move_str = "e1c1";
     } else {
       move_str = "e8c8";
     }
   } else if (move.castling_type == kKingSide) {
-    if (board_.GetPlayerToMove() == kWhite) {
+    if (moving_player == kWhite) {
       move_str = "e1g1";
     } else {
       move_str = "e8g8";
     }
   } else {
-    throw invalid_argument("move.castling_type in Game::GetUCIMoveStr()");
+    throw invalid_argument("move.castling_type in Game::GetUciMoveStr()");
   }
   return move_str;
 }
@@ -288,8 +359,8 @@ auto Game::GetUCIMoveStr(const Move& move) -> string {
 auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
                             S8 target_rank, S8 target_file,
                             bool capture_indicated) const -> void {
-  // Compute start_sq by getting all possible places the moved piece could move
-  // to from its ending position (start_sqs) and remove all positions
+  // Compute start_sq by getting all possible places the moved piece could
+  // move to from its ending position (start_sqs) and remove all positions
   // where a piece of this type doesn't exist on the board before the move.
   Bitboard start_sqs;
   S8 player_to_move = board_.GetPlayerToMove();
@@ -343,9 +414,9 @@ auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
     S8 other_player = GetOtherPlayer(player_to_move);
     start_sqs = board_.GetAttackMap(other_player, move.target_sq, kPawn);
     if (capture_indicated) {
-      start_sqs &= ~kFileMaps[target_file];
+      start_sqs &= ~kFileMasks[target_file];
     } else {
-      start_sqs &= kFileMaps[target_file];
+      start_sqs &= kFileMasks[target_file];
     }
   } else {
     start_sqs =
@@ -354,14 +425,14 @@ auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
 
   start_sqs &= board_.GetPiecesByType(move.moving_piece, player_to_move);
   if (start_file != kNA) {
-    start_sqs &= kFileMaps[start_file];
+    start_sqs &= kFileMasks[start_file];
   }
   if (start_rank != kNA) {
-    start_sqs &= kRankMaps[start_rank];
+    start_sqs &= kRankMasks[start_rank];
   }
 
-  // Check that exactly one bit is set in the start_sqs mask. If it is, set the
-  // the starting square of the move to the indicated square.
+  // Check that exactly one bit is set in the start_sqs mask. If it is, set
+  // the the starting square of the move to the indicated square.
   if (OneSqSet(start_sqs)) {
     move.start_sq = GetSqOfFirstPiece(start_sqs);
     return;
@@ -447,8 +518,8 @@ auto Game::InterpAlgNotation(const string& user_cmd, Move& move, S8& start_rank,
       target_file = static_cast<S8>(user_cmd[0] - 'a');
       target_rank = static_cast<S8>(user_cmd[1] - '1');
       break;
-    // Handle the cases of unambiguous non-pawn moves without capture (ex: Qe4)
-    // and non-capturing pawn move and promotion (ex: d8Q).
+    // Handle the cases of unambiguous non-pawn moves without capture (ex:
+    // Qe4) and non-capturing pawn move and promotion (ex: d8Q).
     case 3:
       if (move.moving_piece == kPawn) {
         target_rank = static_cast<S8>(user_cmd[1] - '1');
@@ -487,8 +558,8 @@ auto Game::InterpAlgNotation(const string& user_cmd, Move& move, S8& start_rank,
         }
       }
       break;
-    // Handle the cases of pawn capture with promotion (ex: exd8Q) and ambiguous
-    // non-pawn moves requiring both a specified start rank and file
+    // Handle the cases of pawn capture with promotion (ex: exd8Q) and
+    // ambiguous non-pawn moves requiring both a specified start rank and file
     // (ex: Qh4e1).
     case 5:
       if (move.moving_piece == kPawn) {

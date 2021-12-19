@@ -32,6 +32,8 @@ constexpr S8 kMaxMoveRep = 5;
 
 auto OneSqSet(const Bitboard& board) -> bool;
 
+auto GetPieceLetter(S8 piece) -> char;
+
 auto GetPlayerStr(S8 player) -> string;
 
 auto GetPieceType(char piece_ch) -> S8;
@@ -53,7 +55,10 @@ class Game {
   // Construct a Move struct from a user command.
   auto ParseMoveCmd(const string& user_cmd) -> Move;
 
-  auto GetUCIMoveStr(const Move& move) -> string;
+  // Construct a string denoting a move in FIDE standard algebraic notation.
+  auto GetFideMoveStr(const Move& move) -> string;
+  // Construct a string denoting a move in UCI standard algebraic notation.
+  auto GetUciMoveStr(const Move& move) -> string;
 
   auto AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
                         S8 target_rank, S8 target_file,

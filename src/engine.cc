@@ -85,12 +85,6 @@ auto Engine::GetBestMove(int depth) -> Move {
   return best_move;
 }
 
-auto Engine::TakeTurn(int search_depth) -> Move {
-  Move move = GetBestMove(search_depth);
-  board_->MakeMove(move);
-  return move;
-}
-
 auto Engine::GetGameStatus() -> S8 {
   // Check for checks, checkmates, and draws.
   vector<Move> move_list = GenerateMoves();

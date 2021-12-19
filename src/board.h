@@ -114,11 +114,11 @@ constexpr U64 kDigitSumMask = 0X0101010101010101ULL;
 // in array is pawn, knight, bishop, rook, queen, king.
 constexpr int kPieceVals[kNumPieceTypes] = {100, 320, 330, 500, 900, 20000};
 
-constexpr Bitboard kFileMaps[kNumFiles] = {
+constexpr Bitboard kFileMasks[kNumFiles] = {
     0X0101010101010101, 0X0202020202020202, 0X0404040404040404,
     0X0808080808080808, 0X1010101010101010, 0X2020202020202020,
     0X4040404040404040, 0X8080808080808080};
-constexpr Bitboard kRankMaps[kNumRanks] = {
+constexpr Bitboard kRankMasks[kNumRanks] = {
     0X00000000000000FF, 0X000000000000FF00, 0X0000000000FF0000,
     0X00000000FF000000, 0X000000FF00000000, 0X0000FF0000000000,
     0X00FF000000000000, 0XFF00000000000000};
