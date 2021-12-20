@@ -33,8 +33,7 @@ class Engine {
  public:
   Engine(Board* board, S8 player_side);
 
-  // Search possible games in a search tree to find the best move. This is the
-  // "search" function. This returns a legal move.
+  // Search possible games in a search tree to find the best legal move.
   auto GetBestMove(int depth) -> Move;
 
   auto GetGameStatus() -> S8;
@@ -48,10 +47,8 @@ class Engine {
   auto GenerateMoves() const -> vector<Move>;
 
  private:
-  // Return the maximum evaluation that results from all possible legal moves.
-  auto GetMaxScore(int depth) -> int;
-  // Return the minimum evaluation that results from all possible legal moves.
-  auto GetMinScore(int depth) -> int;
+  // Compute best evaluation resulting from a legal move for the moving player.
+  auto GetBestEval(int depth) -> int;
 
   auto AddCastlingMoves(vector<Move>& move_list) const -> void;
   auto AddEpMoves(vector<Move>& move_list, S8 moving_player,

@@ -153,3 +153,15 @@ piece values are expressed in centipawns, listed below:
 #### Move Generation
 
 The move generator is capable of producing up to ~7 million moves/sec.
+
+#### Search
+
+The following is a table demonstrating how the addition of new search features
+(alpha-beta pruning, a transposition table, etc.) changed the average time it 
+took the engine to perform a search 6 plys deep from the [initial position](https://www.chessprogramming.org/Initial_Position#:~:text=Initial%20Position%2C%20(Initial%20Setup%2C,the%20queen%20the%20d%2Dfile.). Please note that these
+features were applied cummulatively to the engine, and times shown are the
+result of all features up to and including the new feature addition.
+
+|Feature|Time [s]|
+|---|---|
+|Basic Minimax Search|25.45|

@@ -180,10 +180,10 @@ class Board {
   auto DoublePawnPushLegal(S8 file) const -> bool;
   auto KingInCheck() const -> bool;
 
-  // Compute and return a score of the board state, with positive scores being
-  // better for White than Black, and negative scores being better for Black
-  // White. This is the "evaluation" function.
-  auto EvalPos() const -> int;
+  // Compute and return a static evaluation of the board state. This score is
+  // relative to the side being evaluated and symmetric, as required by the
+  // NegaMax Algorithm.
+  auto GetEval() const -> int;
 
   auto GetEpTargetSq() const -> S8;
   auto GetHalfmoveClock() const -> S8;

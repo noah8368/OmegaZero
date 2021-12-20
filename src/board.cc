@@ -11,7 +11,6 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
-#include <iostream>  // DEBUG
 #include <random>
 #include <string>
 #include <unordered_map>
@@ -190,17 +189,18 @@ auto Board::DoublePawnPushLegal(S8 file) const -> bool {
          player_layout_[rank7_double_pawn_push_sq] == kBlack;
 }
 
-auto Board::EvalPos() const -> int {
-  int board_score = 0;
+auto Board::GetEval() const -> int {
   Bitboard white_pieces;
   Bitboard black_pieces;
+  int board_score = 0;
   for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
     white_pieces = pieces_[piece_type] & player_pieces_[kWhite];
     black_pieces = pieces_[piece_type] & player_pieces_[kBlack];
     board_score += kPieceVals[piece_type] *
                    (GetNumSetSq(white_pieces) - GetNumSetSq(black_pieces));
   }
-  return board_score;
+  S8 moving_side = (player_to_move_ == kWhite) ? 1 : -1;
+  return board_score * moving_side;
 }
 
 auto Board::MakeMove(const Move& move) -> void {

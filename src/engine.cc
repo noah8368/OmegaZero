@@ -43,43 +43,25 @@ Engine::Engine(Board* board, S8 player_side) {
 }
 
 auto Engine::GetBestMove(int depth) -> Move {
-  // Traverse and score the search tree using the minimax algorithm.
+  // Use the NegaMax algorithm to pick an optimal move.
+  int max_score = INT32_MIN;
   int score;
   vector<Move> move_list = GenerateMoves();
   Move best_move = move_list[0];
-  if (board_->GetPlayerToMove() == kWhite) {
-    // Select the move that maximizes the score of resulting board states.
-    int max_score = INT32_MIN;
-    for (const Move& move : move_list) {
-      try {
-        board_->MakeMove(move);
-      } catch (BadMove& e) {
-        // Ignore moves that put the player's king in check.
-        continue;
-      }
-      score = GetMinScore(depth - 1);
-      board_->UnmakeMove(move);
-      if (score > max_score) {
-        max_score = score;
-        best_move = move;
-      }
+  for (const Move& move : move_list) {
+    try {
+      board_->MakeMove(move);
+    } catch (BadMove& e) {
+      // Ignore moves that put the player's king in check.
+      continue;
     }
-  } else {
-    // Select the move that minimizes the score of resulting board states.
-    int min_score = INT32_MAX;
-    for (const Move& move : move_list) {
-      try {
-        board_->MakeMove(move);
-      } catch (BadMove& e) {
-        // Ignore moves that put the player's king in check.
-        continue;
-      }
-      score = GetMaxScore(depth - 1);
-      board_->UnmakeMove(move);
-      if (score < min_score) {
-        min_score = score;
-        best_move = move;
-      }
+    // Flip the sign the evaluation for the next player to get the evaluation
+    // relative to the current moving player.
+    score = -GetBestEval(depth - 1);
+    board_->UnmakeMove(move);
+    if (score > max_score) {
+      max_score = score;
+      best_move = move;
     }
   }
   return best_move;
@@ -186,18 +168,21 @@ auto Engine::GenerateMoves() const -> vector<Move> {
 
 // Implement private member functions.
 
-auto Engine::GetMaxScore(int depth) -> int {
+auto Engine::GetBestEval(int depth) -> int {
+  // Use the NegaMax algorithm to traverse the search tree.
   if (depth == 0) {
-    return board_->EvalPos();
+    return board_->GetEval();
   }
 
   S8 game_status = GetGameStatus();
   if (game_status == kPlayerCheckmated) {
-    // Return the worst possible score if White has been checkmated.
-    return INT32_MIN;
+    // Return the worst possible score if the player has been checkmated. Use
+    // -INT32_MAX rather than INT32_MIN to avoid integer overflow when
+    // multipying by -1 to get the score relative to the other player.
+    return -INT32_MAX;
   } else if (game_status == kDraw) {
-    // Return a neutral score in the case of a draw.
-    return 0;
+    // Return the second worst possible score if the game is a draw.
+    return 1 - INT32_MAX;
   }
 
   int max_score = INT32_MIN;
@@ -210,46 +195,15 @@ auto Engine::GetMaxScore(int depth) -> int {
       // Ignore moves that put the player's king in check.
       continue;
     }
-    score = GetMinScore(depth - 1);
+    // Flip the sign the evaluation for the next player to get the evaluation
+    // relative to the current moving player.
+    score = -GetBestEval(depth - 1);
     board_->UnmakeMove(move);
     if (score > max_score) {
       max_score = score;
     }
   }
   return max_score;
-}
-
-auto Engine::GetMinScore(int depth) -> int {
-  if (depth == 0) {
-    return board_->EvalPos();
-  }
-
-  S8 game_status = GetGameStatus();
-  if (game_status == kPlayerCheckmated) {
-    // Return the worst possible score if Black has been checkmated.
-    return INT32_MAX;
-  } else if (game_status == kDraw) {
-    // Return a neutral score in the case of a draw.
-    return 0;
-  }
-
-  int min_score = INT32_MAX;
-  int score;
-  vector<Move> move_list = GenerateMoves();
-  for (const Move& move : move_list) {
-    try {
-      board_->MakeMove(move);
-    } catch (BadMove& e) {
-      // Ignore moves that put the player's king in check.
-      continue;
-    }
-    score = GetMaxScore(depth - 1);
-    board_->UnmakeMove(move);
-    if (score < min_score) {
-      min_score = score;
-    }
-  }
-  return min_score;
 }
 
 auto Engine::AddCastlingMoves(vector<Move>& move_list) const -> void {
