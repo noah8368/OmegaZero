@@ -24,7 +24,7 @@ using std::endl;
 using std::string;
 using std::unordered_map;
 
-constexpr int kSearchDepth = 5;
+constexpr int kSearchDepth = 6;
 
 constexpr S8 kHalfmoveClockLimit = 75;
 constexpr S8 kNumMoveRepForOptionalDraw = 3;

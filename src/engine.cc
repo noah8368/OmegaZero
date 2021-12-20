@@ -44,6 +44,7 @@ Engine::Engine(Board* board, S8 player_side) {
 
 auto Engine::GetBestMove(int depth) -> Move {
   // Use the NegaMax algorithm to pick an optimal move.
+  bool first_move = true;
   int max_score = INT32_MIN;
   int score;
   vector<Move> move_list = GenerateMoves();
@@ -55,14 +56,27 @@ auto Engine::GetBestMove(int depth) -> Move {
       // Ignore moves that put the player's king in check.
       continue;
     }
-    // Flip the sign the evaluation for the next player to get the evaluation
-    // relative to the current moving player.
-    score = -GetBestEval(depth - 1);
-    board_->UnmakeMove(move);
-    if (score > max_score) {
-      max_score = score;
-      best_move = move;
+
+    U64 board_hash = board_->GetBoardHash();
+    if (transposition_table_.find(board_hash) == transposition_table_.end()) {
+      // Flip sign of the evaluation for the next player to get the evaluation
+      // relative to the current moving player.
+      if (first_move) {
+        // Prevent all moves from being pruned on the first iteration by setting
+        // max_score to the largest possible value.
+        score = -GetBestEval(depth - 1, INT32_MAX);
+        first_move = false;
+      } else {
+        score = -GetBestEval(depth - 1, max_score);
+      }
+      transposition_table_[board_hash] = score;
+    } else {
+      // Use a tranposition table to avoid re-evaluating positions.
+      score = transposition_table_[board_hash];
     }
+    board_->UnmakeMove(move);
+
+    max_score = (score > max_score) ? score : max_score;
   }
   return best_move;
 }
@@ -168,7 +182,7 @@ auto Engine::GenerateMoves() const -> vector<Move> {
 
 // Implement private member functions.
 
-auto Engine::GetBestEval(int depth) -> int {
+auto Engine::GetBestEval(int depth, int prev_max_score) -> int {
   // Use the NegaMax algorithm to traverse the search tree.
   if (depth == 0) {
     return board_->GetEval();
@@ -183,8 +197,12 @@ auto Engine::GetBestEval(int depth) -> int {
   } else if (game_status == kDraw) {
     // Return the second worst possible score if the game is a draw.
     return 1 - INT32_MAX;
+  } else if (game_status == kPlayerInCheck) {
+    // Return the third worst possible score if the game is in check.
+    return 2 - INT32_MAX;
   }
 
+  bool first_move = true;
   int max_score = INT32_MIN;
   int score;
   vector<Move> move_list = GenerateMoves();
@@ -195,13 +213,33 @@ auto Engine::GetBestEval(int depth) -> int {
       // Ignore moves that put the player's king in check.
       continue;
     }
-    // Flip the sign the evaluation for the next player to get the evaluation
-    // relative to the current moving player.
-    score = -GetBestEval(depth - 1);
-    board_->UnmakeMove(move);
-    if (score > max_score) {
-      max_score = score;
+
+    U64 board_hash = board_->GetBoardHash();
+    if (transposition_table_.find(board_hash) == transposition_table_.end()) {
+      // Flip sign of the evaluation for the next player to get the evaluation
+      // relative to the current moving player.
+      if (first_move) {
+        // Prevent all moves from being pruned on the first iteration by setting
+        // max_score to the largest possible value.
+        score = -GetBestEval(depth - 1, INT32_MAX);
+        first_move = false;
+      } else {
+        score = -GetBestEval(depth - 1, max_score);
+      }
+      transposition_table_[board_hash] = score;
+    } else {
+      // Use a tranposition table to avoid re-evaluating positions.
+      score = transposition_table_[board_hash];
     }
+    board_->UnmakeMove(move);
+
+    // Perform Alpha-beta pruning. Prune the subtree if the next player's move
+    // is guaranteed to result in a better score than the current player's
+    // maximum score. Here "max_score" is alpha and "prev_max_score" is beta.
+    if (score >= prev_max_score) {
+      return score;
+    }
+    max_score = (score > max_score) ? score : max_score;
   }
   return max_score;
 }

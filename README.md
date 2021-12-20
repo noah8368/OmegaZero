@@ -2,7 +2,7 @@
 
 ###### Noah Himed
 
-![OmegaZero Logo](./logo.png "OmegaZero -Brandon Hsu")
+![OmegaZero Logo](./figs/logo.png "OmegaZero -Brandon Hsu")
 
 ### Project Summary
 
@@ -15,9 +15,9 @@ logo for this project.
 
 ### Status: In Progress
 
-A basic AI has been implemented using an unoptimized version of the Minimax
-search algorithm an evaluation function based purely on computing material
-advantage. This basic evaluation implementation's purpose is to serve as a
+A basic AI has been implemented using the NegaMax search algorithm with some
+optimizations and an evaluation  function based purely on computing material 
+advantage. This basic evaluation implementation's purpose is to serve as a 
 placeholder for developing the search algorithm. Once development is finished
 with search, a more advanced evaluation function will be implemented.
 
@@ -122,7 +122,9 @@ implementation.
 
 #### Search
 
-The search algorithm used is an unoptimized version of the [Minimax](https://www.chessprogramming.org/Minimax) algorithm.
+The search algorithm used is the [NegaMax](https://www.chessprogramming.org/Negamax) algorithm with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta).
+A [transposition table](https://www.chessprogramming.org/Transposition_Table) is also used to prevent re-evaluating positions that
+have already been seen during a search.
 
 #### Evaluation
 
@@ -158,10 +160,15 @@ The move generator is capable of producing up to ~7 million moves/sec.
 
 The following is a table demonstrating how the addition of new search features
 (alpha-beta pruning, a transposition table, etc.) changed the average time it 
-took the engine to perform a search 6 plys deep from the [initial position](https://www.chessprogramming.org/Initial_Position#:~:text=Initial%20Position%2C%20(Initial%20Setup%2C,the%20queen%20the%20d%2Dfile.). Please note that these
-features were applied cummulatively to the engine, and times shown are the
-result of all features up to and including the new feature addition.
+took the engine to perform a search 5 plys deep from this position
+
+![Test Position](./figs/test_position.png "Test Position")
+
+Please note that these features were applied cummulatively to the engine, and
+times shown are the result of all features up to and including the new feature
+addition.
 
 |Feature|Time [s]|
 |---|---|
-|Basic Minimax Search|25.45|
+|Basic Minimax Search|41.159|
+|Alpha-Beta Pruning + Transposition Table|0.290|

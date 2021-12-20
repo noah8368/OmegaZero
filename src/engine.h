@@ -48,7 +48,7 @@ class Engine {
 
  private:
   // Compute best evaluation resulting from a legal move for the moving player.
-  auto GetBestEval(int depth) -> int;
+  auto GetBestEval(int depth, int max_score) -> int;
 
   auto AddCastlingMoves(vector<Move>& move_list) const -> void;
   auto AddEpMoves(vector<Move>& move_list, S8 moving_player,
@@ -63,6 +63,7 @@ class Engine {
 
   // Keep track of the number of times positions have occured during a game.
   unordered_map<U64, S8> pos_rep_table_;
+  unordered_map<U64, int> transposition_table_;
 };
 
 inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
