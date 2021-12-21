@@ -102,16 +102,16 @@ constexpr S8 kNumSliderMaps = 2;
 constexpr S8 kNumSq = 64;
 constexpr S8 kSquareRightShiftAmt = 3;
 
-// Constant needed for forward bitscan function.
+// Store a constant needed for forward bitscan function.
 constexpr U64 kDebruijn64bitSeq = 0X03F79D71B4CB0A89ULL;
-// Constants needed for population count function.
+// Store constants needed for population count function.
 constexpr U64 kOddBitsMask = 0X5555555555555555ULL;
 constexpr U64 kDuoCountMask = 0X3333333333333333ULL;
 constexpr U64 kBitSumMask = 0X0F0F0F0F0F0F0F0FULL;
 constexpr U64 kDigitSumMask = 0X0101010101010101ULL;
 
-// Worth of pieces expressed in centipawns for evaluation function. Piece order
-// in array is pawn, knight, bishop, rook, queen, king.
+// Store piece values expressed in centipawns for evaluation function. Piece
+// order in array is pawn, knight, bishop, rook, queen, king.
 constexpr int kPieceVals[kNumPieceTypes] = {100, 320, 330, 500, 900, 20000};
 
 constexpr Bitboard kFileMasks[kNumFiles] = {

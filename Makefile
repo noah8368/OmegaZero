@@ -1,7 +1,7 @@
 CC = g++
 FLAGS = -D_GLIBCXX_PARALLEL -fno-signed-zeros -fno-trapping-math -fopenmp \
 		-frename-registers -funroll-loops -lboost_program_options \
-		-march=native -Ofast -pedantic -std=c++11 -Wall -Wconversion -Werror \
+		-march=native -Ofast -pedantic -std=c++17 -Wall -Wconversion -Werror \
 		-Wextra -Wshadow
 
 OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \
@@ -22,3 +22,7 @@ src/magics.cc :
 .PHONY: clean
 clean:
 	rm -rf build
+
+.PHONY: quick_clean
+quick_clean:
+	rm build/board.o build/engine.o build/game.o build/main.o 

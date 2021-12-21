@@ -29,12 +29,11 @@ auto main(int argc, char* argv[]) -> int {
       prog_opt::value<std::string>(&init_pos)->default_value(
           "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
       "FEN formatted string specifying the initial game position")
-      ("test,t", prog_opt::value<int>(&depth),
+      ("depth,d", prog_opt::value<int>(&depth),
        "Depth to run Perft testing function to")
-      ("stats,s", prog_opt::value<int>(&depth),
-       "depth to use when timing search")
+      ("stats,s", "Output search function statistics")
       ("player-side,p", prog_opt::value<char>(&player_side)->default_value('w'),
-       "side user will play");
+       "Side user will play");
   prog_opt::variables_map var_map;
   try {
     prog_opt::store(prog_opt::parse_command_line(argc, argv, desc), var_map);
@@ -47,10 +46,10 @@ auto main(int argc, char* argv[]) -> int {
   // Initialize the engine and either test it or begin a game.
   try {
     omegazero::Game game(init_pos, player_side);
-    if (var_map.count("test")) {
+    if (var_map.count("depth")) {
       game.Test(depth);
     } else if (var_map.count("stats")) {
-      game.TimeSearch(depth);
+      game.TimeSearch();
     } else {
       while (game.IsActive()) {
         game.Play();

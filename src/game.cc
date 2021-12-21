@@ -18,6 +18,7 @@
 
 #include "bad_move.h"
 #include "board.h"
+#include "engine.h"
 #include "move.h"
 
 namespace omegazero {
@@ -39,6 +40,8 @@ auto GetPieceLetter(S8 piece) -> char {
       return 'R';
     case kQueen:
       return 'Q';
+    case kKing:
+      return 'K';
     default:
       throw invalid_argument("piece in GetPieceLetter()");
   }
@@ -137,7 +140,7 @@ void Game::Play() {
       }
     }
   } else {
-    Move engine_move = engine_.GetBestMove(kSearchDepth);
+    Move engine_move = engine_.GetBestMove();
     cout << "\n\n"
          << GetPlayerStr(player_to_move)
          << "'s move: " << GetFideMoveStr(engine_move) << endl;
@@ -200,22 +203,16 @@ GetNextNode:
   }
 }
 
-auto Game::TimeSearch(int depth) -> void {
+auto Game::TimeSearch() -> void {
   auto search_start_time = std::chrono::high_resolution_clock::now();
-  engine_.GetBestMove(depth);
+  engine_.GetBestMove();
   auto search_end_time = std::chrono::high_resolution_clock::now();
   auto search_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                              search_end_time - search_start_time)
                              .count();
   double search_time = std::chrono::duration<double>(search_duration).count();
-  string time_unit = "ms";
-  if (search_time > 1000) {
-    // Express search time in seconds.
-    search_time /= 1000;
-    time_unit = "s";
-  }
-  cout << "Time for search of depth " << depth << ": " << search_time
-       << time_unit << endl;
+  cout << "Time for search of depth " << kSearchDepth << ": " << search_time
+       << "ms" << endl;
 }
 
 // Implement private member functions.

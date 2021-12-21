@@ -24,8 +24,6 @@ using std::endl;
 using std::string;
 using std::unordered_map;
 
-constexpr int kSearchDepth = 6;
-
 constexpr S8 kHalfmoveClockLimit = 75;
 constexpr S8 kNumMoveRepForOptionalDraw = 3;
 constexpr S8 kMaxMoveRep = 5;
@@ -49,7 +47,7 @@ class Game {
   // Output the results of Perft in readable format.
   auto Test(int depth) -> void;
   // Output speed statistics from searching for the best move.
-  auto TimeSearch(int depth) -> void;
+  auto TimeSearch() -> void;
 
  private:
   // Construct a Move struct from a user command.

@@ -6,7 +6,7 @@
 
 ### Project Summary
 
-OmegaZero is an in-progress terminal-based chess engine which will allow a user
+OmegaZero is an in-progress terminal-based chess engine which allows a user
 to play against an AI. The name "OmegaZero" is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), a program
 developed by [DeepMind](https://deepmind.com/) that was used to create one of the world's
 best Chess engines. The [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during
@@ -15,7 +15,7 @@ logo for this project.
 
 ### Status: In Progress
 
-A basic AI has been implemented using the NegaMax search algorithm with some
+An AI has been implemented using the NegaMax search algorithm with some
 optimizations and an evaluation  function based purely on computing material 
 advantage. This basic evaluation implementation's purpose is to serve as a 
 placeholder for developing the search algorithm. Once development is finished
@@ -68,7 +68,7 @@ To resign, a user must enter `q` on their turn.
 
 To print out the [Perft](https://www.chessprogramming.org/Perft) results for engine, invoke the program as follows:
 ```
-build/OmegaZero -i [POSITION] -t [DEPTH]
+build/OmegaZero -i [POSITION] -d [DEPTH]
 ```
 `[POSITION]` is a [FEN](https://www.chessprogramming.org/Forsyth-Edwards_Notation) formatted string denoting the intial position to
 start counting nodes from in the search tree; not providing this will cause the
@@ -85,10 +85,9 @@ generator.
 
 To print out statistics of the search and evaluation of board states in the search tree, invoke the program as follows:
 ```
-build/OmegaZero -i [POSITION] -s [DEPTH]
+build/OmegaZero -i [POSITION] -s
 ```
-where `[POSITION]` is defined above, and `[DEPTH]` is the maximum depth of the
-search used to evaluate search statistics.
+where `[POSITION]` is defined above.
 
 ### Implementation
 
@@ -124,7 +123,8 @@ implementation.
 
 The search algorithm used is the [NegaMax](https://www.chessprogramming.org/Negamax) algorithm with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta).
 A [transposition table](https://www.chessprogramming.org/Transposition_Table) is also used to prevent re-evaluating positions that
-have already been seen during a search.
+have already been seen during a search. Moreover, [MVV-LVA](https://www.chessprogramming.org/MVV-LVA) move ordering is used
+to increase pruning during search.
 
 #### Evaluation
 
@@ -136,10 +136,11 @@ score = pawn_value * (#white_pawns - #black_pawns)
         + bishop_value * (#white_bishops - #black_bishops)
         + rook_value * (#white_roooks - #black_rooks)
         + queen_value * (#white_queens - #black_queens)
-        + king_value * (#white_kings - #black_kings)
+        + king_value * (#white_kings - #black_kings) * side_to_move
 ```
-Here, a positive score favors White, while a negative score favors Black. The
-piece values are expressed in centipawns, listed below:
+Score is relative to the side to move, as required by NegaMax, with
+`side_to_move` being `1` for White and `-1` for Black. The are expressed in 
+centipawns, listed below:
 
 | Piece | Value |
 |-------|-------|
@@ -171,4 +172,6 @@ addition.
 |Feature|Time [s]|
 |---|---|
 |Basic Minimax Search|41.159|
-|Alpha-Beta Pruning + Transposition Table|0.290|
+|Alpha-Beta Pruning|0.154|
+|Transposition Table|0.131|
+|MVV-LVA Move Ordering|0.049|

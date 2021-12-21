@@ -7,10 +7,11 @@
 
 #include "engine.h"
 
+#include <algorithm>
 #include <cstdint>
-#include <iostream>
 #include <stdexcept>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "bad_move.h"
@@ -20,9 +21,8 @@
 
 namespace omegazero {
 
-using std::cin;
-using std::cout;
-using std::endl;
+using std::pair;
+using std::sort;
 using std::unordered_map;
 using std::vector;
 
@@ -42,12 +42,13 @@ Engine::Engine(Board* board, S8 player_side) {
   }
 }
 
-auto Engine::GetBestMove(int depth) -> Move {
-  // Use the NegaMax algorithm to pick an optimal move.
-  bool first_move = true;
-  int max_score = INT32_MIN;
+auto Engine::GetBestMove() -> Move {
+  // Use the NegaMax algorithm to traverse the search tree. Use -INT32_MAX
+  // rather than INT32_MIN to avoid integer overflow when multipying by -1.
+  int best_score = -INT32_MAX;
   int score;
   vector<Move> move_list = GenerateMoves();
+  move_list = GetOrderedMoves(move_list);
   Move best_move = move_list[0];
   for (const Move& move : move_list) {
     try {
@@ -58,25 +59,26 @@ auto Engine::GetBestMove(int depth) -> Move {
     }
 
     U64 board_hash = board_->GetBoardHash();
+    PosInfo known_pos;
     if (transposition_table_.find(board_hash) == transposition_table_.end()) {
-      // Flip sign of the evaluation for the next player to get the evaluation
-      // relative to the current moving player.
-      if (first_move) {
-        // Prevent all moves from being pruned on the first iteration by setting
-        // max_score to the largest possible value.
-        score = -GetBestEval(depth - 1, INT32_MAX);
-        first_move = false;
-      } else {
-        score = -GetBestEval(depth - 1, max_score);
-      }
-      transposition_table_[board_hash] = score;
+      // Flip sign of the evaluation for the next player to get the
+      // evaluation relative to the current moving player.
+      score = -GetBestEval(kSearchDepth - 1, best_score, -best_score);
+      known_pos.pos_depth = kSearchDepth;
+      known_pos.pos_score = score;
+      transposition_table_[board_hash] = known_pos;
     } else {
-      // Use a tranposition table to avoid re-evaluating positions.
-      score = transposition_table_[board_hash];
+      // Use the score in the tranposition table to avoid re-evaluating
+      // positions.
+      score = transposition_table_[board_hash].pos_score;
     }
     board_->UnmakeMove(move);
 
-    max_score = (score > max_score) ? score : max_score;
+    // Track the value of the best possible move for the current player.
+    if (score > best_score) {
+      best_score = score;
+      best_move = move;
+    }
   }
   return best_move;
 }
@@ -139,7 +141,6 @@ auto Engine::Perft(int depth) -> U64 {
   // Traverse a game tree of chess positions recursively to count leaf nodes.
   U64 node_count = 0;
   vector<Move> move_list = GenerateMoves();
-
   for (Move& move : move_list) {
     try {
       board_->MakeMove(move);
@@ -182,12 +183,8 @@ auto Engine::GenerateMoves() const -> vector<Move> {
 
 // Implement private member functions.
 
-auto Engine::GetBestEval(int depth, int prev_max_score) -> int {
+auto Engine::GetBestEval(int depth, int alpha, int beta) -> int {
   // Use the NegaMax algorithm to traverse the search tree.
-  if (depth == 0) {
-    return board_->GetEval();
-  }
-
   S8 game_status = GetGameStatus();
   if (game_status == kPlayerCheckmated) {
     // Return the worst possible score if the player has been checkmated. Use
@@ -197,15 +194,13 @@ auto Engine::GetBestEval(int depth, int prev_max_score) -> int {
   } else if (game_status == kDraw) {
     // Return the second worst possible score if the game is a draw.
     return 1 - INT32_MAX;
-  } else if (game_status == kPlayerInCheck) {
-    // Return the third worst possible score if the game is in check.
-    return 2 - INT32_MAX;
+  } else if (depth == 0) {
+    return board_->GetEval();
   }
 
-  bool first_move = true;
-  int max_score = INT32_MIN;
   int score;
   vector<Move> move_list = GenerateMoves();
+  move_list = GetOrderedMoves(move_list);
   for (const Move& move : move_list) {
     try {
       board_->MakeMove(move);
@@ -215,33 +210,76 @@ auto Engine::GetBestEval(int depth, int prev_max_score) -> int {
     }
 
     U64 board_hash = board_->GetBoardHash();
+    PosInfo known_pos;
     if (transposition_table_.find(board_hash) == transposition_table_.end()) {
+    ModifyTranspositionTable:
       // Flip sign of the evaluation for the next player to get the evaluation
       // relative to the current moving player.
-      if (first_move) {
-        // Prevent all moves from being pruned on the first iteration by setting
-        // max_score to the largest possible value.
-        score = -GetBestEval(depth - 1, INT32_MAX);
-        first_move = false;
-      } else {
-        score = -GetBestEval(depth - 1, max_score);
-      }
-      transposition_table_[board_hash] = score;
+      score = -GetBestEval(depth - 1, -beta, -alpha);
+      known_pos.pos_depth = depth;
+      known_pos.pos_score = score;
+      transposition_table_[board_hash] = known_pos;
     } else {
-      // Use a tranposition table to avoid re-evaluating positions.
-      score = transposition_table_[board_hash];
+      known_pos = transposition_table_[board_hash];
+      if (known_pos.pos_depth <= depth) {
+        // Use the score in the tranposition table to avoid re-evaluating
+        // positions.
+        score = transposition_table_[board_hash].pos_score;
+      } else {
+        // Update the transposition table's score with an evaluation done at a
+        // higher depth, implying a deeper search into the future.
+        goto ModifyTranspositionTable;
+      }
     }
     board_->UnmakeMove(move);
 
     // Perform Alpha-beta pruning. Prune the subtree if the next player's move
     // is guaranteed to result in a better score than the current player's
-    // maximum score. Here "max_score" is alpha and "prev_max_score" is beta.
-    if (score >= prev_max_score) {
-      return score;
+    // maximum score.
+    if (score >= beta) {
+      return beta;
     }
-    max_score = (score > max_score) ? score : max_score;
+    // Track the value of the best possible move for the current player.
+    if (score > alpha) {
+      alpha = score;
+    }
   }
-  return max_score;
+  return alpha;
+}
+
+auto Engine::GetOrderedMoves(vector<Move> move_list) const -> vector<Move> {
+  vector<pair<Move, int>> capture_score_pairs;
+  vector<Move> quiet_moves;
+  for (const Move& move : move_list) {
+    if (move.captured_piece == kNA) {
+      quiet_moves.push_back(move);
+    } else {
+      // Use the MVV-LVA heuristic to score captures.
+      capture_score_pairs.emplace_back(
+          move, kVictimWeights[move.captured_piece] +
+                    kAggressorWeights[move.moving_piece]);
+    }
+  }
+
+  // Sort captures by descending value of their MVV-LVA heuristic.
+  sort(capture_score_pairs.begin(), capture_score_pairs.end(),
+       [](const pair<Move, int>& lhs, const pair<Move, int>& rhs) {
+         return lhs.second > rhs.second;
+       });
+  vector<Move> captures;
+  captures.reserve(capture_score_pairs.size());
+  for (const pair<Move, int>& capture_score_pair : capture_score_pairs) {
+    captures.push_back(capture_score_pair.first);
+  }
+
+  // Place all captures first in the ordered move list, followed by quiet
+  // moves.
+  vector<Move> ordered_moves;
+  ordered_moves.reserve(move_list.size());
+  ordered_moves.insert(ordered_moves.begin(), captures.begin(), captures.end());
+  ordered_moves.insert(ordered_moves.begin() + captures.size(),
+                       quiet_moves.begin(), quiet_moves.end());
+  return ordered_moves;
 }
 
 auto Engine::AddCastlingMoves(vector<Move>& move_list) const -> void {
@@ -340,8 +378,8 @@ auto Engine::AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
             move_list.push_back(move);
           }
           // Move onto another target square to make a move for, because we've
-          // already added a fully formed set of moves encompassing all possible
-          // pawn promotions.
+          // already added a fully formed set of moves encompassing all
+          // possible pawn promotions.
           goto GetNextMove;
         }
       } else if (moving_player == kBlack) {
@@ -359,8 +397,8 @@ auto Engine::AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
             move_list.push_back(move);
           }
           // Move onto another target square to make a move for, because we've
-          // already added a fully formed set of moves encompassing all possible
-          // pawn promotions.
+          // already added a fully formed set of moves encompassing all
+          // possible pawn promotions.
           goto GetNextMove;
         }
       }
