@@ -11,7 +11,6 @@
 #define OMEGAZERO_SRC_ENGINE_H_
 
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include "board.h"
@@ -19,7 +18,6 @@
 
 namespace omegazero {
 
-using std::pair;
 using std::unordered_map;
 using std::vector;
 
@@ -31,14 +29,13 @@ enum GameStatus : S8 {
   kPlayerToMove,
 };
 
-constexpr S8 kMaxKillerMovesPerPly = 2;
-
-constexpr int kSearchDepth = 5;
+constexpr int kSearchDepth = 6;
 // Store values used for the MVV-LVA heuristic. Piece order in array is pawn,
 // knight, bishop, rook, queen, king.
-constexpr int kVictimWeights[kNumPieceTypes] = {100, 200, 300, 400, 500, 600};
-constexpr int kAggressorWeights[kNumPieceTypes] = {-10, -20, -30,
-                                                   -40, -50, -60};
+constexpr int kVictimWeights[kNumPieceTypes] = {10, 20, 30, 40, 50, 60};
+constexpr int kAggressorWeights[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
+
+constexpr S8 kQuiescentSearchDepth = 0;
 
 class Engine {
  public:
@@ -55,17 +52,21 @@ class Engine {
   auto Perft(int depth) -> U64;
 
   // Find all pseudo-legal moves able to be played at the current board state.
-  auto GenerateMoves() const -> vector<Move>;
+  auto GenerateMoves(bool captures_only = false) const -> vector<Move>;
+
+  // Add a board repitition to keep enforce move repitition rules and return the
+  // number of times the current board state has been encountered.
+  auto AddBoardRep() -> void;
 
  private:
   // Compute best evaluation resulting from a legal move for the moving
-  // player.
-  auto GetBestEval(int depth, int alpha, int beta) -> int;
+  // player by searching the tree of possible moves using the NegaMax algorithm.
+  auto Search(int alpha, int beta, int depth) -> int;
 
   // Attempt to predict which moves are likely to be better, and order those
   // towards the front of the move_list to increase the number of moves that
   // can be pruned during alpha-beta pruning.
-  auto GetOrderedMoves(vector<Move> move_list) const -> vector<Move>;
+  auto OrderMoves(vector<Move> move_list) const -> vector<Move>;
 
   auto AddCastlingMoves(vector<Move>& move_list) const -> void;
   auto AddEpMoves(vector<Move>& move_list, S8 moving_player,
@@ -73,6 +74,9 @@ class Engine {
   auto AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
                         S8 enemy_player, S8 moving_player, S8 moving_piece,
                         S8 start_sq) const -> void;
+  // Remove the current board state from the board repitition table to prevent
+  // faulty draw notifications.
+  auto RemoveBoardRep() -> void;
 
   // Define a data structure to hold information about a position in the search
   // tree in the tranposition table.
@@ -91,7 +95,26 @@ class Engine {
   unordered_map<U64, S8> pos_rep_table_;
 };
 
+// Implement inline public member functions.
+
 inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
+
+inline auto Engine::AddBoardRep() -> void {
+  U64 board_hash = board_->GetBoardHash();
+  if (pos_rep_table_.find(board_hash) == pos_rep_table_.end()) {
+    pos_rep_table_[board_hash] = 1;
+  } else {
+    ++pos_rep_table_[board_hash];
+  }
+}
+
+// Implement inline private member functions.
+
+inline auto Engine::RemoveBoardRep() -> void {
+  U64 board_hash = board_->GetBoardHash();
+  // Assume the current board state is in the board repitition table already.
+  --pos_rep_table_[board_hash];
+}
 
 }  // namespace omegazero
 

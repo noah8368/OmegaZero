@@ -183,7 +183,7 @@ class Board {
   // Compute and return a static evaluation of the board state. This score is
   // relative to the side being evaluated and symmetric, as required by the
   // NegaMax Algorithm.
-  auto GetEval() const -> int;
+  auto Evaluate() const -> int;
 
   auto GetEpTargetSq() const -> S8;
   auto GetHalfmoveClock() const -> S8;

@@ -189,7 +189,7 @@ auto Board::DoublePawnPushLegal(S8 file) const -> bool {
          player_layout_[rank7_double_pawn_push_sq] == kBlack;
 }
 
-auto Board::GetEval() const -> int {
+auto Board::Evaluate() const -> int {
   Bitboard white_pieces;
   Bitboard black_pieces;
   int board_score = 0;

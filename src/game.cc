@@ -92,6 +92,9 @@ Game::Game(const string& init_pos, char player_side)
 void Game::Play() {
   DisplayBoard();
 
+  // Record the current board state to enforce move repitition rules.
+  engine_.AddBoardRep();
+
   // Check game status.
   S8 game_status = engine_.GetGameStatus();
   S8 player_to_move = board_.GetPlayerToMove();
