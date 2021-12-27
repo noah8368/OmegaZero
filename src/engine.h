@@ -10,40 +10,49 @@
 #ifndef OMEGAZERO_SRC_ENGINE_H_
 #define OMEGAZERO_SRC_ENGINE_H_
 
-#include <unordered_map>
+#include <queue>
 #include <vector>
 
 #include "board.h"
 #include "move.h"
+#include "transp_table.h"
 
 namespace omegazero {
 
+using std::queue;
 using std::unordered_map;
 using std::vector;
 
 enum GameStatus : S8 {
-  kDraw,
-  kOptionalDraw,
-  kPlayerCheckmated,
-  kPlayerInCheck,
   kPlayerToMove,
+  kPlayerInCheck,
+  kDraw,
+  kPlayerCheckmated,
 };
 
-constexpr int kSearchDepth = 6;
+constexpr int kSearchDepth = 7;
 // Store values used for the MVV-LVA heuristic. Piece order in array is pawn,
 // knight, bishop, rook, queen, king.
 constexpr int kVictimWeights[kNumPieceTypes] = {10, 20, 30, 40, 50, 60};
 constexpr int kAggressorWeights[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
+constexpr int kBestEval = INT32_MAX;
+constexpr int kNeutralEval = 0;
+// Use -INT32_MAX rather than INT32_MIN to avoid integer overflow when
+// multipying by -1 during the search function.
+constexpr int kWorstEval = -INT32_MAX;
 
-constexpr S8 kQuiescentSearchDepth = 0;
+constexpr S8 kSixPlys = 6;
 
 class Engine {
  public:
   Engine(Board* board, S8 player_side);
 
-  // Search possible games in a search tree to find the best legal move.
-  auto GetBestMove() -> Move;
+  // Search possible games in a search tree to find the best legal move. Act as
+  // the root function to call the NegaMax search algorithm.
+  auto GetBestMove(int alpha = kWorstEval, int beta = kBestEval) -> Move;
 
+  // Check for draws, checks, and checkmates. Note that this function does not
+  // check for move repititions.
   auto GetGameStatus() -> S8;
   auto GetUserSide() const -> S8;
 
@@ -59,9 +68,14 @@ class Engine {
   auto AddBoardRep() -> void;
 
  private:
+  auto RepDetected() const -> bool;
+
   // Compute best evaluation resulting from a legal move for the moving
   // player by searching the tree of possible moves using the NegaMax algorithm.
   auto Search(int alpha, int beta, int depth) -> int;
+  // Search until a "quiescent" position is reached (no capturing moves can be
+  // made) to mitigate the horizon effect.
+  auto QuiescenceSearch(int alpha, int beta) -> int;
 
   // Attempt to predict which moves are likely to be better, and order those
   // towards the front of the move_list to increase the number of moves that
@@ -74,46 +88,35 @@ class Engine {
   auto AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
                         S8 enemy_player, S8 moving_player, S8 moving_piece,
                         S8 start_sq) const -> void;
-  // Remove the current board state from the board repitition table to prevent
-  // faulty draw notifications.
-  auto RemoveBoardRep() -> void;
-
-  // Define a data structure to hold information about a position in the search
-  // tree in the tranposition table.
-  struct PosInfo {
-    int pos_depth;
-    int pos_score;
-  };
 
   Board* board_;
 
   S8 user_side_;
 
+  queue<U64> pos_rep_table_;
+
   // Keep track of information for positions that've already been evaluated.
-  unordered_map<U64, PosInfo> transposition_table_;
-  // Keep track of the number of times positions have occured during a game.
-  unordered_map<U64, S8> pos_rep_table_;
+  TranspTable transp_table_;
 };
 
-// Implement inline public member functions.
+// Implement inline member functions.
 
 inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
 
-inline auto Engine::AddBoardRep() -> void {
-  U64 board_hash = board_->GetBoardHash();
-  if (pos_rep_table_.find(board_hash) == pos_rep_table_.end()) {
-    pos_rep_table_[board_hash] = 1;
-  } else {
-    ++pos_rep_table_[board_hash];
-  }
+inline auto Engine::RepDetected() const -> bool {
+  // Keep track of the last six plys as an efficient approximation to check for
+  // board repititions.
+  return pos_rep_table_.size() == kSixPlys &&
+         pos_rep_table_.front() == pos_rep_table_.back();
 }
 
-// Implement inline private member functions.
-
-inline auto Engine::RemoveBoardRep() -> void {
+inline auto Engine::AddBoardRep() -> void {
   U64 board_hash = board_->GetBoardHash();
-  // Assume the current board state is in the board repitition table already.
-  --pos_rep_table_[board_hash];
+  pos_rep_table_.push(board_hash);
+  // Track the last six positions of the game.
+  if (pos_rep_table_.size() == kSixPlys) {
+    pos_rep_table_.pop();
+  }
 }
 
 }  // namespace omegazero

@@ -11,6 +11,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <iostream>  // DEBUG
 #include <random>
 #include <string>
 #include <unordered_map>
@@ -22,6 +23,9 @@ namespace omegazero {
 
 using std::invalid_argument;
 using std::string;
+
+using std::cout;
+using std::endl;
 
 typedef boost::multiprecision::uint128_t U128;
 
@@ -44,8 +48,8 @@ Board::Board(const string& init_pos) {
   InitBoardHash();
 }
 
-auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
-    -> Bitboard {
+auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece,
+                         Bitboard debug) const -> Bitboard {
   if (!SqOnBoard(sq)) {
     throw invalid_argument("sq in Board::GetAttackMap()");
   }
@@ -113,6 +117,11 @@ auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
       attack_map = kNonSliderAttackMaps[kKingAttack][sq];
       break;
     default:
+      std::cout << "moving_player: " << std::dec << (int)attacking_player
+                << std::endl
+                << "start_sq: " << std::dec << (int)sq << std::endl
+                << "moving_piece: " << std::dec << (int)attacking_piece
+                << "moving_pieces: " << std::hex << (int)debug << std::endl;
       throw invalid_argument("attacking_piece in Board::GetAttackMap()");
   }
 
@@ -252,6 +261,7 @@ auto Board::MakeMove(const Move& move) -> void {
     ++halfmove_clock_;
   }
 
+  // This line right here!
   UpdateCastlingRights(move);
 
   // Update the board hash to reflect player turnover.
@@ -598,6 +608,7 @@ auto Board::MakeNonCastlingMove(const Move& move) -> void {
       // Update the board hash to reflect piece removal.
       board_hash_ ^= piece_rand_nums_[kPawn][ep_capture_sq];
     } else {
+      // Remove the captured piece from the board.
       Bitboard piece_capture_mask = ~(1ULL << move.target_sq);
       pieces_[move.captured_piece] &= piece_capture_mask;
       player_pieces_[other_player] &= piece_capture_mask;
@@ -605,6 +616,7 @@ auto Board::MakeNonCastlingMove(const Move& move) -> void {
       board_hash_ ^= piece_rand_nums_[kPawn][move.target_sq];
     }
   }
+
   MovePiece(move.moving_piece, move.start_sq, move.target_sq,
             move.promoted_to_piece);
 }
@@ -644,6 +656,7 @@ auto Board::MovePiece(S8 piece, S8 start_sq, S8 target_sq, S8 promoted_to_piece)
     piece_layout_[target_sq] = promoted_to_piece;
     board_hash_ ^= piece_rand_nums_[promoted_to_piece][target_sq];
   }
+
   player_layout_[target_sq] = player_to_move_;
   player_pieces_[player_to_move_] |= new_piece_pos_mask;
 }
@@ -746,8 +759,10 @@ auto Board::UpdateCastlingRights(const Move& move) -> void {
         board_hash_ ^= castling_rights_rand_nums_[player_to_move_][kKingSide];
       }
     }
-  } else if (move.captured_piece == kRook) {
-    // Revoke the appropriate castling rights if a player's rook is captured.
+  }
+
+  if (move.captured_piece == kRook) {
+    // Revoke the other player's castling rights if a player's rook is captured.
     if (player_to_move_ == kWhite) {
       if (move.target_sq == kSqA8 && castling_rights_[kBlack][kQueenSide]) {
         castling_rights_[kBlack][kQueenSide] = false;

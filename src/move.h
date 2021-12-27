@@ -18,21 +18,6 @@ typedef int8_t S8;
 constexpr S8 kNA = -1;
 
 struct Move {
-  bool operator==(const Move& rhs) const {
-    return (is_ep == rhs.is_ep && new_ep_target_sq == rhs.new_ep_target_sq) ||
-           (castling_type == rhs.castling_type) ||
-           (captured_piece == rhs.captured_piece &&
-            moving_piece == rhs.moving_piece && start_sq == rhs.start_sq &&
-            target_sq == rhs.target_sq);
-  }
-  bool operator!=(const Move& rhs) const {
-    return !((is_ep == rhs.is_ep && new_ep_target_sq == rhs.new_ep_target_sq) ||
-             (castling_type == rhs.castling_type) ||
-             (captured_piece == rhs.captured_piece &&
-              moving_piece == rhs.moving_piece && start_sq == rhs.start_sq &&
-              target_sq == rhs.target_sq));
-  }
-
   bool is_ep = false;
   S8 captured_piece = kNA;
   // Indicate if the move is not a castling move, queenside castling, or

@@ -108,16 +108,15 @@ The move generation function `Engine::GenerateMoves()` is implemented as a
 to ensure that a move does not put the moving player in check; illegal moves are
 unmade if they are found to do this.
 
-#### Board Hashing
+#### Transposition Table
 
-In order efficiently compare positions throughout a game, `Game` objects use the
-function `Board::GetBoardHash()` to compute hashes of game states. This function is
-implemented with the [Zobrist Hashing](https://www.chessprogramming.org/Zobrist_Hashing) algorithm, and is used during the detection
-of both threefold and fivefold move repitions and to generate keys to index into the
-transposition table. This technique carries with it a small risk for collisions, with
-an expected collision rate of one in 2^32 ≈ 4.29 billion. Relatively little can be done
+A custom hash table was used to implement the [Transposition Table](https://www.chessprogramming.org/Transposition_Table)
+The [Zobrist Hashing](https://www.chessprogramming.org/Zobrist_Hashing) 
+algorithm was used to hash board states. This technique an expected collision
+rate of one in 2^32 ≈ 4.29 billion. Relatively little can be done
 to mitigate this risk, and as such is a known and unavoidable bug with this
-implementation.
+implementation. The Transposition Table is [two-tiered](https://www.chessprogramming.org/Transposition_Table#Two-tier_System), using the
+"Always Replace" and "Depth-Preferred" replacement schemes in parallel.
 
 #### Search
 
@@ -161,17 +160,17 @@ The move generator is capable of producing up to ~7 million moves/sec.
 
 The following is a table demonstrating how the addition of new search features
 (alpha-beta pruning, a transposition table, etc.) changed the average time it 
-took the engine to perform a search 5 plys deep from this position
+took the engine to perform a search 7 plys deep from this position with Black to
+move:
 
 ![Test Position](./figs/test_position.png "Test Position")
 
-Please note that these features were applied cummulatively to the engine, and
-times shown are the result of all features up to and including the new feature
-addition.
+using a basic material evaluation function. Please note that these features were
+applied cummulatively to the engine, and times shown are the result of all 
+features up to and including the new feature addition.
 
 |Feature|Time [s]|
 |---|---|
-|Basic Minimax Search|41.159|
-|Alpha-Beta Pruning|0.154|
-|Transposition Table|0.131|
-|MVV-LVA Move Ordering|0.049|
+|Alpha-Beta Pruning|520|
+|MVV-LVA Move Ordering|5.5|
+|Transposition Table|4.9|

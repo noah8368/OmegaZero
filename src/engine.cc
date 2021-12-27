@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <queue>
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
@@ -18,10 +19,13 @@
 #include "board.h"
 #include "game.h"
 #include "move.h"
+#include "transp_table.h"
 
 namespace omegazero {
 
+using std::max;
 using std::pair;
+using std::queue;
 using std::sort;
 using std::unordered_map;
 using std::vector;
@@ -35,6 +39,7 @@ Engine::Engine(Board* board, S8 player_side) {
   } else if (tolower(player_side) == 'b') {
     user_side_ = kBlack;
   } else if (tolower(player_side) == 'r') {
+    // Pick a random side for the engine to play as.
     srand(static_cast<int>(time(0)));
     user_side_ = static_cast<S8>(rand() % static_cast<int>(kNumPlayers));
   } else {
@@ -42,14 +47,19 @@ Engine::Engine(Board* board, S8 player_side) {
   }
 }
 
-auto Engine::GetBestMove() -> Move {
-  // Use the NegaMax algorithm to traverse the search tree. Use -INT32_MAX
-  // rather than INT32_MIN to avoid integer overflow when multipying by -1.
-  int best_score = -INT32_MAX;
-  int score;
+auto Engine::GetBestMove(int alpha, int beta) -> Move {
+  // Clear out moves from the tranposition table for each new search to prevent
+  // the table from becoming filled with old evaluations unlikely to be used.
+  transp_table_.Clear();
+  int best_eval = kWorstEval;
+  int eval;
   vector<Move> move_list = GenerateMoves();
   move_list = OrderMoves(move_list);
   Move best_move = move_list[0];
+
+  // Save the current table of board repititions so it can be reset after every
+  // traversal.
+  queue<U64> saved_pos_rep_table = pos_rep_table_;
   for (const Move& move : move_list) {
     try {
       board_->MakeMove(move);
@@ -58,26 +68,23 @@ auto Engine::GetBestMove() -> Move {
       continue;
     }
 
-    U64 board_hash = board_->GetBoardHash();
-    PosInfo known_pos;
-    if (transposition_table_.find(board_hash) == transposition_table_.end()) {
-      // Flip sign of the evaluation for the next player to get the
-      // evaluation relative to the current moving player.
-      score = -Search(best_score, -best_score, kSearchDepth - 1);
-      known_pos.pos_depth = kSearchDepth;
-      known_pos.pos_score = score;
-      transposition_table_[board_hash] = known_pos;
-    } else {
-      // Use the score in the tranposition table to avoid re-evaluating
-      // positions.
-      score = transposition_table_[board_hash].pos_score;
-    }
+    // Record the current board state to enforce move repitition rules.
+    AddBoardRep();
+    // Flip sign of the evaluation for the next player to get the
+    // evaluation relative to the current moving player.
+    eval = -Search(-beta, -alpha, kSearchDepth - 1);
+    transp_table_.Update(board_, kSearchDepth - 1, eval);
     board_->UnmakeMove(move);
+    pos_rep_table_ = saved_pos_rep_table;
 
     // Track the value of the best possible move for the current player.
-    if (score > best_score) {
-      best_score = score;
+    if (eval > best_eval) {
+      best_eval = eval;
       best_move = move;
+    }
+    alpha = max(best_eval, alpha);
+    if (alpha >= beta) {
+      break;
     }
   }
   return best_move;
@@ -106,17 +113,6 @@ auto Engine::GetGameStatus() -> S8 {
     return kPlayerInCheck;
   } else if (no_legal_moves) {
     // Indicate that the game has ended in a draw.
-    return kDraw;
-  }
-
-  // Check for threefold and fivefold position repititions.
-  U64 board_hash = board_->GetBoardHash();
-  S8 num_pos_rep = pos_rep_table_[board_hash];
-  if (num_pos_rep == kNumMoveRepForOptionalDraw &&
-      board_->GetPlayerToMove() == user_side_) {
-    return kOptionalDraw;
-  } else if (num_pos_rep == kMaxMoveRep) {
-    // Enforce a draw due to board reptititions.
     return kDraw;
   }
 
@@ -157,7 +153,6 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
   Bitboard moving_pieces = board_->GetPiecesByType(kNA, moving_player);
   Bitboard remove_bad_sqs_mask;
   vector<Move> move_list;
-
   if (captures_only) {
     // Remove all squares not occupied by the enemy player when generating
     // captures only.
@@ -173,8 +168,8 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
     // Generate attack maps for each piece.
     start_sq = GetSqOfFirstPiece(moving_pieces);
     moving_piece = board_->GetPieceOnSq(start_sq);
-    Bitboard attack_map =
-        board_->GetAttackMap(moving_player, start_sq, moving_piece);
+    Bitboard attack_map = board_->GetAttackMap(moving_player, start_sq,
+                                               moving_piece, moving_pieces);
     // Remove all invalid squares in the attack map.
     attack_map &= remove_bad_sqs_mask;
     AddMovesForPiece(move_list, attack_map, enemy_player, moving_player,
@@ -191,109 +186,108 @@ auto Engine::Search(int alpha, int beta, int depth) -> int {
   // Use the NegaMax algorithm to traverse the search tree.
   S8 game_status = GetGameStatus();
   if (game_status == kPlayerCheckmated) {
-    // Return the worst possible score if the player has been checkmated. Use
-    // -INT32_MAX rather than INT32_MIN to avoid integer overflow when
-    // multipying by -1 to get the score relative to the other player.
     return -INT32_MAX;
-  } else if (game_status == kDraw) {
-    // Return the second worst possible score if the game is a draw.
-    return 1 - INT32_MAX;
+  } else if (game_status == kDraw || RepDetected()) {
+    return kNeutralEval;
+  } else if (depth == 0) {
+    // Initiate the Quiescence search when maximum depth is reached.
+    return /* QuiescenceSearch(alpha, beta); */ board_->Evaluate();
   }
 
-  int score;
-  vector<Move> move_list;
-  if (depth == kQuiescentSearchDepth) {
-    // Initiate the Quiescence Search if maximum depth is reached.
-    score = board_->Evaluate();
-    if (score >= beta) {
-      return beta;
-    }
-    if (score > alpha) {
-      alpha = score;
-    }
-    // Generate capturing moves only.
-    move_list = GenerateMoves(true);
-  } else {
-    move_list = GenerateMoves();
-  }
+  int eval;
+  vector<Move> move_list = GenerateMoves();
   move_list = OrderMoves(move_list);
-
+  queue<U64> saved_pos_rep_table = pos_rep_table_;
+  // Iterate through all child nodes of the current position.
   for (const Move& move : move_list) {
     try {
       board_->MakeMove(move);
     } catch (BadMove& e) {
-      // Ignore moves that put the player's king in check.
       continue;
     }
-    // Record the current board state to enforce move repitition rules.
+
     AddBoardRep();
-
-    if (depth == kQuiescentSearchDepth) {
-      // Evaluate a move directly rather than using a transposition table during
-      // Quiescent Search.
-      score = -Search(-beta, -alpha, kQuiescentSearchDepth);
-    } else {
-      PosInfo known_pos;
-      U64 board_hash = board_->GetBoardHash();
-      if (transposition_table_.find(board_hash) == transposition_table_.end()) {
-      ModifyTranspositionTable:
-        // Flip sign of the evaluation for the next player to get the evaluation
-        // relative to the current moving player.
-        score = -Search(-beta, -alpha, depth - 1);
-        known_pos.pos_depth = depth;
-        known_pos.pos_score = score;
-        transposition_table_[board_hash] = known_pos;
-      } else {
-        known_pos = transposition_table_[board_hash];
-        if (known_pos.pos_depth <= depth) {
-          // Use the score in the tranposition table to avoid re-evaluating
-          // positions.
-          score = transposition_table_[board_hash].pos_score;
-        } else {
-          // Update the transposition table's score with an evaluation done at a
-          // higher depth, implying a deeper search into the future.
-          goto ModifyTranspositionTable;
-        }
-      }
+    // Check the transposition table for previously stored evaluations.
+    if (!transp_table_.Access(board_, depth - 1, eval)) {
+      eval = -Search(-beta, -alpha, depth - 1);
+      transp_table_.Update(board_, depth - 1, eval);
     }
-    RemoveBoardRep();
     board_->UnmakeMove(move);
+    pos_rep_table_ = saved_pos_rep_table;
 
-    if (score >= beta) {
-      // Return if a beta cutoff is detected.
+    if (eval >= beta) {
+      // Prune a subtree when a beta cutoff is detected.
       return beta;
     }
-    // Track the value of the best possible move for the current player.
-    if (score > alpha) {
-      alpha = score;
+    alpha = max(eval, alpha);
+  }
+  return alpha;
+}
+
+auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
+  S8 game_status = GetGameStatus();
+  if (game_status == kPlayerCheckmated) {
+    return kWorstEval;
+  } else if (game_status == kDraw || RepDetected()) {
+    return kNeutralEval;
+  }
+
+  // Establish a lower bound for the node evaluation (stand_pat_eval),
+  // and perform a beta cutoff if this value exceeds beta.
+  int stand_pat_eval = board_->Evaluate();
+  if (stand_pat_eval >= beta) {
+    return beta;
+  }
+  alpha = max(stand_pat_eval, alpha);
+
+  // Generate captures only.
+  vector<Move> move_list = GenerateMoves(true);
+  move_list = OrderMoves(move_list);
+  queue<U64> saved_pos_rep_table = pos_rep_table_;
+  for (const Move& move : move_list) {
+    try {
+      board_->MakeMove(move);
+    } catch (BadMove& e) {
+      continue;
     }
+    AddBoardRep();
+    // Calculate the evalulation directly rather than using the transposition
+    // table to avoid cache misses.
+    stand_pat_eval = -QuiescenceSearch(-beta, -alpha);
+    board_->UnmakeMove(move);
+    pos_rep_table_ = saved_pos_rep_table;
+
+    if (stand_pat_eval >= beta) {
+      return beta;
+    }
+    alpha = max(stand_pat_eval, alpha);
   }
   return alpha;
 }
 
 auto Engine::OrderMoves(vector<Move> move_list) const -> vector<Move> {
-  vector<pair<Move, int>> capture_score_pairs;
+  vector<pair<Move, int>> capture_eval_pairs;
   vector<Move> quiet_moves;
   for (const Move& move : move_list) {
     if (move.captured_piece == kNA) {
       quiet_moves.push_back(move);
     } else {
-      // Use the MVV-LVA heuristic to score captures.
-      capture_score_pairs.emplace_back(
-          move, kVictimWeights[move.captured_piece] +
-                    kAggressorWeights[move.moving_piece]);
+      // Use the MVV-LVA heuristic to evalulate captures.
+      capture_eval_pairs.emplace_back(move,
+                                      kVictimWeights[move.captured_piece] +
+                                          kAggressorWeights[move.moving_piece]);
     }
   }
 
   // Sort captures by descending value of their MVV-LVA heuristic.
-  sort(capture_score_pairs.begin(), capture_score_pairs.end(),
+  sort(capture_eval_pairs.begin(), capture_eval_pairs.end(),
        [](const pair<Move, int>& lhs, const pair<Move, int>& rhs) {
          return lhs.second > rhs.second;
        });
   vector<Move> captures;
-  captures.reserve(capture_score_pairs.size());
-  for (const pair<Move, int>& capture_score_pair : capture_score_pairs) {
-    captures.push_back(capture_score_pair.first);
+  captures.reserve(capture_eval_pairs.size());
+  for (const pair<Move, int>& capture_eval_pair : capture_eval_pairs) {
+    captures.push_back(capture_eval_pair.first);
   }
 
   // Place all captures first in the ordered move list, followed by quiet

@@ -61,12 +61,13 @@ class Game {
   auto AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
                         S8 target_rank, S8 target_file,
                         bool capture_indicated) const -> void;
-  auto DisplayBoard() const -> void;
   auto CheckMove(Move& move, S8 start_rank, S8 start_file, S8 target_rank,
                  S8 target_file, bool capture_indicated) -> void;
+  auto DisplayBoard() const -> void;
   auto InterpAlgNotation(const string& user_cmd, Move& move, S8& start_rank,
                          S8& start_file, S8& target_rank, S8& target_file,
                          bool& capture_indicated) -> void;
+  auto RecordBoardState() -> void;
 
   Board board_;
 
@@ -77,6 +78,15 @@ class Game {
   S8 winner_;
 
   string piece_symbols_[kNumPlayers][kNumPieceTypes];
+
+  // Implement a custom hash function for unordered_map that calls the board's
+  // hash function.
+  struct BoardKeyHash {
+    size_t operator()(const Board& board) const {
+      return static_cast<size_t>(board.GetBoardHash());
+    }
+  };
+  unordered_map<Board, S8, BoardKeyHash> pos_rep_table_;
 };
 
 // Implement inline non-member functions.
@@ -106,6 +116,14 @@ inline auto Game::OutputWinner() const -> void {
   } else {
     string player_name = GetPlayerStr(winner_);
     cout << "\n" << player_name << " wins" << endl;
+  }
+}
+
+inline auto Game::RecordBoardState() -> void {
+  if (pos_rep_table_.find(board_) == pos_rep_table_.end()) {
+    pos_rep_table_[board_] = 1;
+  } else {
+    ++pos_rep_table_[board_];
   }
 }
 

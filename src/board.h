@@ -171,9 +171,13 @@ class Board {
  public:
   Board(const std::string& init_pos);
 
+  auto operator==(const Board& board) const -> bool {
+    return GetBoardHash() == board.GetBoardHash();
+  }
+
   // Return possible attacks a specified piece can make on all other pieces.
-  auto GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
-      -> Bitboard;
+  auto GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece,
+                    Bitboard debug = 0) const -> Bitboard;
   auto GetPiecesByType(S8 piece_type, S8 player) const -> Bitboard;
 
   auto CastlingLegal(S8 board_side) const -> bool;

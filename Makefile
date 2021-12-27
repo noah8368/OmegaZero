@@ -5,7 +5,7 @@ FLAGS = -D_GLIBCXX_PARALLEL -fno-signed-zeros -fno-trapping-math -fopenmp \
 		-Wextra -Wshadow
 
 OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \
-          build/main.o build/masks.o
+          build/main.o build/masks.o build/transp_table.o
 
 all : build $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS)
@@ -25,4 +25,5 @@ clean:
 
 .PHONY: quick_clean
 quick_clean:
-	rm build/board.o build/engine.o build/game.o build/main.o 
+	rm build/board.o build/engine.o build/game.o build/main.o \
+	build/transp_table.o build/OmegaZero

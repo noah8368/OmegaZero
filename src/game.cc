@@ -93,6 +93,7 @@ void Game::Play() {
   DisplayBoard();
 
   // Record the current board state to enforce move repitition rules.
+  RecordBoardState();
   engine_.AddBoardRep();
 
   // Check game status.
@@ -100,10 +101,10 @@ void Game::Play() {
   S8 player_to_move = board_.GetPlayerToMove();
   if (game_status == kPlayerInCheck) {
     cout << GetPlayerStr(player_to_move) << " is in check" << endl;
-  } else if (game_status == kDraw) {
+  } else if (game_status == kDraw || pos_rep_table_[board_] == kMaxMoveRep) {
     game_active_ = false;
     return;
-  } else if (game_status == kOptionalDraw) {
+  } else if (pos_rep_table_[board_] == kNumMoveRepForOptionalDraw) {
     string draw_decision;
     cout << "Threefold repitition detected. "
          << "Would you like to claim a draw? (y/): ";
