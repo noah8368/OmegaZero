@@ -33,8 +33,10 @@ enum GameStatus : S8 {
 constexpr int kSearchDepth = 7;
 // Store values used for the MVV-LVA heuristic. Piece order in array is pawn,
 // knight, bishop, rook, queen, king.
-constexpr int kVictimWeights[kNumPieceTypes] = {10, 20, 30, 40, 50, 60};
-constexpr int kAggressorWeights[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
+constexpr int kAggressorSortVals[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
+constexpr int kVictimSortVals[kNumPieceTypes] = {10, 20, 30, 40, 50, 60};
+// Store values used for transposition table move ordering.
+constexpr int kTranspTableSortVal = 100;
 constexpr int kBestEval = INT32_MAX;
 constexpr int kNeutralEval = 0;
 // Use -INT32_MAX rather than INT32_MIN to avoid integer overflow when
@@ -49,7 +51,7 @@ class Engine {
 
   // Search possible games in a search tree to find the best legal move. Act as
   // the root function to call the NegaMax search algorithm.
-  auto GetBestMove(int alpha = kWorstEval, int beta = kBestEval) -> Move;
+  auto GetBestMove() -> Move;
 
   // Check for draws, checks, and checkmates. Note that this function does not
   // check for move repititions.
@@ -72,6 +74,7 @@ class Engine {
 
   // Compute best evaluation resulting from a legal move for the moving
   // player by searching the tree of possible moves using the NegaMax algorithm.
+  auto Search(Move& best_move, int alpha, int beta, int depth) -> int;
   auto Search(int alpha, int beta, int depth) -> int;
   // Search until a "quiescent" position is reached (no capturing moves can be
   // made) to mitigate the horizon effect.
@@ -80,6 +83,7 @@ class Engine {
   // Attempt to predict which moves are likely to be better, and order those
   // towards the front of the move_list to increase the number of moves that
   // can be pruned during alpha-beta pruning.
+  auto OrderMoves(vector<Move> move_list, int depth) const -> vector<Move>;
   auto OrderMoves(vector<Move> move_list) const -> vector<Move>;
 
   auto AddCastlingMoves(vector<Move>& move_list) const -> void;
@@ -101,6 +105,12 @@ class Engine {
 
 // Implement inline member functions.
 
+inline auto Engine::GetBestMove() -> Move {
+  Move best_move;
+  Search(best_move, kWorstEval, kBestEval, kSearchDepth);
+  return best_move;
+}
+
 inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
 
 inline auto Engine::RepDetected() const -> bool {
@@ -108,6 +118,11 @@ inline auto Engine::RepDetected() const -> bool {
   // board repititions.
   return pos_rep_table_.size() == kSixPlys &&
          pos_rep_table_.front() == pos_rep_table_.back();
+}
+
+inline auto Engine::Search(int alpha, int beta, int depth) -> int {
+  Move throwaway_move;
+  return Search(throwaway_move, alpha, beta, depth);
 }
 
 inline auto Engine::AddBoardRep() -> void {

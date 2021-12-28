@@ -47,49 +47,6 @@ Engine::Engine(Board* board, S8 player_side) {
   }
 }
 
-auto Engine::GetBestMove(int alpha, int beta) -> Move {
-  // Clear out moves from the tranposition table for each new search to prevent
-  // the table from becoming filled with old evaluations unlikely to be used.
-  transp_table_.Clear();
-  int best_eval = kWorstEval;
-  int eval;
-  vector<Move> move_list = GenerateMoves();
-  move_list = OrderMoves(move_list);
-  Move best_move = move_list[0];
-
-  // Save the current table of board repititions so it can be reset after every
-  // traversal.
-  queue<U64> saved_pos_rep_table = pos_rep_table_;
-  for (const Move& move : move_list) {
-    try {
-      board_->MakeMove(move);
-    } catch (BadMove& e) {
-      // Ignore moves that put the player's king in check.
-      continue;
-    }
-
-    // Record the current board state to enforce move repitition rules.
-    AddBoardRep();
-    // Flip sign of the evaluation for the next player to get the
-    // evaluation relative to the current moving player.
-    eval = -Search(-beta, -alpha, kSearchDepth - 1);
-    transp_table_.Update(board_, kSearchDepth - 1, eval);
-    board_->UnmakeMove(move);
-    pos_rep_table_ = saved_pos_rep_table;
-
-    // Track the value of the best possible move for the current player.
-    if (eval > best_eval) {
-      best_eval = eval;
-      best_move = move;
-    }
-    alpha = max(best_eval, alpha);
-    if (alpha >= beta) {
-      break;
-    }
-  }
-  return best_move;
-}
-
 auto Engine::GetGameStatus() -> S8 {
   // Check for checks, checkmates, and draws.
   vector<Move> move_list = GenerateMoves();
@@ -182,11 +139,11 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
 
 // Implement private member functions.
 
-auto Engine::Search(int alpha, int beta, int depth) -> int {
+auto Engine::Search(Move& best_move, int alpha, int beta, int depth) -> int {
   // Use the NegaMax algorithm to traverse the search tree.
   S8 game_status = GetGameStatus();
   if (game_status == kPlayerCheckmated) {
-    return -INT32_MAX;
+    return kWorstEval;
   } else if (game_status == kDraw || RepDetected()) {
     return kNeutralEval;
   } else if (depth == 0) {
@@ -194,15 +151,17 @@ auto Engine::Search(int alpha, int beta, int depth) -> int {
     return /* QuiescenceSearch(alpha, beta); */ board_->Evaluate();
   }
 
-  int eval;
   vector<Move> move_list = GenerateMoves();
-  move_list = OrderMoves(move_list);
+  move_list = OrderMoves(move_list, depth);
+  int eval;
+  bool is_pv_node = false;
   queue<U64> saved_pos_rep_table = pos_rep_table_;
   // Iterate through all child nodes of the current position.
   for (const Move& move : move_list) {
     try {
       board_->MakeMove(move);
     } catch (BadMove& e) {
+      // Ignore moves that put the player's king in check.
       continue;
     }
 
@@ -210,16 +169,26 @@ auto Engine::Search(int alpha, int beta, int depth) -> int {
     // Check the transposition table for previously stored evaluations.
     if (!transp_table_.Access(board_, depth - 1, eval)) {
       eval = -Search(-beta, -alpha, depth - 1);
-      transp_table_.Update(board_, depth - 1, eval);
     }
     board_->UnmakeMove(move);
     pos_rep_table_ = saved_pos_rep_table;
 
     if (eval >= beta) {
+      transp_table_.Update(board_, depth, beta, kCutNode);
       // Prune a subtree when a beta cutoff is detected.
       return beta;
     }
-    alpha = max(eval, alpha);
+    if (eval > alpha) {
+      is_pv_node = true;
+      alpha = eval;
+      best_move = move;
+    }
+  }
+
+  if (is_pv_node) {
+    transp_table_.Update(board_, depth, alpha, kPvNode, &best_move);
+  } else {
+    transp_table_.Update(board_, depth, alpha, kAllNode);
   }
   return alpha;
 }
@@ -242,7 +211,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
 
   // Generate captures only.
   vector<Move> move_list = GenerateMoves(true);
-  move_list = OrderMoves(move_list);
+  move_list = OrderMoves(move_list, kNA);
   queue<U64> saved_pos_rep_table = pos_rep_table_;
   for (const Move& move : move_list) {
     try {
@@ -265,38 +234,107 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
   return alpha;
 }
 
-auto Engine::OrderMoves(vector<Move> move_list) const -> vector<Move> {
-  vector<pair<Move, int>> capture_eval_pairs;
-  vector<Move> quiet_moves;
+auto Engine::OrderMoves(vector<Move> move_list, int depth) const
+    -> vector<Move> {
+  Move best_move;
+  transp_table_.Access(board_, depth, best_move);
+
+  vector<pair<Move, int>> ordered_capture_pairs;
+  vector<Move> hash_moves;
+  vector<Move> late_moves;
+  // S8 node_type;
   for (const Move& move : move_list) {
+    // Prioritize a move if it's the previously calculated best move of a node.
+    if (move == best_move) {
+      hash_moves.push_back(move);
+      continue;
+    }
+
+    // This section of code causes too many cache misses.
+    // TODO: Try adding this back in future iterations.
+    /*
+    try {
+      board_->MakeMove(move);
+    } catch (BadMove& e) {
+      // Filter out (most) illegal moves that put the player's king in check.
+      continue;
+    }
+    if (transp_table_.Access(board_, depth - 1, node_type) &&
+        node_type != kAllNode) {
+      // Prioritize cut nodes and PV nodes.
+      hash_moves.push_back(move);
+      board_->UnmakeMove(move);
+      continue;
+    }
+    board_->UnmakeMove(move);
+    */
+
     if (move.captured_piece == kNA) {
-      quiet_moves.push_back(move);
+      late_moves.push_back(move);
     } else {
-      // Use the MVV-LVA heuristic to evalulate captures.
-      capture_eval_pairs.emplace_back(move,
-                                      kVictimWeights[move.captured_piece] +
-                                          kAggressorWeights[move.moving_piece]);
+      // Use the MVV-LVA heuristic to order captures.
+      ordered_capture_pairs.emplace_back(
+          move, kVictimSortVals[move.captured_piece] +
+                    kAggressorSortVals[move.moving_piece]);
     }
   }
-
   // Sort captures by descending value of their MVV-LVA heuristic.
-  sort(capture_eval_pairs.begin(), capture_eval_pairs.end(),
+  sort(ordered_capture_pairs.begin(), ordered_capture_pairs.end(),
        [](const pair<Move, int>& lhs, const pair<Move, int>& rhs) {
          return lhs.second > rhs.second;
        });
+
   vector<Move> captures;
-  captures.reserve(capture_eval_pairs.size());
-  for (const pair<Move, int>& capture_eval_pair : capture_eval_pairs) {
+  captures.reserve(ordered_capture_pairs.size());
+  for (const pair<Move, int>& capture_eval_pair : ordered_capture_pairs) {
     captures.push_back(capture_eval_pair.first);
   }
 
-  // Place all captures first in the ordered move list, followed by quiet
-  // moves.
+  // Place all hash moves first, followed by captures, and then all other moves.
+  vector<Move> ordered_moves;
+  ordered_moves.reserve(captures.size() + hash_moves.size() +
+                        late_moves.size());
+  ordered_moves.insert(ordered_moves.end(), hash_moves.begin(),
+                       hash_moves.end());
+  ordered_moves.insert(ordered_moves.end(), captures.begin(), captures.end());
+  ordered_moves.insert(ordered_moves.end(), late_moves.begin(),
+                       late_moves.end());
+  return ordered_moves;
+}
+
+auto Engine::OrderMoves(vector<Move> move_list) const -> vector<Move> {
+  Move best_move;
+
+  vector<pair<Move, int>> ordered_capture_pairs;
+  vector<Move> late_moves;
+  for (const Move& move : move_list) {
+    if (move.captured_piece == kNA) {
+      late_moves.push_back(move);
+    } else {
+      // Use the MVV-LVA heuristic to order captures.
+      ordered_capture_pairs.emplace_back(
+          move, kVictimSortVals[move.captured_piece] +
+                    kAggressorSortVals[move.moving_piece]);
+    }
+  }
+  // Sort captures by descending value of their MVV-LVA heuristic.
+  sort(ordered_capture_pairs.begin(), ordered_capture_pairs.end(),
+       [](const pair<Move, int>& lhs, const pair<Move, int>& rhs) {
+         return lhs.second > rhs.second;
+       });
+
+  vector<Move> captures;
+  captures.reserve(ordered_capture_pairs.size());
+  for (const pair<Move, int>& capture_eval_pair : ordered_capture_pairs) {
+    captures.push_back(capture_eval_pair.first);
+  }
+
+  // Place all hash moves first, followed by captures, and then all other moves.
   vector<Move> ordered_moves;
   ordered_moves.reserve(move_list.size());
-  ordered_moves.insert(ordered_moves.begin(), captures.begin(), captures.end());
-  ordered_moves.insert(ordered_moves.begin() + captures.size(),
-                       quiet_moves.begin(), quiet_moves.end());
+  ordered_moves.insert(ordered_moves.end(), captures.begin(), captures.end());
+  ordered_moves.insert(ordered_moves.end(), late_moves.begin(),
+                       late_moves.end());
   return ordered_moves;
 }
 

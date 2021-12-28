@@ -1,4 +1,4 @@
-# OmegaZero Chess Engine
+# OmegaZero
 
 ###### Noah Himed
 
@@ -6,8 +6,8 @@
 
 ### Project Summary
 
-OmegaZero is an in-progress terminal-based chess engine which allows a user
-to play against an AI. The name "OmegaZero" is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), a program
+OmegaZero is a chess engine built from scratch which allows a user to play 
+against an AI. The name "OmegaZero" is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), a program
 developed by [DeepMind](https://deepmind.com/) that was used to create one of the world's
 best Chess engines. The [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during
 development. Credit goes to [Bradon Hsu](https://github.com/2brandonh) for designing the
@@ -16,7 +16,7 @@ logo for this project.
 ### Status: In Progress
 
 An AI has been implemented using the NegaMax search algorithm with some
-optimizations and an evaluation  function based purely on computing material 
+optimizations and an evaluation function based purely on computing material 
 advantage. This basic evaluation implementation's purpose is to serve as a 
 placeholder for developing the search algorithm. Once development is finished
 with search, a more advanced evaluation function will be implemented.
@@ -39,7 +39,7 @@ sudo apt-get install libboost-all-dev
 
 To begin a game, a user invokes the program as follows:
 ```
-build/OmegaZero -p [SIDE]
+OmegaZero -p [SIDE]
 ```
 where `[SIDE]` is the side the user would like to player. This may be `w` for
 White, `b` for Black, or `r` for a random selection.
@@ -68,7 +68,7 @@ To resign, a user must enter `q` on their turn.
 
 To print out the [Perft](https://www.chessprogramming.org/Perft) results for engine, invoke the program as follows:
 ```
-build/OmegaZero -i [POSITION] -d [DEPTH]
+OmegaZero -i [POSITION] -d [DEPTH]
 ```
 `[POSITION]` is a [FEN](https://www.chessprogramming.org/Forsyth-Edwards_Notation) formatted string denoting the intial position to
 start counting nodes from in the search tree; not providing this will cause the
@@ -85,7 +85,7 @@ generator.
 
 To print out statistics of the search and evaluation of board states in the search tree, invoke the program as follows:
 ```
-build/OmegaZero -i [POSITION] -s
+OmegaZero -i [POSITION] -s
 ```
 where `[POSITION]` is defined above.
 
@@ -110,7 +110,7 @@ unmade if they are found to do this.
 
 #### Transposition Table
 
-A custom hash table was used to implement the [Transposition Table](https://www.chessprogramming.org/Transposition_Table)
+A custom hash table was used to implement the [Transposition Table](https://www.chessprogramming.org/Transposition_Table).
 The [Zobrist Hashing](https://www.chessprogramming.org/Zobrist_Hashing) 
 algorithm was used to hash board states. This technique an expected collision
 rate of one in 2^32 ≈ 4.29 billion. Relatively little can be done
@@ -160,7 +160,7 @@ The move generator is capable of producing up to ~7 million moves/sec.
 
 The following is a table demonstrating how the addition of new search features
 (alpha-beta pruning, a transposition table, etc.) changed the average time it 
-took the engine to perform a search 7 plys deep from this position with Black to
+took the engine to perform a search 7 plys deep from this position with White to
 move:
 
 ![Test Position](./figs/test_position.png "Test Position")

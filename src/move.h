@@ -18,12 +18,21 @@ typedef int8_t S8;
 constexpr S8 kNA = -1;
 
 struct Move {
+  bool operator==(const Move& rhs) const {
+    return (is_ep && is_ep == rhs.is_ep &&
+            new_ep_target_sq == rhs.new_ep_target_sq) ||
+           (castling_type != kNA && castling_type == rhs.castling_type) ||
+           (moving_piece != kNA && captured_piece == rhs.captured_piece &&
+            moving_piece == rhs.moving_piece && start_sq == rhs.start_sq &&
+            target_sq == rhs.target_sq);
+  }
+
   bool is_ep = false;
   S8 captured_piece = kNA;
   // Indicate if the move is not a castling move, queenside castling, or
   // kingside castling.
   S8 castling_type = kNA;
-  S8 moving_piece;
+  S8 moving_piece = kNA;
   // Indicate a new en passent target square when a double pawn push
   // is made by either player.
   S8 new_ep_target_sq = kNA;

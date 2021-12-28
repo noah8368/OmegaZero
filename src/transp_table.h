@@ -13,17 +13,26 @@
 #include <stdexcept>
 
 #include "board.h"
+#include "move.h"
 
 namespace omegazero {
+
+enum NodeType : S8 {
+  kPvNode,
+  kCutNode,
+  kAllNode,
+};
 
 constexpr int kTableSize = 1 << 20;
 // Store a mask with least significant 19 bits set for computing table indices.
 constexpr U64 kHashMask = 0X7FFFF;
 
 struct TableEntry {
+  Move best_move;
+  U64 board_hash;
   int depth;
   int eval;
-  U64 board_hash;
+  S8 node_type;
 };
 
 class TranspTable {
@@ -35,9 +44,14 @@ class TranspTable {
   // Loop up the board position in the hash table and set eval to the
   // corresponding evaluation if the position is found. Return a bool to
   // indicate if the position was found.
+  auto Access(const Board* board, int depth, int& eval, S8& node_type,
+              Move& best_move) const -> bool;
   auto Access(const Board* board, int depth, int& eval) const -> bool;
+  auto Access(const Board* board, int depth, Move& best_move) const -> bool;
+  auto Access(const Board* board, int depth, S8& node_type) const -> bool;
 
-  auto Update(const Board* board, int depth, int eval) -> void;
+  auto Update(const Board* board, int depth, int eval, S8 node_type,
+              const Move* best_move = nullptr) -> void;
   auto Clear() -> void;
 
  private:
@@ -47,6 +61,27 @@ class TranspTable {
   TableEntry* always_replace_entries_;
   TableEntry* depth_pref_entries_;
 };
+
+inline auto TranspTable::Access(const Board* board, int depth, int& eval) const
+    -> bool {
+  S8 throwaway_node_type;
+  Move throwaway_move;
+  return Access(board, depth, eval, throwaway_node_type, throwaway_move);
+}
+
+inline auto TranspTable::Access(const Board* board, int depth,
+                                Move& best_move) const -> bool {
+  int throwaway_eval;
+  S8 throwaway_node_type;
+  return Access(board, depth, throwaway_eval, throwaway_node_type, best_move);
+}
+
+inline auto TranspTable::Access(const Board* board, int depth,
+                                S8& node_type) const -> bool {
+  int throwaway_eval;
+  Move throwaway_move;
+  return Access(board, depth, throwaway_eval, node_type, throwaway_move);
+}
 
 inline auto TranspTable::Clear() -> void {
   memset(occ_table_, false, kTableSize * sizeof(bool));
