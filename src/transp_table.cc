@@ -28,7 +28,7 @@ TranspTable::~TranspTable() {
 }
 
 auto TranspTable::Access(const Board* board, int depth, int& eval,
-                         S8& node_type, Move& best_move) const -> bool {
+                         Move& best_move) const -> bool {
   U64 board_hash = board->GetBoardHash();
   int index = board_hash & kHashMask;
   if (occ_table_[index]) {
@@ -37,7 +37,6 @@ auto TranspTable::Access(const Board* board, int depth, int& eval,
     // stored evaluation was assessed for.
     if (depth <= table_entry.depth && table_entry.board_hash == board_hash) {
       eval = table_entry.eval;
-      node_type = table_entry.node_type;
       best_move = table_entry.best_move;
       return true;
     }
@@ -46,7 +45,6 @@ auto TranspTable::Access(const Board* board, int depth, int& eval,
     table_entry = always_replace_entries_[index];
     if (depth <= table_entry.depth && table_entry.board_hash == board_hash) {
       eval = table_entry.eval;
-      node_type = table_entry.node_type;
       best_move = table_entry.best_move;
       return true;
     }
@@ -54,7 +52,7 @@ auto TranspTable::Access(const Board* board, int depth, int& eval,
   return false;
 }
 
-auto TranspTable::Update(const Board* board, int depth, int eval, S8 node_type,
+auto TranspTable::Update(const Board* board, int depth, int eval,
                          const Move* best_move) -> void {
   TableEntry new_entry;
   if (best_move) {
@@ -64,7 +62,6 @@ auto TranspTable::Update(const Board* board, int depth, int eval, S8 node_type,
   new_entry.board_hash = board_hash;
   new_entry.depth = depth;
   new_entry.eval = eval;
-  new_entry.node_type = node_type;
 
   int index = board_hash & kHashMask;
   if (occ_table_[index]) {

@@ -11,6 +11,7 @@
 #define OMEGAZERO_SRC_ENGINE_H_
 
 #include <queue>
+#include <utility>
 #include <vector>
 
 #include "board.h"
@@ -19,6 +20,7 @@
 
 namespace omegazero {
 
+using std::pair;
 using std::queue;
 using std::unordered_map;
 using std::vector;
@@ -70,6 +72,7 @@ class Engine {
   auto AddBoardRep() -> void;
 
  private:
+  auto IsKillerMove(const Move& move, int depth) const -> bool;
   auto RepDetected() const -> bool;
 
   // Compute best evaluation resulting from a legal move for the moving
@@ -92,8 +95,11 @@ class Engine {
   auto AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
                         S8 enemy_player, S8 moving_player, S8 moving_piece,
                         S8 start_sq) const -> void;
+  auto RecordKillerMove(const Move& move, int depth) -> void;
 
   Board* board_;
+
+  pair<Move, Move> killer_moves_[kSearchDepth];
 
   S8 user_side_;
 
@@ -103,7 +109,7 @@ class Engine {
   TranspTable transp_table_;
 };
 
-// Implement inline member functions.
+// Implement public inline member functions.
 
 inline auto Engine::GetBestMove() -> Move {
   Move best_move;
@@ -112,6 +118,13 @@ inline auto Engine::GetBestMove() -> Move {
 }
 
 inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
+
+// Implement private inline member functions.
+
+inline auto Engine::IsKillerMove(const Move& move, int depth) const -> bool {
+  return killer_moves_[depth].first == move ||
+         killer_moves_[depth].second == move;
+}
 
 inline auto Engine::RepDetected() const -> bool {
   // Keep track of the last six plys as an efficient approximation to check for
@@ -131,6 +144,13 @@ inline auto Engine::AddBoardRep() -> void {
   // Track the last six positions of the game.
   if (pos_rep_table_.size() == kSixPlys) {
     pos_rep_table_.pop();
+  }
+}
+
+inline auto Engine::RecordKillerMove(const Move& move, int depth) -> void {
+  if (move != killer_moves_[depth].first) {
+    killer_moves_[depth].second = killer_moves_[depth].first;
+    killer_moves_[depth].first = move;
   }
 }
 

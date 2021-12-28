@@ -32,7 +32,6 @@ struct TableEntry {
   U64 board_hash;
   int depth;
   int eval;
-  S8 node_type;
 };
 
 class TranspTable {
@@ -44,13 +43,12 @@ class TranspTable {
   // Loop up the board position in the hash table and set eval to the
   // corresponding evaluation if the position is found. Return a bool to
   // indicate if the position was found.
-  auto Access(const Board* board, int depth, int& eval, S8& node_type,
-              Move& best_move) const -> bool;
+  auto Access(const Board* board, int depth, int& eval, Move& best_move) const
+      -> bool;
   auto Access(const Board* board, int depth, int& eval) const -> bool;
   auto Access(const Board* board, int depth, Move& best_move) const -> bool;
-  auto Access(const Board* board, int depth, S8& node_type) const -> bool;
 
-  auto Update(const Board* board, int depth, int eval, S8 node_type,
+  auto Update(const Board* board, int depth, int eval,
               const Move* best_move = nullptr) -> void;
   auto Clear() -> void;
 
@@ -64,23 +62,14 @@ class TranspTable {
 
 inline auto TranspTable::Access(const Board* board, int depth, int& eval) const
     -> bool {
-  S8 throwaway_node_type;
   Move throwaway_move;
-  return Access(board, depth, eval, throwaway_node_type, throwaway_move);
+  return Access(board, depth, eval, throwaway_move);
 }
 
 inline auto TranspTable::Access(const Board* board, int depth,
                                 Move& best_move) const -> bool {
   int throwaway_eval;
-  S8 throwaway_node_type;
-  return Access(board, depth, throwaway_eval, throwaway_node_type, best_move);
-}
-
-inline auto TranspTable::Access(const Board* board, int depth,
-                                S8& node_type) const -> bool {
-  int throwaway_eval;
-  Move throwaway_move;
-  return Access(board, depth, throwaway_eval, node_type, throwaway_move);
+  return Access(board, depth, throwaway_eval, best_move);
 }
 
 inline auto TranspTable::Clear() -> void {

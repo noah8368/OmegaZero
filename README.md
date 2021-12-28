@@ -171,6 +171,7 @@ features up to and including the new feature addition.
 
 |Feature|Time [s]|
 |---|---|
-|Alpha-Beta Pruning|520|
-|MVV-LVA Move Ordering|5.5|
-|Transposition Table|4.9|
+|Alpha-Beta Pruning|521|
+|MVV-LVA Move Ordering|5.52|
+|Transposition Table|4.91|
+|Killer Move Ordering|4.85|

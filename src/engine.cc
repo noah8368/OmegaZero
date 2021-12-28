@@ -174,7 +174,10 @@ auto Engine::Search(Move& best_move, int alpha, int beta, int depth) -> int {
     pos_rep_table_ = saved_pos_rep_table;
 
     if (eval >= beta) {
-      transp_table_.Update(board_, depth, beta, kCutNode);
+      transp_table_.Update(board_, depth, beta);
+      if (move.captured_piece == kNA) {
+        RecordKillerMove(move, depth);
+      }
       // Prune a subtree when a beta cutoff is detected.
       return beta;
     }
@@ -186,9 +189,9 @@ auto Engine::Search(Move& best_move, int alpha, int beta, int depth) -> int {
   }
 
   if (is_pv_node) {
-    transp_table_.Update(board_, depth, alpha, kPvNode, &best_move);
+    transp_table_.Update(board_, depth, alpha, &best_move);
   } else {
-    transp_table_.Update(board_, depth, alpha, kAllNode);
+    transp_table_.Update(board_, depth, alpha);
   }
   return alpha;
 }
@@ -211,7 +214,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
 
   // Generate captures only.
   vector<Move> move_list = GenerateMoves(true);
-  move_list = OrderMoves(move_list, kNA);
+  move_list = OrderMoves(move_list);
   queue<U64> saved_pos_rep_table = pos_rep_table_;
   for (const Move& move : move_list) {
     try {
@@ -240,42 +243,24 @@ auto Engine::OrderMoves(vector<Move> move_list, int depth) const
   transp_table_.Access(board_, depth, best_move);
 
   vector<pair<Move, int>> ordered_capture_pairs;
-  vector<Move> hash_moves;
+  vector<Move> killer_moves;
   vector<Move> late_moves;
-  // S8 node_type;
+  vector<Move> ordered_moves;
+  ordered_moves.reserve(move_list.size());
   for (const Move& move : move_list) {
     // Prioritize a move if it's the previously calculated best move of a node.
     if (move == best_move) {
-      hash_moves.push_back(move);
-      continue;
-    }
-
-    // This section of code causes too many cache misses.
-    // TODO: Try adding this back in future iterations.
-    /*
-    try {
-      board_->MakeMove(move);
-    } catch (BadMove& e) {
-      // Filter out (most) illegal moves that put the player's king in check.
-      continue;
-    }
-    if (transp_table_.Access(board_, depth - 1, node_type) &&
-        node_type != kAllNode) {
-      // Prioritize cut nodes and PV nodes.
-      hash_moves.push_back(move);
-      board_->UnmakeMove(move);
-      continue;
-    }
-    board_->UnmakeMove(move);
-    */
-
-    if (move.captured_piece == kNA) {
-      late_moves.push_back(move);
-    } else {
+      ordered_moves.push_back(move);
+    } else if (move.captured_piece != kNA) {
       // Use the MVV-LVA heuristic to order captures.
       ordered_capture_pairs.emplace_back(
           move, kVictimSortVals[move.captured_piece] +
                     kAggressorSortVals[move.moving_piece]);
+    } else if (IsKillerMove(move, depth)) {
+      // Use the Killer Move heuristic to order quiet moves.
+      killer_moves.push_back(move);
+    } else {
+      late_moves.push_back(move);
     }
   }
   // Sort captures by descending value of their MVV-LVA heuristic.
@@ -290,13 +275,11 @@ auto Engine::OrderMoves(vector<Move> move_list, int depth) const
     captures.push_back(capture_eval_pair.first);
   }
 
-  // Place all hash moves first, followed by captures, and then all other moves.
-  vector<Move> ordered_moves;
-  ordered_moves.reserve(captures.size() + hash_moves.size() +
-                        late_moves.size());
-  ordered_moves.insert(ordered_moves.end(), hash_moves.begin(),
-                       hash_moves.end());
+  // Place all hash moves first, followed by captures, and then all other
+  // moves.
   ordered_moves.insert(ordered_moves.end(), captures.begin(), captures.end());
+  ordered_moves.insert(ordered_moves.end(), killer_moves.begin(),
+                       killer_moves.end());
   ordered_moves.insert(ordered_moves.end(), late_moves.begin(),
                        late_moves.end());
   return ordered_moves;
@@ -329,7 +312,8 @@ auto Engine::OrderMoves(vector<Move> move_list) const -> vector<Move> {
     captures.push_back(capture_eval_pair.first);
   }
 
-  // Place all hash moves first, followed by captures, and then all other moves.
+  // Place all hash moves first, followed by captures, and then all other
+  // moves.
   vector<Move> ordered_moves;
   ordered_moves.reserve(move_list.size());
   ordered_moves.insert(ordered_moves.end(), captures.begin(), captures.end());

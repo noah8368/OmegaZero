@@ -26,6 +26,7 @@ struct Move {
             moving_piece == rhs.moving_piece && start_sq == rhs.start_sq &&
             target_sq == rhs.target_sq);
   }
+  bool operator!=(const Move& rhs) const { return !(*this == rhs); }
 
   bool is_ep = false;
   S8 captured_piece = kNA;
