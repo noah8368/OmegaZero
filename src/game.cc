@@ -7,7 +7,6 @@
 
 #include "game.h"
 
-#include <chrono>
 #include <cstdint>
 #include <ctime>
 #include <iostream>
@@ -69,12 +68,11 @@ auto GetPieceType(char piece_ch) -> S8 {
   }
 }
 
-Game::Game(const string& init_pos, char player_side)
-    : board_(init_pos), engine_(&board_, player_side) {
+Game::Game(const string& init_pos, char player_side, float search_time)
+    : board_(init_pos), engine_(&board_, player_side, search_time) {
   game_active_ = true;
-
+  search_time_ = search_time;
   winner_ = kNA;
-
   piece_symbols_[kWhite][kPawn] = "♙";
   piece_symbols_[kWhite][kKnight] = "♘";
   piece_symbols_[kWhite][kBishop] = "♗";
@@ -207,18 +205,6 @@ GetNextNode:
   }
 }
 
-auto Game::TimeSearch() -> void {
-  auto search_start_time = std::chrono::high_resolution_clock::now();
-  engine_.GetBestMove();
-  auto search_end_time = std::chrono::high_resolution_clock::now();
-  auto search_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             search_end_time - search_start_time)
-                             .count();
-  double search_time = std::chrono::duration<double>(search_duration).count();
-  cout << "Time for search of depth " << kSearchDepth << ": " << search_time
-       << "ms" << endl;
-}
-
 // Implement private member functions.
 
 auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
@@ -250,8 +236,8 @@ auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
   // Check a few requirements for the move's pseudo-legality.
   CheckMove(move, start_rank, start_file, target_rank, target_file,
             capture_indicated);
-  // Check that there is exactly one possible start square for the move, and set
-  // the move's start square to this square if so.
+  // Check that there is exactly one possible start square for the move, and
+  // set the move's start square to this square if so.
   AddStartSqToMove(move, start_rank, start_file, target_rank, target_file,
                    capture_indicated);
   return move;
@@ -269,7 +255,8 @@ auto Game::GetFideMoveStr(const Move& move) -> string {
     } else if (move.moving_piece != kPawn) {
       move_str += GetPieceLetter(move.moving_piece);
 
-      // Add clarifying information to the move string if the move is ambiguous.
+      // Add clarifying information to the move string if the move is
+      // ambiguous.
       S8 moving_player = board_.GetPlayerToMove();
       Bitboard start_sqs =
           board_.GetAttackMap(moving_player, move.target_sq, move.moving_piece);

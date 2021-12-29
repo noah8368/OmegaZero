@@ -8,6 +8,7 @@
 #include "engine.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <queue>
 #include <stdexcept>
@@ -19,6 +20,7 @@
 #include "board.h"
 #include "game.h"
 #include "move.h"
+#include "out_of_time.h"
 #include "transp_table.h"
 
 namespace omegazero {
@@ -29,11 +31,13 @@ using std::queue;
 using std::sort;
 using std::unordered_map;
 using std::vector;
+using std::chrono::high_resolution_clock;
 
 // Implement public member functions.
 
-Engine::Engine(Board* board, S8 player_side) {
+Engine::Engine(Board* board, S8 player_side, float search_time) {
   board_ = board;
+  search_time_ = search_time;
   if (tolower(player_side) == 'w') {
     user_side_ = kWhite;
   } else if (tolower(player_side) == 'b') {
@@ -45,6 +49,22 @@ Engine::Engine(Board* board, S8 player_side) {
   } else {
     throw invalid_argument("invalid side choice");
   }
+}
+
+auto Engine::GetBestMove(int* max_depth) -> Move {
+  Move best_move;
+  search_start_ = high_resolution_clock::now();
+  for (int search_depth = 1;; ++search_depth) {
+    try {
+      Search(best_move, kWorstEval, kBestEval, search_depth);
+    } catch (OutOfTime& e) {
+      if (max_depth) {
+        *max_depth = search_depth - 1;
+      }
+      break;
+    }
+  }
+  return best_move;
 }
 
 auto Engine::GetGameStatus() -> S8 {
@@ -140,6 +160,7 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
 // Implement private member functions.
 
 auto Engine::Search(Move& best_move, int alpha, int beta, int depth) -> int {
+  CheckSearchTime();
   // Use the NegaMax algorithm to traverse the search tree.
   S8 game_status = GetGameStatus();
   if (game_status == kPlayerCheckmated) {

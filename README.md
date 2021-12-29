@@ -39,10 +39,10 @@ sudo apt-get install libboost-all-dev
 
 To begin a game, a user invokes the program as follows:
 ```
-OmegaZero -p [SIDE]
+OmegaZero -p [SIDE] -t [TIME]
 ```
 where `[SIDE]` is the side the user would like to player. This may be `w` for
-White, `b` for Black, or `r` for a random selection.
+White, `b` for Black, or `r` for a random selection. `[TIME]` is the amount of time (in seconds) to give the engine during play. This defaults to `5s`.
 
 The format used to denote entered moves is based around [FIDE standard algebraic
 notation](https://www.chessprogramming.org/Algebraic_Chess_Notation#Standard_Algebraic_Notation_.28SAN.29). The only exception to FIDE notation is that `e.p.` **must** immediately
@@ -120,9 +120,9 @@ implementation. The Transposition Table is [two-tiered](https://www.chessprogram
 
 #### Search
 
-The search algorithm used is the [NegaMax](https://www.chessprogramming.org/Negamax) algorithm with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta).
+The search algorithm used is the [NegaMax](https://www.chessprogramming.org/Negamax) algorithm with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta) inside of an [iterative deepening](https://www.chessprogramming.org/Iterative_Deepening) framework.
 A [transposition table](https://www.chessprogramming.org/Transposition_Table) is also used to prevent re-evaluating positions that
-have already been seen during a search. Moreover, [MVV-LVA](https://www.chessprogramming.org/MVV-LVA) move ordering is used
+have already been seen during a search. Moreover, [Hash Move](https://www.chessprogramming.org/Hash_Move), [MVV-LVA](https://www.chessprogramming.org/MVV-LVA), and [Killer Heuristic](https://www.chessprogramming.org/Killer_Heuristic) move ordering are used
 to increase pruning during search.
 
 #### Evaluation
@@ -138,7 +138,7 @@ score = pawn_value * (#white_pawns - #black_pawns)
         + king_value * (#white_kings - #black_kings) * side_to_move
 ```
 Score is relative to the side to move, as required by NegaMax, with
-`side_to_move` being `1` for White and `-1` for Black. The are expressed in 
+`side_to_move` being `1` for White and `-1` for Black. These are expressed in 
 centipawns, listed below:
 
 | Piece | Value |
@@ -158,7 +158,7 @@ The move generator is capable of producing up to ~7 million moves/sec.
 
 #### Search
 
-The following is a table demonstrating how the addition of new search features
+What follows is a table demonstrating how the addition of new search features
 (alpha-beta pruning, a transposition table, etc.) changed the average time it 
 took the engine to perform a search 7 plys deep from this position with White to
 move:
@@ -175,3 +175,11 @@ features up to and including the new feature addition.
 |MVV-LVA Move Ordering|5.52|
 |Transposition Table|4.91|
 |Killer Move Ordering|4.85|
+
+At this point, [Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) and [Iterative deepening](https://www.chessprogramming.org/Iterative_Deepening) were both
+implemented. The following is a table showing the maximum depth searched
+at the default move time of `5 seconds` after various optimizations.
+
+|Feature|Max Depth [s]|
+|---|---|
+|Basic Iterative Deepening|6|

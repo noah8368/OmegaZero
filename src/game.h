@@ -38,7 +38,7 @@ auto GetPieceType(char piece_ch) -> S8;
 
 class Game {
  public:
-  Game(const string& init_pos, char player_side);
+  Game(const string& init_pos, char player_side, float search_time);
 
   auto IsActive() const -> bool;
 
@@ -74,6 +74,8 @@ class Game {
   bool game_active_;
 
   Engine engine_;
+
+  float search_time_;
 
   S8 winner_;
 
@@ -117,6 +119,12 @@ inline auto Game::OutputWinner() const -> void {
     string player_name = GetPlayerStr(winner_);
     cout << "\n" << player_name << " wins" << endl;
   }
+}
+
+inline auto Game::TimeSearch() -> void {
+  int max_depth;
+  engine_.GetBestMove(&max_depth);
+  cout << "Depth reached in " << search_time_ << "s: " << max_depth << endl;
 }
 
 inline auto Game::RecordBoardState() -> void {

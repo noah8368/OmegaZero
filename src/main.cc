@@ -22,6 +22,7 @@ auto main(int argc, char* argv[]) -> int {
   namespace prog_opt = boost::program_options;
   prog_opt::options_description desc("Options");
   std::string init_pos;
+  float search_time;
   int depth;
   char player_side;
   desc.add_options()
@@ -33,7 +34,9 @@ auto main(int argc, char* argv[]) -> int {
        "Depth to run Perft testing function to")
       ("stats,s", "Output search function statistics")
       ("player-side,p", prog_opt::value<char>(&player_side)->default_value('w'),
-       "Side user will play");
+       "Side user will play")
+      ("time,t", prog_opt::value<float>(&search_time)->default_value(5),
+       "Search time");
   prog_opt::variables_map var_map;
   try {
     prog_opt::store(prog_opt::parse_command_line(argc, argv, desc), var_map);
@@ -45,7 +48,7 @@ auto main(int argc, char* argv[]) -> int {
 
   // Initialize the engine and either test it or begin a game.
   try {
-    omegazero::Game game(init_pos, player_side);
+    omegazero::Game game(init_pos, player_side, search_time);
     if (var_map.count("depth")) {
       game.Test(depth);
     } else if (var_map.count("stats")) {

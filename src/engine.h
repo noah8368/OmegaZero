@@ -10,12 +10,14 @@
 #ifndef OMEGAZERO_SRC_ENGINE_H_
 #define OMEGAZERO_SRC_ENGINE_H_
 
+#include <chrono>
 #include <queue>
 #include <utility>
 #include <vector>
 
 #include "board.h"
 #include "move.h"
+#include "out_of_time.h"
 #include "transp_table.h"
 
 namespace omegazero {
@@ -24,6 +26,9 @@ using std::pair;
 using std::queue;
 using std::unordered_map;
 using std::vector;
+using std::chrono::duration;
+using std::chrono::duration_cast;
+using std::chrono::high_resolution_clock;
 
 enum GameStatus : S8 {
   kPlayerToMove,
@@ -49,11 +54,12 @@ constexpr S8 kSixPlys = 6;
 
 class Engine {
  public:
-  Engine(Board* board, S8 player_side);
+  Engine(Board* board, S8 player_side, float search_time);
 
   // Search possible games in a search tree to find the best legal move. Act as
-  // the root function to call the NegaMax search algorithm.
-  auto GetBestMove() -> Move;
+  // the root function to call the NegaMax search algorithm in an iterative
+  // deepening framework.
+  auto GetBestMove(int* max_depth = nullptr) -> Move;
 
   // Check for draws, checks, and checkmates. Note that this function does not
   // check for move repititions.
@@ -95,27 +101,26 @@ class Engine {
   auto AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
                         S8 enemy_player, S8 moving_player, S8 moving_piece,
                         S8 start_sq) const -> void;
+  auto CheckSearchTime() const -> void;
   auto RecordKillerMove(const Move& move, int depth) -> void;
 
   Board* board_;
 
+  float search_time_;
+
+  high_resolution_clock::time_point search_start_;
+
   pair<Move, Move> killer_moves_[kSearchDepth];
 
-  S8 user_side_;
-
   queue<U64> pos_rep_table_;
+
+  S8 user_side_;
 
   // Keep track of information for positions that've already been evaluated.
   TranspTable transp_table_;
 };
 
 // Implement public inline member functions.
-
-inline auto Engine::GetBestMove() -> Move {
-  Move best_move;
-  Search(best_move, kWorstEval, kBestEval, kSearchDepth);
-  return best_move;
-}
 
 inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
 
@@ -144,6 +149,16 @@ inline auto Engine::AddBoardRep() -> void {
   // Track the last six positions of the game.
   if (pos_rep_table_.size() == kSixPlys) {
     pos_rep_table_.pop();
+  }
+}
+
+inline auto Engine::CheckSearchTime() const -> void {
+  float time_since_search_started =
+      duration_cast<duration<float>>(high_resolution_clock::now() -
+                                     search_start_)
+          .count();
+  if (time_since_search_started >= search_time_) {
+    throw OutOfTime();
   }
 }
 
