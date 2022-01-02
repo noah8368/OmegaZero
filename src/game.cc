@@ -92,17 +92,17 @@ void Game::Play() {
 
   // Record the current board state to enforce move repitition rules.
   RecordBoardState();
-  engine_.AddBoardRep();
+  engine_.AddPosToHistory();
 
   // Check game status.
   S8 game_status = engine_.GetGameStatus();
   S8 player_to_move = board_.GetPlayerToMove();
   if (game_status == kPlayerInCheck) {
     cout << GetPlayerStr(player_to_move) << " is in check" << endl;
-  } else if (game_status == kDraw || pos_rep_table_[board_] == kMaxMoveRep) {
+  } else if (game_status == kDraw || pos_history_[board_] == kMaxMoveRep) {
     game_active_ = false;
     return;
-  } else if (pos_rep_table_[board_] == kNumMoveRepForOptionalDraw) {
+  } else if (pos_history_[board_] == kNumMoveRepForOptionalDraw) {
     string draw_decision;
     cout << "Threefold repitition detected. "
          << "Would you like to claim a draw? (y/): ";

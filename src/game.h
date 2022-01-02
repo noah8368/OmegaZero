@@ -88,7 +88,7 @@ class Game {
       return static_cast<size_t>(board.GetBoardHash());
     }
   };
-  unordered_map<Board, S8, BoardKeyHash> pos_rep_table_;
+  unordered_map<Board, S8, BoardKeyHash> pos_history_;
 };
 
 // Implement inline non-member functions.
@@ -128,10 +128,10 @@ inline auto Game::TimeSearch() -> void {
 }
 
 inline auto Game::RecordBoardState() -> void {
-  if (pos_rep_table_.find(board_) == pos_rep_table_.end()) {
-    pos_rep_table_[board_] = 1;
+  if (pos_history_.find(board_) == pos_history_.end()) {
+    pos_history_[board_] = 1;
   } else {
-    ++pos_rep_table_[board_];
+    ++pos_history_[board_];
   }
 }
 

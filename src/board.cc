@@ -11,8 +11,8 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
-#include <iostream>  // DEBUG
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 
@@ -48,8 +48,8 @@ Board::Board(const string& init_pos) {
   InitBoardHash();
 }
 
-auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece,
-                         Bitboard debug) const -> Bitboard {
+auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
+    -> Bitboard {
   if (!SqOnBoard(sq)) {
     throw invalid_argument("sq in Board::GetAttackMap()");
   }
@@ -117,11 +117,6 @@ auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece,
       attack_map = kNonSliderAttackMaps[kKingAttack][sq];
       break;
     default:
-      std::cout << "moving_player: " << std::dec << (int)attacking_player
-                << std::endl
-                << "start_sq: " << std::dec << (int)sq << std::endl
-                << "moving_piece: " << std::dec << (int)attacking_piece
-                << "moving_pieces: " << std::hex << (int)debug << std::endl;
       throw invalid_argument("attacking_piece in Board::GetAttackMap()");
   }
 
@@ -261,11 +256,7 @@ auto Board::MakeMove(const Move& move) -> void {
     ++halfmove_clock_;
   }
 
-  // This line right here!
   UpdateCastlingRights(move);
-
-  // Update the board hash to reflect player turnover.
-  board_hash_ ^= black_to_move_rand_num_;
 
   // Undo the move if it puts the king in check.
   if (KingInCheck()) {
@@ -275,6 +266,8 @@ auto Board::MakeMove(const Move& move) -> void {
   }
 
   SwitchPlayer();
+  // Update the board hash to reflect player turnover.
+  board_hash_ ^= black_to_move_rand_num_;
 }
 
 // Assume the passed move has been made use MakeMove(). Calling UnmakeMove()
@@ -282,6 +275,8 @@ auto Board::MakeMove(const Move& move) -> void {
 auto Board::UnmakeMove(const Move& move) -> void {
   // Revert back to the previous player.
   SwitchPlayer();
+  // Update the board hash to reflect player turnover.
+  board_hash_ ^= black_to_move_rand_num_;
 
   if (move.castling_type == kNA) {
     // Undo all non-castling moves.
@@ -351,9 +346,6 @@ auto Board::UnmakeMove(const Move& move) -> void {
         black_kingside_castling_rights_history_.top();
   }
   black_kingside_castling_rights_history_.pop();
-
-  // Update the board hash to reflect player turnover.
-  board_hash_ ^= black_to_move_rand_num_;
 }
 
 // Implemement private member functions.
@@ -418,6 +410,9 @@ auto Board::InitBoardHash() -> void {
   for (S8 player = kWhite; player < kNumPlayers; ++player) {
     for (S8 board_side = kQueenSide; board_side <= kKingSide; ++board_side) {
       castling_rights_rand_nums_[player][board_side] = rand_num_gen();
+      if (castling_rights_[player][board_side]) {
+        board_hash_ ^= castling_rights_rand_nums_[player][board_side];
+      }
     }
   }
   for (S8 file = kFileA; file <= kFileH; ++file) {
@@ -613,7 +608,7 @@ auto Board::MakeNonCastlingMove(const Move& move) -> void {
       pieces_[move.captured_piece] &= piece_capture_mask;
       player_pieces_[other_player] &= piece_capture_mask;
       // Update the board hash to reflect piece removal.
-      board_hash_ ^= piece_rand_nums_[kPawn][move.target_sq];
+      board_hash_ ^= piece_rand_nums_[move.captured_piece][move.target_sq];
     }
   }
 
@@ -687,8 +682,8 @@ auto Board::UnmakeNonCastlingMove(const Move& move) -> void {
   }
 
   // Place a captured piece back onto the board.
-  S8 other_player = GetOtherPlayer(player_to_move_);
   if (move.captured_piece != kNA) {
+    S8 other_player = GetOtherPlayer(player_to_move_);
     if (move.is_ep) {
       S8 ep_capture_sq = 0X0;
       S8 target_file = GetFileFromSq(move.target_sq);
@@ -766,7 +761,7 @@ auto Board::UpdateCastlingRights(const Move& move) -> void {
     if (player_to_move_ == kWhite) {
       if (move.target_sq == kSqA8 && castling_rights_[kBlack][kQueenSide]) {
         castling_rights_[kBlack][kQueenSide] = false;
-        board_hash_ ^= castling_rights_rand_nums_[kBlack][kKingSide];
+        board_hash_ ^= castling_rights_rand_nums_[kBlack][kQueenSide];
       } else if (move.target_sq == kSqH8 &&
                  castling_rights_[kBlack][kKingSide]) {
         castling_rights_[kBlack][kKingSide] = false;

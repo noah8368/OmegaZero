@@ -26,6 +26,7 @@
 namespace omegazero {
 
 using std::max;
+using std::min;
 using std::pair;
 using std::queue;
 using std::sort;
@@ -52,18 +53,22 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
 }
 
 auto Engine::GetBestMove(int* max_depth) -> Move {
+  transp_table_.Clear();
   Move best_move;
   search_start_ = high_resolution_clock::now();
-  for (int search_depth = 1;; ++search_depth) {
+  int search_depth;
+  for (search_depth = 1; search_depth < kSearchLimit; ++search_depth) {
+    std::cout << "SEARCH TO DEPTH " << search_depth << std::endl;
     try {
-      Search(best_move, kWorstEval, kBestEval, search_depth);
+      best_move = Search(search_depth);
     } catch (OutOfTime& e) {
-      if (max_depth) {
-        *max_depth = search_depth - 1;
-      }
       break;
     }
   }
+  if (max_depth) {
+    *max_depth = search_depth - 1;
+  }
+  // std::cout << "PV Node hits: " << std::dec << pv_hits_ << std::endl;
   return best_move;
 }
 
@@ -145,8 +150,8 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
     // Generate attack maps for each piece.
     start_sq = GetSqOfFirstPiece(moving_pieces);
     moving_piece = board_->GetPieceOnSq(start_sq);
-    Bitboard attack_map = board_->GetAttackMap(moving_player, start_sq,
-                                               moving_piece, moving_pieces);
+    Bitboard attack_map =
+        board_->GetAttackMap(moving_player, start_sq, moving_piece);
     // Remove all invalid squares in the attack map.
     attack_map &= remove_bad_sqs_mask;
     AddMovesForPiece(move_list, attack_map, enemy_player, moving_player,
@@ -159,9 +164,27 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
 
 // Implement private member functions.
 
-auto Engine::Search(Move& best_move, int alpha, int beta, int depth) -> int {
+auto Engine::Search(Move& pv_move, int alpha, int beta, int depth) -> int {
   CheckSearchTime();
-  // Use the NegaMax algorithm to traverse the search tree.
+  int orig_alpha = alpha;
+
+  int eval;
+  S8 node_type;
+  // Check the transposition table for previously stored evaluations.
+  if (transp_table_.Access(board_, depth, eval, node_type)) {
+    if (node_type == kPvNode) {
+      return eval;
+    } else if (node_type == kCutNode) {
+      alpha = max(alpha, eval);
+    } else if (node_type == kAllNode) {
+      beta = min(beta, eval);
+    }
+
+    if (alpha >= beta) {
+      return eval;
+    }
+  }
+
   S8 game_status = GetGameStatus();
   if (game_status == kPlayerCheckmated) {
     return kWorstEval;
@@ -172,11 +195,12 @@ auto Engine::Search(Move& best_move, int alpha, int beta, int depth) -> int {
     return /* QuiescenceSearch(alpha, beta); */ board_->Evaluate();
   }
 
+  // Use the NegaMax algorithm to traverse the search tree.
   vector<Move> move_list = GenerateMoves();
   move_list = OrderMoves(move_list, depth);
-  int eval;
-  bool is_pv_node = false;
-  queue<U64> saved_pos_rep_table = pos_rep_table_;
+  queue<U64> saved_pos_history = pos_history_;
+  Move best_move;
+  int best_eval = kWorstEval;
   // Iterate through all child nodes of the current position.
   for (const Move& move : move_list) {
     try {
@@ -186,35 +210,35 @@ auto Engine::Search(Move& best_move, int alpha, int beta, int depth) -> int {
       continue;
     }
 
-    AddBoardRep();
-    // Check the transposition table for previously stored evaluations.
-    if (!transp_table_.Access(board_, depth - 1, eval)) {
-      eval = -Search(-beta, -alpha, depth - 1);
+    AddPosToHistory();
+    eval = -Search(-beta, -alpha, depth - 1);
+    if (eval > best_eval) {
+      best_move = move;
+      best_eval = eval;
     }
     board_->UnmakeMove(move);
-    pos_rep_table_ = saved_pos_rep_table;
-
-    if (eval >= beta) {
-      transp_table_.Update(board_, depth, beta);
+    pos_history_.swap(saved_pos_history);
+    alpha = max(alpha, best_eval);
+    if (alpha >= beta) {
       if (move.captured_piece == kNA) {
         RecordKillerMove(move, depth);
       }
       // Prune a subtree when a beta cutoff is detected.
-      return beta;
-    }
-    if (eval > alpha) {
-      is_pv_node = true;
-      alpha = eval;
-      best_move = move;
+      break;
     }
   }
 
-  if (is_pv_node) {
-    transp_table_.Update(board_, depth, alpha, &best_move);
+  // Store a searched node in the transposition table.
+  if (eval <= orig_alpha) {
+    transp_table_.Update(board_, depth, eval, kAllNode);
+  } else if (eval >= beta) {
+    transp_table_.Update(board_, depth, eval, kCutNode);
   } else {
-    transp_table_.Update(board_, depth, alpha);
+    transp_table_.Update(board_, depth, eval, kPvNode, &best_move);
+    pv_move = best_move;
   }
-  return alpha;
+
+  return eval;
 }
 
 auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
@@ -236,19 +260,19 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
   // Generate captures only.
   vector<Move> move_list = GenerateMoves(true);
   move_list = OrderMoves(move_list);
-  queue<U64> saved_pos_rep_table = pos_rep_table_;
+  queue<U64> saved_pos_rep_table = pos_history_;
   for (const Move& move : move_list) {
     try {
       board_->MakeMove(move);
     } catch (BadMove& e) {
       continue;
     }
-    AddBoardRep();
+    AddPosToHistory();
     // Calculate the evalulation directly rather than using the transposition
     // table to avoid cache misses.
     stand_pat_eval = -QuiescenceSearch(-beta, -alpha);
     board_->UnmakeMove(move);
-    pos_rep_table_ = saved_pos_rep_table;
+    pos_history_ = saved_pos_rep_table;
 
     if (stand_pat_eval >= beta) {
       return beta;
@@ -258,10 +282,9 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
   return alpha;
 }
 
-auto Engine::OrderMoves(vector<Move> move_list, int depth) const
+auto Engine::OrderMoves(vector<Move> move_list, int depth) /* const */
     -> vector<Move> {
-  Move best_move;
-  transp_table_.Access(board_, depth, best_move);
+  Move pv_move = transp_table_.GetPvMove(board_);
 
   vector<pair<Move, int>> ordered_capture_pairs;
   vector<Move> killer_moves;
@@ -270,7 +293,7 @@ auto Engine::OrderMoves(vector<Move> move_list, int depth) const
   ordered_moves.reserve(move_list.size());
   for (const Move& move : move_list) {
     // Prioritize a move if it's the previously calculated best move of a node.
-    if (move == best_move) {
+    if (move == pv_move) {
       ordered_moves.push_back(move);
     } else if (move.captured_piece != kNA) {
       // Use the MVV-LVA heuristic to order captures.

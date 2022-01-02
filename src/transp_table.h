@@ -28,10 +28,11 @@ constexpr int kTableSize = 1 << 20;
 constexpr U64 kHashMask = 0X7FFFF;
 
 struct TableEntry {
-  Move best_move;
+  Move pv_move;
   U64 board_hash;
-  int depth;
   int eval;
+  int search_depth;
+  S8 node_type;
 };
 
 class TranspTable {
@@ -43,13 +44,13 @@ class TranspTable {
   // Loop up the board position in the hash table and set eval to the
   // corresponding evaluation if the position is found. Return a bool to
   // indicate if the position was found.
-  auto Access(const Board* board, int depth, int& eval, Move& best_move) const
+  auto Access(const Board* board, int depth, int& eval, S8& node_type) const
       -> bool;
-  auto Access(const Board* board, int depth, int& eval) const -> bool;
-  auto Access(const Board* board, int depth, Move& best_move) const -> bool;
 
-  auto Update(const Board* board, int depth, int eval,
-              const Move* best_move = nullptr) -> void;
+  auto GetPvMove(const Board* board) const -> Move;
+
+  auto Update(const Board* board, int depth, int eval, S8 node_type,
+              const Move* pv_move = nullptr) -> void;
   auto Clear() -> void;
 
  private:
@@ -59,18 +60,6 @@ class TranspTable {
   TableEntry* always_replace_entries_;
   TableEntry* depth_pref_entries_;
 };
-
-inline auto TranspTable::Access(const Board* board, int depth, int& eval) const
-    -> bool {
-  Move throwaway_move;
-  return Access(board, depth, eval, throwaway_move);
-}
-
-inline auto TranspTable::Access(const Board* board, int depth,
-                                Move& best_move) const -> bool {
-  int throwaway_eval;
-  return Access(board, depth, throwaway_eval, best_move);
-}
 
 inline auto TranspTable::Clear() -> void {
   memset(occ_table_, false, kTableSize * sizeof(bool));

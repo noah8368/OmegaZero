@@ -180,6 +180,6 @@ At this point, [Quiescence Search](https://www.chessprogramming.org/Quiescence_S
 implemented. The following is a table showing the maximum depth searched
 at the default move time of `5 seconds` after various optimizations.
 
-|Feature|Max Depth [s]|
+|Feature|Max Depth|
 |---|---|
 |Basic Iterative Deepening|6|

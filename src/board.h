@@ -176,8 +176,8 @@ class Board {
   }
 
   // Return possible attacks a specified piece can make on all other pieces.
-  auto GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece,
-                    Bitboard debug = 0) const -> Bitboard;
+  auto GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
+      -> Bitboard;
   auto GetPiecesByType(S8 piece_type, S8 player) const -> Bitboard;
 
   auto CastlingLegal(S8 board_side) const -> bool;
@@ -242,12 +242,12 @@ class Board {
   S8 player_to_move_;
 
   // Store a history of irreversible position aspects for UnmakeMove().
-  stack<S8> ep_target_sq_history_;
-  stack<S8> halfmove_clock_history_;
   stack<bool> white_queenside_castling_rights_history_;
   stack<bool> white_kingside_castling_rights_history_;
   stack<bool> black_queenside_castling_rights_history_;
   stack<bool> black_kingside_castling_rights_history_;
+  stack<S8> ep_target_sq_history_;
+  stack<S8> halfmove_clock_history_;
 
   // Store a set of pseudo-random numbers for Zobrist Hashing.
   U64 board_hash_;

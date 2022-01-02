@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <queue>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -22,6 +23,7 @@
 
 namespace omegazero {
 
+using std::invalid_argument;
 using std::pair;
 using std::queue;
 using std::unordered_map;
@@ -37,7 +39,7 @@ enum GameStatus : S8 {
   kPlayerCheckmated,
 };
 
-constexpr int kSearchDepth = 7;
+constexpr int kSearchLimit = 10;
 // Store values used for the MVV-LVA heuristic. Piece order in array is pawn,
 // knight, bishop, rook, queen, king.
 constexpr int kAggressorSortVals[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
@@ -75,7 +77,7 @@ class Engine {
 
   // Add a board repitition to keep enforce move repitition rules and return the
   // number of times the current board state has been encountered.
-  auto AddBoardRep() -> void;
+  auto AddPosToHistory() -> void;
 
  private:
   auto IsKillerMove(const Move& move, int depth) const -> bool;
@@ -83,8 +85,9 @@ class Engine {
 
   // Compute best evaluation resulting from a legal move for the moving
   // player by searching the tree of possible moves using the NegaMax algorithm.
-  auto Search(Move& best_move, int alpha, int beta, int depth) -> int;
+  auto Search(int search_depth) -> Move;
   auto Search(int alpha, int beta, int depth) -> int;
+  auto Search(Move& move, int alpha, int beta, int depth) -> int;
   // Search until a "quiescent" position is reached (no capturing moves can be
   // made) to mitigate the horizon effect.
   auto QuiescenceSearch(int alpha, int beta) -> int;
@@ -92,7 +95,8 @@ class Engine {
   // Attempt to predict which moves are likely to be better, and order those
   // towards the front of the move_list to increase the number of moves that
   // can be pruned during alpha-beta pruning.
-  auto OrderMoves(vector<Move> move_list, int depth) const -> vector<Move>;
+  auto OrderMoves(vector<Move> move_list,
+                  int depth) /* const */ -> vector<Move>;
   auto OrderMoves(vector<Move> move_list) const -> vector<Move>;
 
   auto AddCastlingMoves(vector<Move>& move_list) const -> void;
@@ -102,6 +106,7 @@ class Engine {
                         S8 enemy_player, S8 moving_player, S8 moving_piece,
                         S8 start_sq) const -> void;
   auto CheckSearchTime() const -> void;
+  auto ClearHistory() -> void;
   auto RecordKillerMove(const Move& move, int depth) -> void;
 
   Board* board_;
@@ -110,9 +115,9 @@ class Engine {
 
   high_resolution_clock::time_point search_start_;
 
-  pair<Move, Move> killer_moves_[kSearchDepth];
+  pair<Move, Move> killer_moves_[kSearchLimit];
 
-  queue<U64> pos_rep_table_;
+  queue<U64> pos_history_;
 
   S8 user_side_;
 
@@ -127,6 +132,9 @@ inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
 // Implement private inline member functions.
 
 inline auto Engine::IsKillerMove(const Move& move, int depth) const -> bool {
+  if (depth < 0 || depth >= kSearchLimit) {
+    throw invalid_argument("depth in Engine::IsKillerMove()");
+  }
   return killer_moves_[depth].first == move ||
          killer_moves_[depth].second == move;
 }
@@ -134,8 +142,14 @@ inline auto Engine::IsKillerMove(const Move& move, int depth) const -> bool {
 inline auto Engine::RepDetected() const -> bool {
   // Keep track of the last six plys as an efficient approximation to check for
   // board repititions.
-  return pos_rep_table_.size() == kSixPlys &&
-         pos_rep_table_.front() == pos_rep_table_.back();
+  return pos_history_.size() == kSixPlys &&
+         pos_history_.front() == pos_history_.back();
+}
+
+inline auto Engine::Search(int search_depth) -> Move {
+  Move best_move;
+  Search(best_move, kWorstEval, kBestEval, search_depth);
+  return best_move;
 }
 
 inline auto Engine::Search(int alpha, int beta, int depth) -> int {
@@ -143,12 +157,12 @@ inline auto Engine::Search(int alpha, int beta, int depth) -> int {
   return Search(throwaway_move, alpha, beta, depth);
 }
 
-inline auto Engine::AddBoardRep() -> void {
+inline auto Engine::AddPosToHistory() -> void {
   U64 board_hash = board_->GetBoardHash();
-  pos_rep_table_.push(board_hash);
+  pos_history_.push(board_hash);
   // Track the last six positions of the game.
-  if (pos_rep_table_.size() == kSixPlys) {
-    pos_rep_table_.pop();
+  while (pos_history_.size() > kSixPlys) {
+    pos_history_.pop();
   }
 }
 
@@ -160,6 +174,11 @@ inline auto Engine::CheckSearchTime() const -> void {
   if (time_since_search_started >= search_time_) {
     throw OutOfTime();
   }
+}
+
+inline auto Engine::ClearHistory() -> void {
+  queue<U64> cleared_history;
+  pos_history_.swap(cleared_history);
 }
 
 inline auto Engine::RecordKillerMove(const Move& move, int depth) -> void {
