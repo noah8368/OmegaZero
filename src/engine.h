@@ -82,8 +82,8 @@ class Engine {
   // Compute best evaluation resulting from a legal move for the moving
   // player by searching the tree of possible moves using the NegaMax algorithm.
   auto Search(int search_depth) -> Move;
-  auto Search(int alpha, int beta, int depth) -> int;
-  auto Search(Move& move, int alpha, int beta, int depth) -> int;
+  auto Search(int alpha, int beta, int depth, int ply) -> int;
+  auto Search(Move& move, int alpha, int beta, int depth, int ply) -> int;
   // Search until a "quiescent" position is reached (no capturing moves can be
   // made) to mitigate the horizon effect.
   auto QuiescenceSearch(int alpha, int beta) -> int;
@@ -130,6 +130,7 @@ inline auto Engine::IsKillerMove(const Move& move, int depth) const -> bool {
   if (depth < 0 || depth >= kSearchLimit) {
     throw invalid_argument("depth in Engine::IsKillerMove()");
   }
+
   return killer_moves_[depth].first == move ||
          killer_moves_[depth].second == move;
 }
@@ -143,13 +144,13 @@ inline auto Engine::RepDetected() const -> bool {
 
 inline auto Engine::Search(int search_depth) -> Move {
   Move best_move;
-  Search(best_move, kWorstEval, kBestEval, search_depth);
+  Search(best_move, kWorstEval, kBestEval, search_depth, 0);
   return best_move;
 }
 
-inline auto Engine::Search(int alpha, int beta, int depth) -> int {
+inline auto Engine::Search(int alpha, int beta, int depth, int ply) -> int {
   Move throwaway_move;
-  return Search(throwaway_move, alpha, beta, depth);
+  return Search(throwaway_move, alpha, beta, depth, ply);
 }
 
 inline auto Engine::AddPosToHistory() -> void {
@@ -176,10 +177,10 @@ inline auto Engine::ClearHistory() -> void {
   pos_history_.swap(cleared_history);
 }
 
-inline auto Engine::RecordKillerMove(const Move& move, int depth) -> void {
-  if (move != killer_moves_[depth].first) {
-    killer_moves_[depth].second = killer_moves_[depth].first;
-    killer_moves_[depth].first = move;
+inline auto Engine::RecordKillerMove(const Move& move, int ply) -> void {
+  if (move != killer_moves_[ply].first) {
+    killer_moves_[ply].second = killer_moves_[ply].first;
+    killer_moves_[ply].first = move;
   }
 }
 

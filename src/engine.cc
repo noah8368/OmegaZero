@@ -210,7 +210,8 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
 
 // Implement private member functions.
 
-auto Engine::Search(Move& pv_move, int alpha, int beta, int depth) -> int {
+auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply)
+    -> int {
   CheckSearchTime();
 
   int orig_alpha = alpha;
@@ -259,7 +260,7 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth) -> int {
     }
 
     AddPosToHistory();
-    search_eval = -Search(-beta, -alpha, depth - 1);
+    search_eval = -Search(-beta, -alpha, depth - 1, ply + 1);
     if (search_eval > best_eval) {
       best_move = move;
       best_eval = search_eval;
@@ -269,7 +270,7 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth) -> int {
     alpha = max(alpha, best_eval);
     if (alpha >= beta) {
       if (move.captured_piece == kNA) {
-        RecordKillerMove(move, depth);
+        RecordKillerMove(move, ply);
       }
       // Prune a subtree when a beta cutoff is detected.
       break;
