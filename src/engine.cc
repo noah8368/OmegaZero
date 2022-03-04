@@ -7,6 +7,14 @@
 
 #include "engine.h"
 
+#include <fcntl.h>
+#include <stdlib.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -20,7 +28,6 @@
 #include "board.h"
 #include "game.h"
 #include "move.h"
-#include "out_of_time.h"
 #include "transp_table.h"
 
 namespace omegazero {
@@ -29,6 +36,7 @@ using std::max;
 using std::min;
 using std::pair;
 using std::queue;
+using std::runtime_error;
 using std::sort;
 using std::unordered_map;
 using std::vector;
@@ -44,7 +52,7 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   } else if (tolower(player_side) == 'b') {
     user_side_ = kBlack;
   } else if (tolower(player_side) == 'r') {
-    // Pick a random side for the engine to play as.
+    // Pick a random side for the user to play as.
     srand(static_cast<int>(time(0)));
     user_side_ = static_cast<S8>(rand() % static_cast<int>(kNumPlayers));
   } else {
@@ -54,21 +62,62 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
 
 auto Engine::GetBestMove(int* max_depth) -> Move {
   transp_table_.Clear();
-  Move best_move;
-  search_start_ = high_resolution_clock::now();
+
+  // Create a block of shared memory that both the parent and each child process
+  // can read and write from during iterative deepening.
+  size_t shared_memory_sz = sizeof(Move);
+  const char* kSharedMemObjName = "BEST_MOVE";
+  const int kErrorStatus = -1;
+  // TODO: Remove the following line once this code stops making you want to
+  // cry.
+  shm_unlink("BEST_MOVE");
+  int shared_memory_fd =
+      shm_open(kSharedMemObjName, O_CREAT | O_EXCL | O_RDWR, S_IRWXU | S_IRWXG);
+  if (shared_memory_fd == kErrorStatus) {
+    throw runtime_error("shm_open()");
+  }
+  if (ftruncate(shared_memory_fd, shared_memory_sz) == kErrorStatus) {
+    throw runtime_error("ftruncate()");
+  }
+  Move* best_move_ptr =
+      (Move*)mmap(NULL, shared_memory_sz, PROT_READ | PROT_WRITE, MAP_SHARED,
+                  shared_memory_fd, 0);
+  if (best_move_ptr == MAP_FAILED) {
+    throw runtime_error("mmap()");
+  }
+
+  // Perform an iterative deepening search within a given time limit.
   int search_depth;
+  int search_process_status;
+  pid_t search_process_pid;
+  search_start_ = high_resolution_clock::now();
   for (search_depth = 1; search_depth < kSearchLimit; ++search_depth) {
-    std::cout << "SEARCH TO DEPTH " << search_depth << std::endl;
-    try {
-      best_move = Search(search_depth);
-    } catch (OutOfTime& e) {
-      break;
+    if ((search_process_pid = fork()) == 0) {
+      // Perform a search to the specified depth in the child process.
+      *best_move_ptr = Search(search_depth);
+      exit(EXIT_SUCCESS);
+    } else {
+      // Wait for the child process to finish performing a search.
+      waitpid(search_process_pid, &search_process_status, 0);
+      if (WIFEXITED(search_process_status) &&
+          WEXITSTATUS(search_process_status) == kRanOutOfTime) {
+        // Halt iterative deepening if the child process ran out of time during
+        // search, indicating time for the entire search is up.
+        break;
+      }
     }
   }
+
+  // Indicate the maximum depth searched to.
+  // TODO: Figure out a way to take this out.
   if (max_depth) {
     *max_depth = search_depth - 1;
   }
-  // std::cout << "PV Node hits: " << std::dec << pv_hits_ << std::endl;
+  cout << "SEARCHED TO " << search_depth - 1 << endl;
+  Move best_move = *best_move_ptr;
+  if (shm_unlink(kSharedMemObjName) == kErrorStatus) {
+    throw runtime_error("shm_unlink()");
+  }
   return best_move;
 }
 
@@ -166,22 +215,23 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
 
 auto Engine::Search(Move& pv_move, int alpha, int beta, int depth) -> int {
   CheckSearchTime();
-  int orig_alpha = alpha;
 
-  int eval;
+  int orig_alpha = alpha;
+  int transp_table_stored_eval;
   S8 node_type;
   // Check the transposition table for previously stored evaluations.
-  if (transp_table_.Access(board_, depth, eval, node_type)) {
+  if (transp_table_.Access(board_, depth, transp_table_stored_eval,
+                           node_type)) {
     if (node_type == kPvNode) {
-      return eval;
+      return transp_table_stored_eval;
     } else if (node_type == kCutNode) {
-      alpha = max(alpha, eval);
+      alpha = max(alpha, transp_table_stored_eval);
     } else if (node_type == kAllNode) {
-      beta = min(beta, eval);
+      beta = min(beta, transp_table_stored_eval);
     }
 
     if (alpha >= beta) {
-      return eval;
+      return transp_table_stored_eval;
     }
   }
 
@@ -201,6 +251,7 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth) -> int {
   queue<U64> saved_pos_history = pos_history_;
   Move best_move;
   int best_eval = kWorstEval;
+  int search_eval;
   // Iterate through all child nodes of the current position.
   for (const Move& move : move_list) {
     try {
@@ -211,10 +262,10 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth) -> int {
     }
 
     AddPosToHistory();
-    eval = -Search(-beta, -alpha, depth - 1);
-    if (eval > best_eval) {
+    search_eval = -Search(-beta, -alpha, depth - 1);
+    if (search_eval > best_eval) {
       best_move = move;
-      best_eval = eval;
+      best_eval = search_eval;
     }
     board_->UnmakeMove(move);
     pos_history_.swap(saved_pos_history);
@@ -227,18 +278,18 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth) -> int {
       break;
     }
   }
+  pv_move = best_move;
 
   // Store a searched node in the transposition table.
-  if (eval <= orig_alpha) {
-    transp_table_.Update(board_, depth, eval, kAllNode);
-  } else if (eval >= beta) {
-    transp_table_.Update(board_, depth, eval, kCutNode);
+  if (best_eval <= orig_alpha) {
+    transp_table_.Update(board_, depth, best_eval, kAllNode);
+  } else if (best_eval >= beta) {
+    transp_table_.Update(board_, depth, best_eval, kCutNode);
   } else {
-    transp_table_.Update(board_, depth, eval, kPvNode, &best_move);
-    pv_move = best_move;
+    transp_table_.Update(board_, depth, best_eval, kPvNode, &best_move);
   }
 
-  return eval;
+  return best_eval;
 }
 
 auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
@@ -282,7 +333,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
   return alpha;
 }
 
-auto Engine::OrderMoves(vector<Move> move_list, int depth) /* const */
+auto Engine::OrderMoves(vector<Move> move_list, int depth) const
     -> vector<Move> {
   Move pv_move = transp_table_.GetPvMove(board_);
 

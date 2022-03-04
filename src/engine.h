@@ -18,7 +18,6 @@
 
 #include "board.h"
 #include "move.h"
-#include "out_of_time.h"
 #include "transp_table.h"
 
 namespace omegazero {
@@ -39,7 +38,8 @@ enum GameStatus : S8 {
   kPlayerCheckmated,
 };
 
-constexpr int kSearchLimit = 10;
+constexpr int kRanOutOfTime = 2;
+constexpr int kSearchLimit = 30;
 // Store values used for the MVV-LVA heuristic. Piece order in array is pawn,
 // knight, bishop, rook, queen, king.
 constexpr int kAggressorSortVals[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
@@ -95,8 +95,7 @@ class Engine {
   // Attempt to predict which moves are likely to be better, and order those
   // towards the front of the move_list to increase the number of moves that
   // can be pruned during alpha-beta pruning.
-  auto OrderMoves(vector<Move> move_list,
-                  int depth) /* const */ -> vector<Move>;
+  auto OrderMoves(vector<Move> move_list, int depth) const -> vector<Move>;
   auto OrderMoves(vector<Move> move_list) const -> vector<Move>;
 
   auto AddCastlingMoves(vector<Move>& move_list) const -> void;
@@ -172,7 +171,7 @@ inline auto Engine::CheckSearchTime() const -> void {
                                      search_start_)
           .count();
   if (time_since_search_started >= search_time_) {
-    throw OutOfTime();
+    exit(kRanOutOfTime);
   }
 }
 

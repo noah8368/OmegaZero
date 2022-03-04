@@ -16,18 +16,21 @@
 
 using std::cout;
 using std::endl;
+using std::invalid_argument;
+using std::runtime_error;
+using std::string;
 
 auto main(int argc, char* argv[]) -> int {
   // Parse optional arguments for testing and specifying initial position.
   namespace prog_opt = boost::program_options;
   prog_opt::options_description desc("Options");
-  std::string init_pos;
+  string init_pos;
   float search_time;
   int depth;
   char player_side;
   desc.add_options()
       ("initial-position,i",
-      prog_opt::value<std::string>(&init_pos)->default_value(
+      prog_opt::value<string>(&init_pos)->default_value(
           "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
       "FEN formatted string specifying the initial game position")
       ("depth,d", prog_opt::value<int>(&depth),
@@ -46,21 +49,25 @@ auto main(int argc, char* argv[]) -> int {
     return EINVAL;
   }
 
-  // Initialize the engine and either test it or begin a game.
   try {
     omegazero::Game game(init_pos, player_side, search_time);
     if (var_map.count("depth")) {
+      // Output perft results.
       game.Test(depth);
     } else if (var_map.count("stats")) {
+      // Output search statistics.
       game.TimeSearch();
     } else {
+      // Play a game against a user.
       while (game.IsActive()) {
         game.Play();
       }
       game.OutputWinner();
     }
-  } catch (std::invalid_argument& e) {
+  } catch (invalid_argument& e) {
     cout << "ERROR: Invalid argument: " << e.what() << endl;
     return EINVAL;
+  } catch (runtime_error& e) {
+    cout << "ERROR: Unexpected problem encountered with " << e.what() << endl;
   }
 }

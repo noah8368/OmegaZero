@@ -94,7 +94,7 @@ where `[POSITION]` is defined above.
 #### Board Representation
 
 The engine uses both [Bitboards](https://www.chessprogramming.org/Bitboards) and an [8x8 Board](https://www.chessprogramming.org/8x8_Board) to represent board.
-states. Squares are indexed in the Little Endian Rank File (LERF) format.
+states. Squares are indexed in the [Little Endian Rank File (LERF)](https://www.chessprogramming.org/Square_Mapping_Considerations#Little-Endian_Rank-File_Mapping) format.
 
 #### Move Generation
 
@@ -155,31 +155,3 @@ centipawns, listed below:
 #### Move Generation
 
 The move generator is capable of producing up to ~7 million moves/sec.
-
-#### Search
-
-What follows is a table demonstrating how the addition of new search features
-(alpha-beta pruning, a transposition table, etc.) changed the average time it 
-took the engine to perform a search 7 plys deep from this position with White to
-move:
-
-![Test Position](./figs/test_position.png "Test Position")
-
-using a basic material evaluation function. Please note that these features were
-applied cummulatively to the engine, and times shown are the result of all 
-features up to and including the new feature addition.
-
-|Feature|Time [s]|
-|---|---|
-|Alpha-Beta Pruning|521|
-|MVV-LVA Move Ordering|5.52|
-|Transposition Table|4.91|
-|Killer Move Ordering|4.85|
-
-At this point, [Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) and [Iterative deepening](https://www.chessprogramming.org/Iterative_Deepening) were both
-implemented. The following is a table showing the maximum depth searched
-at the default move time of `5 seconds` after various optimizations.
-
-|Feature|Max Depth|
-|---|---|
-|Basic Iterative Deepening|6|

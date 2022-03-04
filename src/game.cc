@@ -94,15 +94,21 @@ void Game::Play() {
   RecordBoardState();
   engine_.AddPosToHistory();
 
-  // Check game status.
+  // Check the status of the game.
   S8 game_status = engine_.GetGameStatus();
   S8 player_to_move = board_.GetPlayerToMove();
+  S8 user_side = engine_.GetUserSide();
   if (game_status == kPlayerInCheck) {
+    // Inform the user that a player is in check.
     cout << GetPlayerStr(player_to_move) << " is in check" << endl;
   } else if (game_status == kDraw || pos_history_[board_] == kMaxMoveRep) {
+    // End the game if a draw has occured.
     game_active_ = false;
     return;
-  } else if (pos_history_[board_] == kNumMoveRepForOptionalDraw) {
+  } else if (pos_history_[board_] == kNumMoveRepForOptionalDraw &&
+             player_to_move != user_side) {
+    // Inform the human user of an optional draw. Do not give the engine the
+    // option to draw if it may legally continue playing.
     string draw_decision;
     cout << "Threefold repitition detected. "
          << "Would you like to claim a draw? (y/): ";
@@ -112,14 +118,15 @@ void Game::Play() {
       return;
     }
   } else if (game_status == kPlayerCheckmated) {
+    // Inform the user that a player has been mated.
     cout << GetPlayerStr(player_to_move) << " has been checkmated" << endl;
     game_active_ = false;
     winner_ = GetOtherPlayer(player_to_move);
     return;
   }
 
-  S8 user_side = engine_.GetUserSide();
   if (player_to_move == user_side) {
+    // Allow the user to take their turn.
     string player_name = GetPlayerStr(player_to_move);
     cout << "\n\n" << player_name << " to move" << endl;
     Move user_move;
@@ -142,6 +149,7 @@ void Game::Play() {
       }
     }
   } else {
+    // Allow the engine to take its turn.
     Move engine_move = engine_.GetBestMove();
     cout << "\n\n"
          << GetPlayerStr(player_to_move)
@@ -199,8 +207,7 @@ GetNextNode:
       goto RunPerft;
     }
   } else {
-    cout << "Maximum depth has been reached. Rerun the program to "
-            "re-walk tree."
+    cout << "Maximum depth has been reached. Rerun the program to re-walk tree."
          << endl;
   }
 }
