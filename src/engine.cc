@@ -42,6 +42,11 @@ using std::unordered_map;
 using std::vector;
 using std::chrono::high_resolution_clock;
 
+// Store values used for the MVV-LVA heuristic. Piece order in array is pawn,
+// knight, bishop, rook, queen, king.
+constexpr int kAggressorSortVals[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
+constexpr int kVictimSortVals[kNumPieceTypes] = {10, 20, 30, 40, 50, 60};
+
 // Implement public member functions.
 
 Engine::Engine(Board* board, S8 player_side, float search_time) {
@@ -60,7 +65,7 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   }
 }
 
-auto Engine::GetBestMove(int* max_depth) -> Move {
+auto Engine::GetBestMove() -> Move {
   transp_table_.Clear();
 
   // Create a block of shared memory that both the parent and each child process
@@ -105,11 +110,6 @@ auto Engine::GetBestMove(int* max_depth) -> Move {
     }
   }
 
-  // Indicate the maximum depth searched to.
-  // TODO: Figure out a way to take this out.
-  if (max_depth) {
-    *max_depth = search_depth - 1;
-  }
   Move best_move = *best_move_ptr;
   if (shm_unlink(kSharedMemObjName) == kErrorStatus) {
     throw runtime_error("shm_unlink()");
@@ -144,6 +144,7 @@ auto Engine::GetGameStatus() -> S8 {
   }
 
   // Enforce the Fifty Move Rule.
+  constexpr S8 kHalfmoveClockLimit = 75;
   if (board_->GetHalfmoveClock() >= 2 * kHalfmoveClockLimit) {
     return kDraw;
   }

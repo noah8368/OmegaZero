@@ -24,10 +24,6 @@ using std::endl;
 using std::string;
 using std::unordered_map;
 
-constexpr S8 kHalfmoveClockLimit = 75;
-constexpr S8 kNumMoveRepForOptionalDraw = 3;
-constexpr S8 kMaxMoveRep = 5;
-
 auto OneSqSet(const Bitboard& board) -> bool;
 
 auto GetPieceLetter(S8 piece) -> char;
@@ -46,8 +42,6 @@ class Game {
   auto Play() -> void;
   // Output the results of Perft in readable format.
   auto Test(int depth) -> void;
-  // Output speed statistics from searching for the best move.
-  auto TimeSearch() -> void;
 
  private:
   // Construct a Move struct from a user command.
@@ -119,12 +113,6 @@ inline auto Game::OutputWinner() const -> void {
     string player_name = GetPlayerStr(winner_);
     cout << "\n" << player_name << " wins" << endl;
   }
-}
-
-inline auto Game::TimeSearch() -> void {
-  int max_depth;
-  engine_.GetBestMove(&max_depth);
-  cout << "Depth reached in " << search_time_ << "s: " << max_depth << endl;
 }
 
 inline auto Game::RecordBoardState() -> void {

@@ -40,12 +40,8 @@ enum GameStatus : S8 {
 
 constexpr int kRanOutOfTime = 2;
 constexpr int kSearchLimit = 30;
-// Store values used for the MVV-LVA heuristic. Piece order in array is pawn,
-// knight, bishop, rook, queen, king.
-constexpr int kAggressorSortVals[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
-constexpr int kVictimSortVals[kNumPieceTypes] = {10, 20, 30, 40, 50, 60};
+
 // Store values used for transposition table move ordering.
-constexpr int kTranspTableSortVal = 100;
 constexpr int kBestEval = INT32_MAX;
 constexpr int kNeutralEval = 0;
 // Use -INT32_MAX rather than INT32_MIN to avoid integer overflow when
@@ -61,7 +57,7 @@ class Engine {
   // Search possible games in a search tree to find the best legal move. Act as
   // the root function to call the NegaMax search algorithm in an iterative
   // deepening framework.
-  auto GetBestMove(int* max_depth = nullptr) -> Move;
+  auto GetBestMove() -> Move;
 
   // Check for draws, checks, and checkmates. Note that this function does not
   // check for move repititions.

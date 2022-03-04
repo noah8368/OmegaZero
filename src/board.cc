@@ -198,8 +198,8 @@ auto Board::Evaluate() const -> int {
   Bitboard black_pieces;
   int board_score = 0;
   for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
-    white_pieces = pieces_[piece_type] & player_pieces_[kWhite];
-    black_pieces = pieces_[piece_type] & player_pieces_[kBlack];
+    white_pieces = GetPiecesByType(piece_type, kWhite);
+    black_pieces = GetPiecesByType(piece_type, kBlack);
     board_score += kPieceVals[piece_type] *
                    (GetNumSetSq(white_pieces) - GetNumSetSq(black_pieces));
   }
@@ -452,7 +452,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
     }
 
     if (FEN_field == 0) {
-      if (!SqOnBoard(current_sq)) {
+      if (ch != '/' && !SqOnBoard(current_sq)) {
         throw invalid_argument("board initialization FEN string");
       }
 

@@ -90,8 +90,6 @@ enum Player : S8 {
   kBlack,
 };
 
-constexpr S8 kDebruijn64bitSeqRightShiftAmt = 58;
-constexpr S8 kFileMask = 7;
 constexpr S8 kNumBoardSides = 2;
 constexpr S8 kNumFiles = 8;
 constexpr S8 kNumNonSliderMaps = 6;
@@ -100,15 +98,6 @@ constexpr S8 kNumPlayers = 2;
 constexpr S8 kNumRanks = 8;
 constexpr S8 kNumSliderMaps = 2;
 constexpr S8 kNumSq = 64;
-constexpr S8 kSquareRightShiftAmt = 3;
-
-// Store a constant needed for forward bitscan function.
-constexpr U64 kDebruijn64bitSeq = 0X03F79D71B4CB0A89ULL;
-// Store constants needed for population count function.
-constexpr U64 kOddBitsMask = 0X5555555555555555ULL;
-constexpr U64 kDuoCountMask = 0X3333333333333333ULL;
-constexpr U64 kBitSumMask = 0X0F0F0F0F0F0F0F0FULL;
-constexpr U64 kDigitSumMask = 0X0101010101010101ULL;
 
 // Store piece values expressed in centipawns for evaluation function. Piece
 // order in array is pawn, knight, bishop, rook, queen, king.
@@ -281,9 +270,13 @@ inline auto GetOtherPlayer(S8 player) -> S8 {
 }
 
 inline auto GetNumSetSq(Bitboard& board) -> S8 {
+  constexpr U64 kOddBitsMask = 0X5555555555555555ULL;
   board = board - ((board >> 1) & kOddBitsMask);
+  constexpr U64 kDuoCountMask = 0X3333333333333333ULL;
   board = (board & kDuoCountMask) + ((board >> 2) & kDuoCountMask);
+  constexpr U64 kBitSumMask = 0X0F0F0F0F0F0F0F0FULL;
   board = (board + (board >> 4)) & kBitSumMask;
+  constexpr U64 kDigitSumMask = 0X0101010101010101ULL;
   board = (board * kDigitSumMask) >> 56;
 
   return static_cast<S8>(board);
@@ -294,6 +287,7 @@ inline auto GetFileFromSq(S8 sq) -> S8 {
     throw invalid_argument("sq in GetFileFromSq()");
   }
 
+  constexpr S8 kFileMask = 7;
   return sq & kFileMask;
 }
 
@@ -302,6 +296,7 @@ inline auto GetRankFromSq(S8 sq) -> S8 {
     throw invalid_argument("sq in GetRankFromSq()");
   }
 
+  constexpr S8 kSquareRightShiftAmt = 3;
   return static_cast<S8>(sq >> kSquareRightShiftAmt);
 }
 
@@ -321,6 +316,8 @@ inline auto GetSqOfFirstPiece(const Bitboard& board) -> S8 {
     throw invalid_argument("board in GetSqOfFirstPiece()");
   }
 
+  constexpr U64 kDebruijn64bitSeq = 0X03F79D71B4CB0A89ULL;
+  constexpr S8 kDebruijn64bitSeqRightShiftAmt = 58;
   S8 bitscan_index = static_cast<S8>(((board & -board) * kDebruijn64bitSeq) >>
                                      kDebruijn64bitSeqRightShiftAmt);
   return kBitscanForwardLookupTable[bitscan_index];

@@ -95,6 +95,8 @@ void Game::Play() {
   engine_.AddPosToHistory();
 
   // Check the status of the game.
+  constexpr S8 kNumMoveRepForOptionalDraw = 3;
+  constexpr S8 kMaxMoveRep = 5;
   S8 game_status = engine_.GetGameStatus();
   S8 player_to_move = board_.GetPlayerToMove();
   S8 user_side = engine_.GetUserSide();

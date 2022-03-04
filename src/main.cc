@@ -35,7 +35,6 @@ auto main(int argc, char* argv[]) -> int {
       "FEN formatted string specifying the initial game position")
       ("depth,d", prog_opt::value<int>(&depth),
        "Depth to run Perft testing function to")
-      ("stats,s", "Output search function statistics")
       ("player-side,p", prog_opt::value<char>(&player_side)->default_value('w'),
        "Side user will play")
       ("time,t", prog_opt::value<float>(&search_time)->default_value(5),
@@ -54,9 +53,6 @@ auto main(int argc, char* argv[]) -> int {
     if (var_map.count("depth")) {
       // Output perft results.
       game.Test(depth);
-    } else if (var_map.count("stats")) {
-      // Output search statistics.
-      game.TimeSearch();
     } else {
       // Play a game against a user.
       while (game.IsActive()) {

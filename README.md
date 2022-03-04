@@ -83,12 +83,6 @@ previously outlined to walk the search tree, or `q` to exit the program.
 The positions on [this page](https://www.chessprogramming.org/Perft_Results) were used to confirm the correctness of the move
 generator.
 
-To print out statistics of the search and evaluation of board states in the search tree, invoke the program as follows:
-```
-OmegaZero -i [POSITION] -s
-```
-where `[POSITION]` is defined above.
-
 ### Implementation
 
 #### Board Representation
