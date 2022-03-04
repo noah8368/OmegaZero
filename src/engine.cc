@@ -68,9 +68,6 @@ auto Engine::GetBestMove(int* max_depth) -> Move {
   size_t shared_memory_sz = sizeof(Move);
   const char* kSharedMemObjName = "BEST_MOVE";
   const int kErrorStatus = -1;
-  // TODO: Remove the following line once this code stops making you want to
-  // cry.
-  shm_unlink("BEST_MOVE");
   int shared_memory_fd =
       shm_open(kSharedMemObjName, O_CREAT | O_EXCL | O_RDWR, S_IRWXU | S_IRWXG);
   if (shared_memory_fd == kErrorStatus) {
@@ -113,7 +110,6 @@ auto Engine::GetBestMove(int* max_depth) -> Move {
   if (max_depth) {
     *max_depth = search_depth - 1;
   }
-  cout << "SEARCHED TO " << search_depth - 1 << endl;
   Move best_move = *best_move_ptr;
   if (shm_unlink(kSharedMemObjName) == kErrorStatus) {
     throw runtime_error("shm_unlink()");

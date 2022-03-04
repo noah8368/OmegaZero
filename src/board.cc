@@ -452,6 +452,10 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
     }
 
     if (FEN_field == 0) {
+      if (!SqOnBoard(current_sq)) {
+        throw invalid_argument("board initialization FEN string");
+      }
+
       // Add pieces to the board.
       if (isalpha(ch)) {
         switch (ch) {
@@ -494,13 +498,16 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
             AddPiece(kKing, kBlack, current_sq);
             break;
           default:
-            throw invalid_argument("init_pos in Board::InitBoardPos()");
+            throw invalid_argument("board initialization FEN string");
         }
         ++current_sq;
       } else if (ch - '0' >= 0 && ch - '0' <= 8) {
         S8 empty_sq_count = static_cast<S8>(ch - '0');
         S8 empty_sq = current_sq;
         for (; empty_sq < current_sq + empty_sq_count; ++empty_sq) {
+          if (!SqOnBoard(empty_sq)) {
+            throw invalid_argument("board initialization FEN string");
+          }
           AddPiece(kNA, kNA, empty_sq);
         }
         current_sq = empty_sq;
@@ -508,7 +515,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
         // Set the current square to the rank below the current position.
         current_sq = static_cast<S8>(current_sq - 2 * kNumFiles);
       } else {
-        throw invalid_argument("init_pos in Board::InitBoardPos()");
+        throw invalid_argument("board initialization FEN string");
       }
     } else if (FEN_field == 1) {
       // Record the player to move.
@@ -517,7 +524,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
       } else if (ch == 'b') {
         player_to_move_ = kBlack;
       } else {
-        throw invalid_argument("init_pos in Board::InitBoardPos()");
+        throw invalid_argument("board initialization FEN string");
       }
     } else if (FEN_field == 2) {
       // Assign castling rights for each player and board side.
@@ -537,7 +544,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
         case '-':
           break;
         default:
-          throw invalid_argument("init_pos in Board::InitBoardPos()");
+          throw invalid_argument("board initialization FEN string");
       }
     } else if (FEN_field == 3) {
       // Assign the en passent target square.
@@ -546,7 +553,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
         if (FileOnBoard(ep_target_sq_file)) {
           ep_target_sq_ = ep_target_sq_file;
         } else if (ch != '-') {
-          throw invalid_argument("init_pos in Board::InitBoardPos()");
+          throw invalid_argument("board initialization FEN string");
         }
       } else {
         // Assume ep_target_sq_ is initialized to the target
@@ -555,7 +562,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
         if (RankOnBoard(ep_target_sq_rank)) {
           ep_target_sq_ = GetSqFromRankFile(ep_target_sq_rank, ep_target_sq_);
         } else {
-          throw invalid_argument("init_pos in Board::InitBoardPos()");
+          throw invalid_argument("board initialization FEN string");
         }
       }
     } else if (FEN_field == 4) {
@@ -568,13 +575,13 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
           halfmove_clock_ = static_cast<S8>(10 * halfmove_clock_ + next_digit);
         }
       } else {
-        throw invalid_argument("init_pos in Board::InitBoardPos()");
+        throw invalid_argument("board initialization FEN string");
       }
     } else if (FEN_field == 5) {
       // Ignore the fullmove counter.
       ;
     } else {
-      throw invalid_argument("init_pos in Board::InitBoardPos()");
+      throw invalid_argument("board initialization FEN string");
     }
   }
 }
