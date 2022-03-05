@@ -18,15 +18,13 @@ typedef int8_t S8;
 constexpr S8 kNA = -1;
 
 struct Move {
-  bool operator==(const Move& rhs) const {
-    return (is_ep && is_ep == rhs.is_ep &&
-            new_ep_target_sq == rhs.new_ep_target_sq) ||
-           (castling_type != kNA && castling_type == rhs.castling_type) ||
+  auto operator==(const Move& rhs) const -> bool {
+    return (castling_type != kNA && castling_type == rhs.castling_type) ||
            (moving_piece != kNA && captured_piece == rhs.captured_piece &&
             moving_piece == rhs.moving_piece && start_sq == rhs.start_sq &&
-            target_sq == rhs.target_sq);
+            target_sq == rhs.target_sq && is_ep == rhs.is_ep);
   }
-  bool operator!=(const Move& rhs) const { return !(*this == rhs); }
+  auto operator!=(const Move& rhs) const -> bool { return !(*this == rhs); }
 
   bool is_ep = false;
   S8 captured_piece = kNA;

@@ -12,26 +12,13 @@
 
 namespace omegazero {
 
-TranspTable::TranspTable() {
-  always_replace_entries_ = new TableEntry[kTableSize];
-  depth_pref_entries_ = new TableEntry[kTableSize];
-  // Store which slots are occupied.
-  occ_table_ = new bool[kTableSize];
-  // Initialize all slots intable_entry the occupancy table to unoccupied.
-  Clear();
-}
-
-TranspTable::~TranspTable() {
-  delete always_replace_entries_;
-  delete depth_pref_entries_;
-  delete occ_table_;
-}
+constexpr U64 kHashMask = 0X7FFFF;
 
 auto TranspTable::Access(const Board* board, int depth, int& eval,
                          S8& node_type) const -> bool {
   U64 board_hash = board->GetBoardHash();
   int index = board_hash & kHashMask;
-  if (occ_table_[index]) {
+  if (occupancy_table_[index]) {
     TableEntry table_entry = depth_pref_entries_[index];
     // Check that the current node is to be searched at a lower depth than the
     // stored evaluation was assessed for.
@@ -54,36 +41,31 @@ auto TranspTable::Access(const Board* board, int depth, int& eval,
   return false;
 }
 
-auto TranspTable::GetPvMove(const Board* board) const -> Move {
+auto TranspTable::GetHashMove(const Board* board) const -> Move {
   U64 board_hash = board->GetBoardHash();
   int index = board_hash & kHashMask;
-  Move pv_move;
-  if (occ_table_[index]) {
+  Move hash_move;
+  if (occupancy_table_[index]) {
     TableEntry table_entry = depth_pref_entries_[index];
-    // Check that the current node is to be searched at a lower depth than the
-    // stored evaluation was assessed for.
-    if (table_entry.node_type == kPvNode &&
-        table_entry.board_hash == board_hash) {
-      pv_move = table_entry.pv_move;
+    // Check the "depth preferred" table first.
+    if (table_entry.board_hash == board_hash) {
+      hash_move = table_entry.hash_move;
     } else {
-      // Check the "always replace" stored evaluation if the stored "depth
-      // preferred" evaluation can't be used.
+      // Check the "always replace" table if a collision was detected in the
+      // "depth preferred" table.
       table_entry = always_replace_entries_[index];
-      if (table_entry.node_type == kPvNode &&
-          table_entry.board_hash == board_hash) {
-        pv_move = table_entry.pv_move;
+      if (table_entry.board_hash == board_hash) {
+        hash_move = table_entry.hash_move;
       }
     }
   }
-  return pv_move;
+  return hash_move;
 }
 
 auto TranspTable::Update(const Board* board, int depth, int eval, S8 node_type,
-                         const Move* pv_move) -> void {
+                         const Move& hash_move) -> void {
   TableEntry new_entry;
-  if (pv_move) {
-    new_entry.pv_move = *pv_move;
-  }
+  new_entry.hash_move = hash_move;
   U64 board_hash = board->GetBoardHash();
   new_entry.board_hash = board_hash;
   new_entry.search_depth = depth;
@@ -91,8 +73,8 @@ auto TranspTable::Update(const Board* board, int depth, int eval, S8 node_type,
   new_entry.node_type = node_type;
 
   int index = board_hash & kHashMask;
-  if (occ_table_[index]) {
-    if (new_entry.search_depth < depth_pref_entries_[index].search_depth) {
+  if (occupancy_table_[index]) {
+    if (new_entry.search_depth > depth_pref_entries_[index].search_depth) {
       // Overwrite the depth preferred entry if the new position is evaluated
       // with deeper depth than the depth of the depth preferred entry.
       depth_pref_entries_[index] = new_entry;
@@ -102,7 +84,7 @@ auto TranspTable::Update(const Board* board, int depth, int eval, S8 node_type,
   } else {
     always_replace_entries_[index] = new_entry;
     depth_pref_entries_[index] = new_entry;
-    occ_table_[index] = true;
+    occupancy_table_[index] = true;
   }
 }
 

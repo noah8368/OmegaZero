@@ -33,6 +33,15 @@ install Boost like so:
 sudo apt-get install libboost-all-dev
 ```
 
+#### Building the Engine
+
+To build the software, simply type `make` in the root directory of the project.
+This will take several minutes as the `magics.cc` file takes quite
+a while to build. To completely clean a build, `make purge` will remove the
+entire build directory. To remove all object files except for the one generated
+by `magics.cc`, you may `make clean`. Doing so will result in much faster
+rebuild times.
+
 #### User Input
 
 ##### Playing a Game

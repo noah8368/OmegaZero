@@ -62,8 +62,9 @@ auto main(int argc, char* argv[]) -> int {
     }
   } catch (invalid_argument& e) {
     cout << "ERROR: Invalid argument: " << e.what() << endl;
-    return EINVAL;
+    exit(EINVAL);
   } catch (runtime_error& e) {
     cout << "ERROR: Unexpected problem encountered with " << e.what() << endl;
+    exit(EXIT_FAILURE);
   }
 }

@@ -7,6 +7,7 @@
 
 #include "board.h"
 
+#include <algorithm>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <cctype>
 #include <chrono>
@@ -21,11 +22,13 @@
 
 namespace omegazero {
 
+using std::begin;
+using std::copy;
+using std::cout;
+using std::end;
+using std::endl;
 using std::invalid_argument;
 using std::string;
-
-using std::cout;
-using std::endl;
 
 typedef boost::multiprecision::uint128_t U128;
 
@@ -207,6 +210,68 @@ auto Board::Evaluate() const -> int {
   return board_score * moving_side;
 }
 
+auto Board::ResetPos() -> void {
+  copy(begin(saved_pos_info_.pieces), end(saved_pos_info_.pieces),
+       begin(pieces_));
+  copy(begin(saved_pos_info_.player_pieces), end(saved_pos_info_.player_pieces),
+       begin(player_pieces_));
+
+  copy(begin(saved_pos_info_.castling_rights[kQueenSide]),
+       end(saved_pos_info_.castling_rights[kKingSide]),
+       begin(castling_rights_[kQueenSide]));
+
+  ep_target_sq_ = saved_pos_info_.ep_target_sq;
+  halfmove_clock_ = saved_pos_info_.halfmove_clock;
+  copy(begin(saved_pos_info_.piece_layout), end(saved_pos_info_.piece_layout),
+       begin(piece_layout_));
+  copy(begin(saved_pos_info_.player_layout), end(saved_pos_info_.player_layout),
+       begin(player_layout_));
+  player_to_move_ = saved_pos_info_.player_to_move;
+
+  white_queenside_castling_rights_history_ =
+      saved_pos_info_.white_queenside_castling_rights_history;
+  white_kingside_castling_rights_history_ =
+      saved_pos_info_.white_kingside_castling_rights_history;
+  black_queenside_castling_rights_history_ =
+      saved_pos_info_.black_queenside_castling_rights_history;
+  black_kingside_castling_rights_history_ =
+      saved_pos_info_.black_kingside_castling_rights_history;
+  ep_target_sq_history_ = saved_pos_info_.ep_target_sq_history;
+  halfmove_clock_history_ = saved_pos_info_.halfmove_clock_history;
+
+  board_hash_ = saved_pos_info_.board_hash;
+}
+
+auto Board::SavePos() -> void {
+  copy(begin(pieces_), end(pieces_), begin(saved_pos_info_.pieces));
+  copy(begin(player_pieces_), end(player_pieces_),
+       begin(saved_pos_info_.player_pieces));
+
+  copy(begin(castling_rights_[kQueenSide]), end(castling_rights_[kKingSide]),
+       begin(saved_pos_info_.castling_rights[kQueenSide]));
+
+  saved_pos_info_.ep_target_sq = ep_target_sq_;
+  saved_pos_info_.halfmove_clock = halfmove_clock_;
+  copy(begin(piece_layout_), end(piece_layout_),
+       begin(saved_pos_info_.piece_layout));
+  copy(begin(player_layout_), end(player_layout_),
+       begin(saved_pos_info_.player_layout));
+  saved_pos_info_.player_to_move = player_to_move_;
+
+  saved_pos_info_.white_queenside_castling_rights_history =
+      white_queenside_castling_rights_history_;
+  saved_pos_info_.white_kingside_castling_rights_history =
+      white_kingside_castling_rights_history_;
+  saved_pos_info_.black_queenside_castling_rights_history =
+      black_queenside_castling_rights_history_;
+  saved_pos_info_.black_kingside_castling_rights_history =
+      black_kingside_castling_rights_history_;
+  saved_pos_info_.ep_target_sq_history = ep_target_sq_history_;
+  saved_pos_info_.halfmove_clock_history = halfmove_clock_history_;
+
+  saved_pos_info_.board_hash = board_hash_;
+}
+
 auto Board::MakeMove(const Move& move) -> void {
   if (move.castling_type == kNA) {
     MakeNonCastlingMove(move);
@@ -260,9 +325,13 @@ auto Board::MakeMove(const Move& move) -> void {
 
   // Undo the move if it puts the king in check.
   if (KingInCheck()) {
+    // Finish making move by turning over control to the other player so
+    // UnmakeMove() can be called.
     SwitchPlayer();
+    board_hash_ ^= black_to_move_rand_num_;
     UnmakeMove(move);
     throw BadMove("move leaves king in check");
+    // return;
   }
 
   SwitchPlayer();

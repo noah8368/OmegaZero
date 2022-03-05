@@ -10,6 +10,7 @@
 #ifndef OMEGAZERO_SRC_ENGINE_H_
 #define OMEGAZERO_SRC_ENGINE_H_
 
+#include <algorithm>
 #include <chrono>
 #include <queue>
 #include <stdexcept>
@@ -18,10 +19,14 @@
 
 #include "board.h"
 #include "move.h"
+#include "out_of_time.h"
 #include "transp_table.h"
 
 namespace omegazero {
 
+using std::begin;
+using std::copy;
+using std::end;
 using std::invalid_argument;
 using std::pair;
 using std::queue;
@@ -54,8 +59,8 @@ class Engine {
  public:
   Engine(Board* board, S8 player_side, float search_time);
 
-  // Search possible games in a search tree to find the best legal move. Act as
-  // the root function to call the NegaMax search algorithm in an iterative
+  // Searches possible games in a search tree to find the best legal move. Act
+  // as the root function to call the NegaMax search algorithm in an iterative
   // deepening framework.
   auto GetBestMove() -> Move;
 
@@ -64,22 +69,22 @@ class Engine {
   auto GetGameStatus() -> S8;
   auto GetUserSide() const -> S8;
 
-  // Count the number of leaves of the tree of specified depth whose root
+  // Counts the number of leaves of the tree of specified depth whose root
   // node is is the current board state.
   auto Perft(int depth) -> U64;
 
-  // Find all pseudo-legal moves able to be played at the current board state.
+  // Finds all pseudo-legal moves able to be played at the current board state.
   auto GenerateMoves(bool captures_only = false) const -> vector<Move>;
 
-  // Add a board repitition to keep enforce move repitition rules and return the
-  // number of times the current board state has been encountered.
+  // Adds a board repitition to keep enforce move repitition rules and return
+  // the number of times the current board state has been encountered.
   auto AddPosToHistory() -> void;
 
  private:
-  auto IsKillerMove(const Move& move, int depth) const -> bool;
+  auto IsKillerMove(const Move& move, int ply) const -> bool;
   auto RepDetected() const -> bool;
 
-  // Compute best evaluation resulting from a legal move for the moving
+  // Computes best evaluation resulting from a legal move for the moving
   // player by searching the tree of possible moves using the NegaMax algorithm.
   auto Search(int search_depth) -> Move;
   auto Search(int alpha, int beta, int depth, int ply) -> int;
@@ -88,10 +93,10 @@ class Engine {
   // made) to mitigate the horizon effect.
   auto QuiescenceSearch(int alpha, int beta) -> int;
 
-  // Attempt to predict which moves are likely to be better, and order those
+  // Attempts to predict which moves are likely to be better, and order those
   // towards the front of the move_list to increase the number of moves that
   // can be pruned during alpha-beta pruning.
-  auto OrderMoves(vector<Move> move_list, int depth) const -> vector<Move>;
+  auto OrderMoves(vector<Move> move_list, int ply) const -> vector<Move>;
   auto OrderMoves(vector<Move> move_list) const -> vector<Move>;
 
   auto AddCastlingMoves(vector<Move>& move_list) const -> void;
@@ -102,7 +107,7 @@ class Engine {
                         S8 start_sq) const -> void;
   auto CheckSearchTime() const -> void;
   auto ClearHistory() -> void;
-  auto RecordKillerMove(const Move& move, int depth) -> void;
+  auto RecordKillerMove(const Move& move, int ply) -> void;
 
   Board* board_;
 
@@ -126,13 +131,12 @@ inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
 
 // Implement private inline member functions.
 
-inline auto Engine::IsKillerMove(const Move& move, int depth) const -> bool {
-  if (depth < 0 || depth >= kSearchLimit) {
-    throw invalid_argument("depth in Engine::IsKillerMove()");
+inline auto Engine::IsKillerMove(const Move& move, int ply) const -> bool {
+  if (ply < 0 || ply >= kSearchLimit) {
+    throw invalid_argument("ply in Engine::IsKillerMove()");
   }
 
-  return killer_moves_[depth].first == move ||
-         killer_moves_[depth].second == move;
+  return killer_moves_[ply].first == move || killer_moves_[ply].second == move;
 }
 
 inline auto Engine::RepDetected() const -> bool {
@@ -168,7 +172,7 @@ inline auto Engine::CheckSearchTime() const -> void {
                                      search_start_)
           .count();
   if (time_since_search_started >= search_time_) {
-    exit(kRanOutOfTime);
+    throw OutOfTime();
   }
 }
 

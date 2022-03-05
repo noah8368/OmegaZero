@@ -158,11 +158,12 @@ auto RemoveFirstSq(Bitboard& board) -> void;
 
 class Board {
  public:
+  // DEBUG
+  uint64_t DEBUG_COUNTER;
+
   Board(const std::string& init_pos);
 
-  auto operator==(const Board& board) const -> bool {
-    return GetBoardHash() == board.GetBoardHash();
-  }
+  auto operator==(const Board& rhs) const -> bool;
 
   // Return possible attacks a specified piece can make on all other pieces.
   auto GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
@@ -187,6 +188,14 @@ class Board {
   // Return an (almost) unique hash that represents the current board state.
   auto GetBoardHash() const -> U64;
 
+  // Resets information edited during search after a search is interrupted
+  // during iterative deepening.
+  // WARNING: Calling this function without first calling SavePos() will cause
+  // undefined behavior.
+  auto ResetPos() -> void;
+  // Caches a copy of information edited during search before iterative
+  // deepening, allowing ResetPos() to be called after iterative deepening.
+  auto SavePos() -> void;
   auto SwitchPlayer() -> void;
   auto MakeMove(const Move& move) -> void;
   // Unmake the given move, assuming it was already made with MakeMove(). Note
@@ -209,6 +218,30 @@ class Board {
                  S8 promoted_to_piece = kNA) -> void;
   auto UnmakeNonCastlingMove(const Move& move) -> void;
   auto UpdateCastlingRights(const Move& move) -> void;
+
+  // Store a copy of all information edited during seach to revert back to after
+  // a search is interrupted.
+  struct {
+    Bitboard pieces[kNumPieceTypes];
+    Bitboard player_pieces[kNumPlayers];
+
+    bool castling_rights[kNumPlayers][kNumBoardSides];
+
+    S8 ep_target_sq;
+    S8 halfmove_clock;
+    S8 piece_layout[kNumSq];
+    S8 player_layout[kNumSq];
+    S8 player_to_move;
+
+    stack<bool> white_queenside_castling_rights_history;
+    stack<bool> white_kingside_castling_rights_history;
+    stack<bool> black_queenside_castling_rights_history;
+    stack<bool> black_kingside_castling_rights_history;
+    stack<S8> ep_target_sq_history;
+    stack<S8> halfmove_clock_history;
+
+    U64 board_hash;
+  } saved_pos_info_;
 
   // Store bitboard board representations of each type
   // of piece that are still active in the game.
@@ -326,6 +359,10 @@ inline auto GetSqOfFirstPiece(const Bitboard& board) -> S8 {
 inline auto RemoveFirstPiece(Bitboard& board) -> void { board &= (board - 1); }
 
 // Implement inline member functions.
+
+inline auto Board::operator==(const Board& rhs) const -> bool {
+  return GetBoardHash() == rhs.GetBoardHash();
+}
 
 inline auto Board::KingInCheck() const -> bool {
   Bitboard king_board = pieces_[kKing] & player_pieces_[player_to_move_];

@@ -7,14 +7,6 @@
 
 #include "engine.h"
 
-#include <fcntl.h>
-#include <stdlib.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -28,6 +20,7 @@
 #include "board.h"
 #include "game.h"
 #include "move.h"
+#include "out_of_time.h"
 #include "transp_table.h"
 
 namespace omegazero {
@@ -67,53 +60,20 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
 
 auto Engine::GetBestMove() -> Move {
   transp_table_.Clear();
-
-  // Create a block of shared memory that both the parent and each child process
-  // can read and write from during iterative deepening.
-  size_t shared_memory_sz = sizeof(Move);
-  const char* kSharedMemObjName = "BEST_MOVE";
-  const int kErrorStatus = -1;
-  int shared_memory_fd =
-      shm_open(kSharedMemObjName, O_CREAT | O_EXCL | O_RDWR, S_IRWXU | S_IRWXG);
-  if (shared_memory_fd == kErrorStatus) {
-    throw runtime_error("shm_open()");
-  }
-  if (ftruncate(shared_memory_fd, shared_memory_sz) == kErrorStatus) {
-    throw runtime_error("ftruncate()");
-  }
-  Move* best_move_ptr =
-      (Move*)mmap(NULL, shared_memory_sz, PROT_READ | PROT_WRITE, MAP_SHARED,
-                  shared_memory_fd, 0);
-  if (best_move_ptr == MAP_FAILED) {
-    throw runtime_error("mmap()");
-  }
+  Move best_move;
+  board_->SavePos();
 
   // Perform an iterative deepening search within a given time limit.
-  int search_depth;
-  int search_process_status;
-  pid_t search_process_pid;
   search_start_ = high_resolution_clock::now();
-  for (search_depth = 1; search_depth < kSearchLimit; ++search_depth) {
-    if ((search_process_pid = fork()) == 0) {
-      // Perform a search to the specified depth in the child process.
-      *best_move_ptr = Search(search_depth);
-      exit(EXIT_SUCCESS);
-    } else {
-      // Wait for the child process to finish performing a search.
-      waitpid(search_process_pid, &search_process_status, 0);
-      if (WIFEXITED(search_process_status) &&
-          WEXITSTATUS(search_process_status) == kRanOutOfTime) {
-        // Halt iterative deepening if the child process ran out of time during
-        // search, indicating time for the entire search is up.
-        break;
-      }
+  for (int search_depth = 1; search_depth <= kSearchLimit; ++search_depth) {
+    try {
+      best_move = Search(search_depth);
+    } catch (OutOfTime& e) {
+      board_->ResetPos();
+      break;
     }
   }
 
-  Move best_move = *best_move_ptr;
-  if (shm_unlink(kSharedMemObjName) == kErrorStatus) {
-    throw runtime_error("shm_unlink()");
-  }
   return best_move;
 }
 
@@ -240,12 +200,12 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply)
     return kNeutralEval;
   } else if (depth == 0) {
     // Initiate the Quiescence search when maximum depth is reached.
-    return /* QuiescenceSearch(alpha, beta); */ board_->Evaluate();
+    return QuiescenceSearch(alpha, beta);
   }
 
   // Use the NegaMax algorithm to traverse the search tree.
   vector<Move> move_list = GenerateMoves();
-  move_list = OrderMoves(move_list, depth);
+  move_list = OrderMoves(move_list, ply);
   queue<U64> saved_pos_history = pos_history_;
   Move best_move;
   int best_eval = kWorstEval;
@@ -276,15 +236,15 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply)
       break;
     }
   }
-  pv_move = best_move;
 
   // Store a searched node in the transposition table.
   if (best_eval <= orig_alpha) {
     transp_table_.Update(board_, depth, best_eval, kAllNode);
   } else if (best_eval >= beta) {
-    transp_table_.Update(board_, depth, best_eval, kCutNode);
+    transp_table_.Update(board_, depth, best_eval, kCutNode, best_move);
   } else {
-    transp_table_.Update(board_, depth, best_eval, kPvNode, &best_move);
+    transp_table_.Update(board_, depth, best_eval, kPvNode, best_move);
+    pv_move = best_move;
   }
 
   return best_eval;
@@ -328,12 +288,12 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
     }
     alpha = max(stand_pat_eval, alpha);
   }
+
   return alpha;
 }
 
-auto Engine::OrderMoves(vector<Move> move_list, int depth) const
-    -> vector<Move> {
-  Move pv_move = transp_table_.GetPvMove(board_);
+auto Engine::OrderMoves(vector<Move> move_list, int ply) const -> vector<Move> {
+  Move hash_move = transp_table_.GetHashMove(board_);
 
   vector<pair<Move, int>> ordered_capture_pairs;
   vector<Move> killer_moves;
@@ -342,14 +302,14 @@ auto Engine::OrderMoves(vector<Move> move_list, int depth) const
   ordered_moves.reserve(move_list.size());
   for (const Move& move : move_list) {
     // Prioritize a move if it's the previously calculated best move of a node.
-    if (move == pv_move) {
+    if (move == hash_move) {
       ordered_moves.push_back(move);
     } else if (move.captured_piece != kNA) {
       // Use the MVV-LVA heuristic to order captures.
       ordered_capture_pairs.emplace_back(
           move, kVictimSortVals[move.captured_piece] +
                     kAggressorSortVals[move.moving_piece]);
-    } else if (IsKillerMove(move, depth)) {
+    } else if (IsKillerMove(move, ply)) {
       // Use the Killer Move heuristic to order quiet moves.
       killer_moves.push_back(move);
     } else {
@@ -405,8 +365,7 @@ auto Engine::OrderMoves(vector<Move> move_list) const -> vector<Move> {
     captures.push_back(capture_eval_pair.first);
   }
 
-  // Place all hash moves first, followed by captures, and then all other
-  // moves.
+  // Place captures first, followed by all other moves.
   vector<Move> ordered_moves;
   ordered_moves.reserve(move_list.size());
   ordered_moves.insert(ordered_moves.end(), captures.begin(), captures.end());

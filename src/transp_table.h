@@ -9,13 +9,21 @@
 #ifndef OMEGAZERO_SRC_TRANSP_TABLE_H
 #define OMEGAZERO_SRC_TRANSP_TABLE_H
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
+#include <vector>
 
 #include "board.h"
 #include "move.h"
 
 namespace omegazero {
+
+using std::begin;
+using std::copy;
+using std::end;
+using std::fill;
+using std::vector;
 
 enum NodeType : S8 {
   kPvNode,
@@ -25,10 +33,9 @@ enum NodeType : S8 {
 
 constexpr int kTableSize = 1 << 20;
 // Store a mask with least significant 19 bits set for computing table indices.
-constexpr U64 kHashMask = 0X7FFFF;
 
 struct TableEntry {
-  Move pv_move;
+  Move hash_move;
   U64 board_hash;
   int eval;
   int search_depth;
@@ -39,30 +46,43 @@ class TranspTable {
  public:
   TranspTable();
 
-  ~TranspTable();
-
   // Loop up the board position in the hash table and set eval to the
   // corresponding evaluation if the position is found. Return a bool to
   // indicate if the position was found.
   auto Access(const Board* board, int depth, int& eval, S8& node_type) const
       -> bool;
 
-  auto GetPvMove(const Board* board) const -> Move;
+  auto GetHashMove(const Board* board) const -> Move;
 
   auto Update(const Board* board, int depth, int eval, S8 node_type,
-              const Move* pv_move = nullptr) -> void;
+              const Move& hash_move) -> void;
+  auto Update(const Board* board, int depth, int eval, S8 node_type) -> void;
   auto Clear() -> void;
 
  private:
   // Store which slots in the table are occupied.
-  bool* occ_table_;
+  vector<bool> occupancy_table_;
 
-  TableEntry* always_replace_entries_;
-  TableEntry* depth_pref_entries_;
+  vector<TableEntry> always_replace_entries_;
+  vector<TableEntry> depth_pref_entries_;
 };
 
+inline TranspTable::TranspTable() {
+  always_replace_entries_.reserve(kTableSize);
+  depth_pref_entries_.reserve(kTableSize);
+  occupancy_table_.reserve(kTableSize);
+  // Initialize all slots intable_entry the occupancy table to unoccupied.
+  Clear();
+}
+
+inline auto TranspTable::Update(const Board* board, int depth, int eval,
+                                S8 node_type) -> void {
+  Move throwaway_move;
+  Update(board, depth, eval, node_type, throwaway_move);
+}
+
 inline auto TranspTable::Clear() -> void {
-  memset(occ_table_, false, kTableSize * sizeof(bool));
+  fill(occupancy_table_.begin(), occupancy_table_.end(), false);
 }
 
 }  // namespace omegazero
