@@ -81,6 +81,7 @@ class Engine {
   auto AddPosToHistory() -> void;
 
  private:
+  auto InEndgame() const -> bool;
   auto IsKillerMove(const Move& move, int ply) const -> bool;
   auto RepDetected() const -> bool;
 
@@ -145,6 +146,11 @@ inline auto Engine::AddPosToHistory() -> void {
 }
 
 // Implement private inline member functions.
+
+inline auto Engine::InEndgame() const -> bool {
+  // Indicate the game has entered the endgame if neither player has a queen.
+  return (board_->GetPiecesByType(kQueen, kNA) == 0X0);
+}
 
 inline auto Engine::IsKillerMove(const Move& move, int ply) const -> bool {
   if (ply < 0 || ply >= kSearchLimit) {

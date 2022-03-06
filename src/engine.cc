@@ -281,6 +281,16 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
   }
   alpha = max(stand_pat_eval, alpha);
 
+  if (!InEndgame()) {
+    // Perfrom delta pruning if not in the endgame.
+    constexpr int kDelta = kPieceVals[kQueen];
+    if (stand_pat_eval < alpha - kDelta) {
+      // If the biggest possible material swing won't increase alpha, don't
+      // bother searching any captures.
+      return alpha;
+    }
+  }
+
   // Generate captures only.
   vector<Move> move_list = GenerateMoves(true);
   move_list = OrderMoves(move_list);
