@@ -24,8 +24,6 @@ using std::endl;
 using std::string;
 using std::unordered_map;
 
-auto OneSqSet(const Bitboard& board) -> bool;
-
 auto GetPieceLetter(S8 piece) -> char;
 
 auto GetPlayerStr(S8 player) -> string;
@@ -86,10 +84,6 @@ class Game {
 };
 
 // Implement inline non-member functions.
-
-inline auto OneSqSet(const Bitboard& board) -> bool {
-  return board && !static_cast<bool>(board & (board - 1));
-}
 
 inline auto GetPlayerStr(S8 player) -> string {
   if (player == kWhite) {

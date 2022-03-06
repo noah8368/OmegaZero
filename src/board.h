@@ -140,6 +140,7 @@ extern const U64 kMagics[kNumSliderMaps][kNumSq];
 
 extern const std::unordered_map<U64, Bitboard> kMagicIndexToAttackMap;
 
+auto OneSqSet(const Bitboard& board) -> bool;
 auto RankOnBoard(S8 rank) -> bool;
 auto FileOnBoard(S8 file) -> bool;
 auto SqOnBoard(S8 sq) -> bool;
@@ -277,6 +278,10 @@ class Board {
 };
 
 // Implement public inline non-member functions.
+
+inline auto OneSqSet(const Bitboard& board) -> bool {
+  return board && !static_cast<bool>(board & (board - 1));
+}
 
 inline auto RankOnBoard(S8 rank) -> bool {
   return rank >= kRank1 && rank <= kRank8;

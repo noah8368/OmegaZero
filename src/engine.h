@@ -148,8 +148,21 @@ inline auto Engine::AddPosToHistory() -> void {
 // Implement private inline member functions.
 
 inline auto Engine::InEndgame() const -> bool {
-  // Indicate the game has entered the endgame if neither player has a queen.
-  return (board_->GetPiecesByType(kQueen, kNA) == 0X0);
+  Bitboard white_queens = board_->GetPiecesByType(kQueen, kWhite);
+  Bitboard black_queens = board_->GetPiecesByType(kQueen, kBlack);
+  bool no_queens = !static_cast<bool>(white_queens | black_queens);
+  bool no_rooks = !static_cast<bool>(board_->GetPiecesByType(kRook, kNA));
+  Bitboard white_minor_pieces = board_->GetPiecesByType(kKnight, kWhite) |
+                                board_->GetPiecesByType(kBishop, kWhite);
+  Bitboard black_minor_pieces = board_->GetPiecesByType(kKnight, kBlack) |
+                                board_->GetPiecesByType(kBishop, kBlack);
+  // Indicate the game has entered the endgame if both players either don't have
+  // a queen, or have only one queen in addition to at most one minor piece.
+  return (no_queens) | (no_rooks &&
+                        (GetNumSetSq(white_queens) <= 1 &&
+                         GetNumSetSq(white_minor_pieces) <= 1) &&
+                        (GetNumSetSq(black_queens) <= 1 &&
+                         GetNumSetSq(black_minor_pieces) <= 1));
 }
 
 inline auto Engine::IsKillerMove(const Move& move, int ply) const -> bool {
