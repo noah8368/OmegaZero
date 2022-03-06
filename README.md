@@ -125,8 +125,15 @@ implementation. The Transposition Table is [two-tiered](https://www.chessprogram
 
 The search algorithm used is the [NegaMax](https://www.chessprogramming.org/Negamax) algorithm with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta) inside of an [iterative deepening](https://www.chessprogramming.org/Iterative_Deepening) framework.
 A [transposition table](https://www.chessprogramming.org/Transposition_Table) is also used to prevent re-evaluating positions that
-have already been seen during a search. Moreover, [Hash Move](https://www.chessprogramming.org/Hash_Move), [MVV-LVA](https://www.chessprogramming.org/MVV-LVA), and [Killer Heuristic](https://www.chessprogramming.org/Killer_Heuristic) move ordering are used
-to increase pruning during search.
+have already been seen during a search. 
+
+To reduce the number of nodes needed to be searched, OmegaZero takes advantage
+of a set of heuristics to perform move ordering in `Engine::OrderMoves()`.
+Moves are put in the following order:
+1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
+2. Captures, ordered using the [MVV-LVA](https://www.chessprogramming.org/MVV-LVA) heuristic
+3. Two [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
+4. All other moves, sorted using the [History Heuristic](https://www.chessprogramming.org/History_Heuristic)
 
 #### Evaluation
 

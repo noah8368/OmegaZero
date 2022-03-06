@@ -35,6 +35,9 @@ using std::unordered_map;
 using std::vector;
 using std::chrono::high_resolution_clock;
 
+// DEBUG
+U64 NODES_SEARCHED = 0;
+
 // Store values used for the MVV-LVA heuristic. Piece order in array is pawn,
 // knight, bishop, rook, queen, king.
 constexpr int kAggressorSortVals[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
@@ -45,6 +48,11 @@ constexpr int kVictimSortVals[kNumPieceTypes] = {10, 20, 30, 40, 50, 60};
 Engine::Engine(Board* board, S8 player_side, float search_time) {
   board_ = board;
   search_time_ = search_time;
+
+  constexpr U64 kNoHistory = 0ULL;
+  fill(begin(history_heuristic_[kWhite][kSqA1]),
+       end(history_heuristic_[kBlack][kSqH8]), kNoHistory);
+
   if (tolower(player_side) == 'w') {
     user_side_ = kWhite;
   } else if (tolower(player_side) == 'b') {
@@ -67,7 +75,11 @@ auto Engine::GetBestMove() -> Move {
   search_start_ = high_resolution_clock::now();
   for (int search_depth = 1; search_depth <= kSearchLimit; ++search_depth) {
     try {
+      // DEBUG
+      NODES_SEARCHED = 0;
       best_move = Search(search_depth);
+      // DEBUG
+      cout << "NODES SEARCHED: " << NODES_SEARCHED << endl;
     } catch (OutOfTime& e) {
       board_->ResetPos();
       break;
@@ -173,6 +185,8 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
 auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply)
     -> int {
   CheckSearchTime();
+  // DEBUG
+  ++NODES_SEARCHED;
 
   int orig_alpha = alpha;
   int transp_table_stored_eval;
@@ -231,6 +245,7 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply)
     if (alpha >= beta) {
       if (move.captured_piece == kNA) {
         RecordKillerMove(move, ply);
+        UpdateHistoryHeuristic(move, depth);
       }
       // Prune a subtree when a beta cutoff is detected.
       break;
@@ -296,8 +311,8 @@ auto Engine::OrderMoves(vector<Move> move_list, int ply) const -> vector<Move> {
   Move hash_move = transp_table_.GetHashMove(board_);
 
   vector<pair<Move, int>> ordered_capture_pairs;
+  vector<pair<Move, U64>> ordered_silent_pairs;
   vector<Move> killer_moves;
-  vector<Move> late_moves;
   vector<Move> ordered_moves;
   ordered_moves.reserve(move_list.size());
   for (const Move& move : move_list) {
@@ -313,28 +328,41 @@ auto Engine::OrderMoves(vector<Move> move_list, int ply) const -> vector<Move> {
       // Use the Killer Move heuristic to order quiet moves.
       killer_moves.push_back(move);
     } else {
-      late_moves.push_back(move);
+      // Use the history heuristic to order silent, non-killer moves.
+      ordered_silent_pairs.emplace_back(move, GetHistoryHeuristic(move));
     }
   }
+
   // Sort captures by descending value of their MVV-LVA heuristic.
   sort(ordered_capture_pairs.begin(), ordered_capture_pairs.end(),
        [](const pair<Move, int>& lhs, const pair<Move, int>& rhs) {
          return lhs.second > rhs.second;
        });
-
   vector<Move> captures;
   captures.reserve(ordered_capture_pairs.size());
   for (const pair<Move, int>& capture_eval_pair : ordered_capture_pairs) {
     captures.push_back(capture_eval_pair.first);
   }
 
-  // Place all hash moves first, followed by captures, and then all other
-  // moves.
+  // Sort silent, non-killer moves by descending value of their history
+  // heuristic.
+  sort(ordered_silent_pairs.begin(), ordered_silent_pairs.end(),
+       [](const pair<Move, U64>& lhs, const pair<Move, U64>& rhs) {
+         return lhs.second > rhs.second;
+       });
+  vector<Move> silent_moves;
+  silent_moves.reserve(ordered_silent_pairs.size());
+  for (const pair<Move, U64>& silent_move_eval_pair : ordered_silent_pairs) {
+    silent_moves.push_back(silent_move_eval_pair.first);
+  }
+
+  // Place all hash moves first, followed by captures, then killer moves, and
+  // finally all silent, non-killer moves.
   ordered_moves.insert(ordered_moves.end(), captures.begin(), captures.end());
   ordered_moves.insert(ordered_moves.end(), killer_moves.begin(),
                        killer_moves.end());
-  ordered_moves.insert(ordered_moves.end(), late_moves.begin(),
-                       late_moves.end());
+  ordered_moves.insert(ordered_moves.end(), silent_moves.begin(),
+                       silent_moves.end());
   return ordered_moves;
 }
 

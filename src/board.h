@@ -158,9 +158,6 @@ auto RemoveFirstSq(Bitboard& board) -> void;
 
 class Board {
  public:
-  // DEBUG
-  uint64_t DEBUG_COUNTER;
-
   Board(const std::string& init_pos);
 
   auto operator==(const Board& rhs) const -> bool;

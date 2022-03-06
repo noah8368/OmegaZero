@@ -85,13 +85,16 @@ class Engine {
   auto RepDetected() const -> bool;
 
   // Computes best evaluation resulting from a legal move for the moving
-  // player by searching the tree of possible moves using the NegaMax algorithm.
+  // player by searching the tree of possible moves using the NegaMax
+  // algorithm.
   auto Search(int search_depth) -> Move;
   auto Search(int alpha, int beta, int depth, int ply) -> int;
   auto Search(Move& move, int alpha, int beta, int depth, int ply) -> int;
   // Search until a "quiescent" position is reached (no capturing moves can be
   // made) to mitigate the horizon effect.
   auto QuiescenceSearch(int alpha, int beta) -> int;
+
+  auto GetHistoryHeuristic(const Move& move) const -> U64;
 
   // Attempts to predict which moves are likely to be better, and order those
   // towards the front of the move_list to increase the number of moves that
@@ -108,12 +111,15 @@ class Engine {
   auto CheckSearchTime() const -> void;
   auto ClearHistory() -> void;
   auto RecordKillerMove(const Move& move, int ply) -> void;
+  auto UpdateHistoryHeuristic(const Move& move, int depth) -> void;
 
   Board* board_;
 
   float search_time_;
 
   high_resolution_clock::time_point search_start_;
+
+  U64 history_heuristic_[kNumPlayers][kNumSq][kNumSq];
 
   pair<Move, Move> killer_moves_[kSearchLimit];
 
@@ -128,6 +134,15 @@ class Engine {
 // Implement public inline member functions.
 
 inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
+
+inline auto Engine::AddPosToHistory() -> void {
+  U64 board_hash = board_->GetBoardHash();
+  pos_history_.push(board_hash);
+  // Track the last six positions of the game.
+  while (pos_history_.size() > kSixPlys) {
+    pos_history_.pop();
+  }
+}
 
 // Implement private inline member functions.
 
@@ -157,13 +172,14 @@ inline auto Engine::Search(int alpha, int beta, int depth, int ply) -> int {
   return Search(throwaway_move, alpha, beta, depth, ply);
 }
 
-inline auto Engine::AddPosToHistory() -> void {
-  U64 board_hash = board_->GetBoardHash();
-  pos_history_.push(board_hash);
-  // Track the last six positions of the game.
-  while (pos_history_.size() > kSixPlys) {
-    pos_history_.pop();
+inline auto Engine::GetHistoryHeuristic(const Move& move) const -> U64 {
+  if (move.start_sq < kSqA1 || move.start_sq > kSqH8 ||
+      move.target_sq < kSqA1 || move.target_sq > kSqH8) {
+    throw invalid_argument("move in Engine::GetHistoryHeuristic");
   }
+
+  S8 player_to_move = board_->GetPlayerToMove();
+  return history_heuristic_[player_to_move][move.start_sq][move.target_sq];
 }
 
 inline auto Engine::CheckSearchTime() const -> void {
@@ -186,6 +202,18 @@ inline auto Engine::RecordKillerMove(const Move& move, int ply) -> void {
     killer_moves_[ply].second = killer_moves_[ply].first;
     killer_moves_[ply].first = move;
   }
+}
+
+inline auto Engine::UpdateHistoryHeuristic(const Move& move, int depth)
+    -> void {
+  if (move.start_sq < kSqA1 || move.start_sq > kSqH8 ||
+      move.target_sq < kSqA1 || move.target_sq > kSqH8) {
+    throw invalid_argument("move in Engine::UpdateHistoryHeuristic");
+  }
+
+  S8 player_to_move = board_->GetPlayerToMove();
+  history_heuristic_[player_to_move][move.start_sq][move.target_sq] +=
+      depth * depth;
 }
 
 }  // namespace omegazero
