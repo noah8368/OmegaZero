@@ -84,13 +84,18 @@ class Engine {
   auto InEndgame() const -> bool;
   auto IsKillerMove(const Move& move, int ply) const -> bool;
   auto RepDetected() const -> bool;
+  // Return if Zugzwang is unlikely, indicating Null-Move Heuristic should be
+  // used.
+  auto ZugzwangUnlikely() const -> bool;
 
   // Computes best evaluation resulting from a legal move for the moving
   // player by searching the tree of possible moves using the NegaMax
   // algorithm.
   auto Search(int search_depth) -> Move;
-  auto Search(int alpha, int beta, int depth, int ply) -> int;
-  auto Search(Move& move, int alpha, int beta, int depth, int ply) -> int;
+  auto Search(int alpha, int beta, int depth, int ply, bool null_move_allowed)
+      -> int;
+  auto Search(Move& pv_move, int alpha, int beta, int depth, int ply,
+              bool null_move_allowed) -> int;
   // Search until a "quiescent" position is reached (no capturing moves can be
   // made) to mitigate the horizon effect.
   auto QuiescenceSearch(int alpha, int beta) -> int;
@@ -180,15 +185,28 @@ inline auto Engine::RepDetected() const -> bool {
          pos_history_.front() == pos_history_.back();
 }
 
+inline auto Engine::ZugzwangUnlikely() const -> bool {
+  S8 player_to_move = board_->GetPlayerToMove();
+  Bitboard non_pawn_king_pieces =
+      board_->GetPiecesByType(kKnight, player_to_move) |
+      board_->GetPiecesByType(kBishop, player_to_move) |
+      board_->GetPiecesByType(kRook, player_to_move) |
+      board_->GetPiecesByType(kQueen, player_to_move);
+
+  return GetNumSetSq(non_pawn_king_pieces) >= 1;
+}
+
 inline auto Engine::Search(int search_depth) -> Move {
   Move best_move;
-  Search(best_move, kWorstEval, kBestEval, search_depth, 0);
+  constexpr int kRootNodePly = 0;
+  Search(best_move, kWorstEval, kBestEval, search_depth, kRootNodePly, true);
   return best_move;
 }
 
-inline auto Engine::Search(int alpha, int beta, int depth, int ply) -> int {
+inline auto Engine::Search(int alpha, int beta, int depth, int ply,
+                           bool null_move_allowed) -> int {
   Move throwaway_move;
-  return Search(throwaway_move, alpha, beta, depth, ply);
+  return Search(throwaway_move, alpha, beta, depth, ply, null_move_allowed);
 }
 
 inline auto Engine::GetHistoryHeuristic(const Move& move) const -> U64 {

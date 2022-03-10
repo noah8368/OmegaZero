@@ -328,15 +328,31 @@ auto Board::MakeMove(const Move& move) -> void {
     // Finish making move by turning over control to the other player so
     // UnmakeMove() can be called.
     SwitchPlayer();
-    board_hash_ ^= black_to_move_rand_num_;
     UnmakeMove(move);
     throw BadMove("move leaves king in check");
-    // return;
   }
 
   SwitchPlayer();
-  // Update the board hash to reflect player turnover.
-  board_hash_ ^= black_to_move_rand_num_;
+}
+
+auto Board::MakeNullMove() -> void {
+  // Store the previous en passent target square and set current en passent
+  // target square value to null.
+  ep_target_sq_history_.push(ep_target_sq_);
+  S8 prev_ep_target_file =
+      (ep_target_sq_ == kNA) ? kNA : GetFileFromSq(ep_target_sq_);
+  ep_target_sq_ = kNA;
+  if (prev_ep_target_file != kNA) {
+    if (prev_ep_target_file != kNA) {
+      board_hash_ ^= ep_file_rand_nums_[prev_ep_target_file];
+    }
+  }
+
+  // Increment the halfmove clock.
+  halfmove_clock_history_.push(halfmove_clock_);
+  ++halfmove_clock_;
+
+  SwitchPlayer();
 }
 
 // Assume the passed move has been made use MakeMove(). Calling UnmakeMove()
@@ -344,8 +360,6 @@ auto Board::MakeMove(const Move& move) -> void {
 auto Board::UnmakeMove(const Move& move) -> void {
   // Revert back to the previous player.
   SwitchPlayer();
-  // Update the board hash to reflect player turnover.
-  board_hash_ ^= black_to_move_rand_num_;
 
   if (move.castling_type == kNA) {
     // Undo all non-castling moves.
@@ -415,6 +429,24 @@ auto Board::UnmakeMove(const Move& move) -> void {
         black_kingside_castling_rights_history_.top();
   }
   black_kingside_castling_rights_history_.pop();
+}
+
+// Assume the last made move was a null move with MakeNullMove().
+auto Board::UnmakeNullMove() -> void {
+  // Revert back to the previous player.
+  SwitchPlayer();
+
+  // Revert the halfmove clock.
+  halfmove_clock_ = halfmove_clock_history_.top();
+  halfmove_clock_history_.pop();
+
+  // Revert the en passent target square and update the board hash.
+  ep_target_sq_ = ep_target_sq_history_.top();
+  ep_target_sq_history_.pop();
+  if (ep_target_sq_ != kNA) {
+    S8 ep_file = GetFileFromSq(ep_target_sq_);
+    board_hash_ ^= ep_file_rand_nums_[ep_file];
+  }
 }
 
 // Implemement private member functions.

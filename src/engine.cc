@@ -38,8 +38,8 @@ using std::chrono::high_resolution_clock;
 // DEBUG
 U64 NODES_SEARCHED = 0;
 
-// Store values used for the MVV-LVA heuristic. Piece order in array is pawn,
-// knight, bishop, rook, queen, king.
+// Store values used for the MVV-LVA heuristic. Piece order in array is
+// pawn, knight, bishop, rook, queen, king.
 constexpr int kAggressorSortVals[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
 constexpr int kVictimSortVals[kNumPieceTypes] = {10, 20, 30, 40, 50, 60};
 
@@ -182,8 +182,8 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
 
 // Implement private member functions.
 
-auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply)
-    -> int {
+auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply,
+                    bool null_move_allowed) -> int {
   CheckSearchTime();
   // DEBUG
   ++NODES_SEARCHED;
@@ -203,6 +203,7 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply)
     }
 
     if (alpha >= beta) {
+      // Perform a beta-cutoff from the stored value of the transposition table.
       return transp_table_stored_eval;
     }
   }
@@ -215,6 +216,21 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply)
   } else if (depth == 0) {
     // Initiate the Quiescence search when maximum depth is reached.
     return QuiescenceSearch(alpha, beta);
+  }
+
+  // Compute the depth reduction value (R) for Null-Move pruning.
+  constexpr int kNullMoveDepthMin = 4;
+  constexpr int kDepthReductionIncreaseBoundary = 6;
+  int R = (depth > kDepthReductionIncreaseBoundary) ? 3 : 2;
+  if (depth >= kNullMoveDepthMin && null_move_allowed && ZugzwangUnlikely() &&
+      !board_->KingInCheck()) {
+    board_->MakeNullMove();
+    int null_move_eval = -Search(-beta, -alpha, depth - R - 1, ply + 1, false);
+    board_->UnmakeNullMove();
+    if (null_move_eval >= beta) {
+      // Perform a null-move prune.
+      return beta;
+    }
   }
 
   // Use the NegaMax algorithm to traverse the search tree.
@@ -234,14 +250,14 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply)
     }
 
     AddPosToHistory();
-    search_eval = -Search(-beta, -alpha, depth - 1, ply + 1);
+    search_eval = -Search(-beta, -alpha, depth - 1, ply + 1, true);
+    board_->UnmakeMove(move);
+    pos_history_.swap(saved_pos_history);
     if (search_eval > best_eval) {
       best_move = move;
       best_eval = search_eval;
     }
-    board_->UnmakeMove(move);
-    pos_history_.swap(saved_pos_history);
-    alpha = max(alpha, best_eval);
+    alpha = max(alpha, search_eval);
     if (alpha >= beta) {
       if (move.captured_piece == kNA) {
         RecordKillerMove(move, ply);
@@ -326,7 +342,8 @@ auto Engine::OrderMoves(vector<Move> move_list, int ply) const -> vector<Move> {
   vector<Move> ordered_moves;
   ordered_moves.reserve(move_list.size());
   for (const Move& move : move_list) {
-    // Prioritize a move if it's the previously calculated best move of a node.
+    // Prioritize a move if it's the previously calculated best move of a
+    // node.
     if (move == hash_move) {
       ordered_moves.push_back(move);
     } else if (move.captured_piece != kNA) {

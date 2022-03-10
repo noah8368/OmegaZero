@@ -196,9 +196,11 @@ class Board {
   auto SavePos() -> void;
   auto SwitchPlayer() -> void;
   auto MakeMove(const Move& move) -> void;
+  auto MakeNullMove() -> void;
   // Unmake the given move, assuming it was already made with MakeMove(). Note
   // that this function does not flip the player to move variable.
   auto UnmakeMove(const Move& move) -> void;
+  auto UnmakeNullMove() -> void;
 
  private:
   auto GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard;
@@ -394,6 +396,8 @@ inline auto Board::GetBoardHash() const -> U64 { return board_hash_; }
 
 inline auto Board::SwitchPlayer() -> void {
   player_to_move_ = (player_to_move_ == kWhite) ? kBlack : kWhite;
+  // Update the board hash to reflect player turnover.
+  board_hash_ ^= black_to_move_rand_num_;
 }
 
 }  // namespace omegazero
