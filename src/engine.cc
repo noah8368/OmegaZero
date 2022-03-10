@@ -218,12 +218,14 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply,
     return QuiescenceSearch(alpha, beta);
   }
 
+  bool at_pv_node = transp_table_.PosIsPvNode(board_);
+
   // Compute the depth reduction value (R) for Null-Move pruning.
   constexpr int kNullMoveDepthMin = 4;
   constexpr int kDepthReductionIncreaseBoundary = 6;
   int R = (depth > kDepthReductionIncreaseBoundary) ? 3 : 2;
-  if (depth >= kNullMoveDepthMin && null_move_allowed && ZugzwangUnlikely() &&
-      !board_->KingInCheck()) {
+  if (depth >= kNullMoveDepthMin && null_move_allowed && !at_pv_node &&
+      ZugzwangUnlikely() && !board_->KingInCheck()) {
     board_->MakeNullMove();
     int null_move_eval = -Search(-beta, -alpha, depth - R - 1, ply + 1, false);
     board_->UnmakeNullMove();

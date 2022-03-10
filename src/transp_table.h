@@ -51,6 +51,8 @@ class TranspTable {
   // indicate if the position was found.
   auto Access(const Board* board, int depth, int& eval, S8& node_type) const
       -> bool;
+  // Return if the given board position has been stored as a PV node.
+  auto PosIsPvNode(const Board* board) const -> bool;
 
   auto GetHashMove(const Board* board) const -> Move;
 

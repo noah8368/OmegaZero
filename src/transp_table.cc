@@ -41,6 +41,27 @@ auto TranspTable::Access(const Board* board, int depth, int& eval,
   return false;
 }
 
+auto TranspTable::PosIsPvNode(const Board* board) const -> bool {
+  U64 board_hash = board->GetBoardHash();
+  int index = board_hash & kHashMask;
+  if (occupancy_table_[index]) {
+    TableEntry table_entry = depth_pref_entries_[index];
+
+    // Check the "depth preferred" table first.
+    if (table_entry.board_hash == board_hash) {
+      return table_entry.node_type == kPvNode;
+    }
+
+    // Check the "always replace" table if a collision was detected in the
+    // "depth preferred" table.
+    table_entry = always_replace_entries_[index];
+    if (table_entry.board_hash == board_hash) {
+      return table_entry.node_type == kPvNode;
+    }
+  }
+  return false;
+}
+
 auto TranspTable::GetHashMove(const Board* board) const -> Move {
   U64 board_hash = board->GetBoardHash();
   int index = board_hash & kHashMask;
