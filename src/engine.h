@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iostream>  // DEBUG
 #include <queue>
 #include <stdexcept>
 #include <utility>
@@ -35,6 +36,9 @@ using std::vector;
 using std::chrono::duration;
 using std::chrono::duration_cast;
 using std::chrono::high_resolution_clock;
+// DEBUG
+using std::cout;
+using std::endl;
 
 enum GameStatus : S8 {
   kPlayerToMove,
@@ -60,7 +64,7 @@ class Engine {
   Engine(Board* board, S8 player_side, float search_time);
 
   // Searches possible games in a search tree to find the best legal move. Act
-  // as the root function to call the NegaMax search algorithm in an iterative
+  // as the root function to call the Negamax search algorithm in an iterative
   // deepening framework.
   auto GetBestMove() -> Move;
 
@@ -89,18 +93,16 @@ class Engine {
   auto ZugzwangUnlikely() const -> bool;
 
   // Computes best evaluation resulting from a legal move for the moving
-  // player by searching the tree of possible moves using the NegaMax
+  // player by searching the tree of possible moves using the Negamax
   // algorithm.
-  auto Search(int search_depth) -> Move;
-  auto Search(int alpha, int beta, int depth, int ply, bool null_move_allowed)
-      -> int;
-  auto Search(Move& pv_move, int alpha, int beta, int depth, int ply,
-              bool null_move_allowed) -> int;
+  auto MtdfSearch(int f, int d, int ply, Move& best_move) -> int;
+  auto NegamaxSearch(int alpha, int beta, int depth, int ply,
+                     bool null_move_allowed) -> int;
+  auto NegamaxSearch(Move& pv_move, int alpha, int beta, int depth, int ply,
+                     bool null_move_allowed) -> int;
   // Search until a "quiescent" position is reached (no capturing moves can be
   // made) to mitigate the horizon effect.
   auto QuiescenceSearch(int alpha, int beta) -> int;
-
-  auto GetHistoryHeuristic(const Move& move) const -> U64;
 
   // Attempts to predict which moves are likely to be better, and order those
   // towards the front of the move_list to increase the number of moves that
@@ -117,15 +119,12 @@ class Engine {
   auto CheckSearchTime() const -> void;
   auto ClearHistory() -> void;
   auto RecordKillerMove(const Move& move, int ply) -> void;
-  auto UpdateHistoryHeuristic(const Move& move, int depth) -> void;
 
   Board* board_;
 
   float search_time_;
 
   high_resolution_clock::time_point search_start_;
-
-  U64 history_heuristic_[kNumPlayers][kNumSq][kNumSq];
 
   pair<Move, Move> killer_moves_[kSearchLimit];
 
@@ -196,27 +195,11 @@ inline auto Engine::ZugzwangUnlikely() const -> bool {
   return GetNumSetSq(non_pawn_king_pieces) >= 1;
 }
 
-inline auto Engine::Search(int search_depth) -> Move {
-  Move best_move;
-  constexpr int kRootNodePly = 0;
-  Search(best_move, kWorstEval, kBestEval, search_depth, kRootNodePly, true);
-  return best_move;
-}
-
-inline auto Engine::Search(int alpha, int beta, int depth, int ply,
-                           bool null_move_allowed) -> int {
+inline auto Engine::NegamaxSearch(int alpha, int beta, int depth, int ply,
+                                  bool null_move_allowed) -> int {
   Move throwaway_move;
-  return Search(throwaway_move, alpha, beta, depth, ply, null_move_allowed);
-}
-
-inline auto Engine::GetHistoryHeuristic(const Move& move) const -> U64 {
-  if (move.start_sq < kSqA1 || move.start_sq > kSqH8 ||
-      move.target_sq < kSqA1 || move.target_sq > kSqH8) {
-    throw invalid_argument("move in Engine::GetHistoryHeuristic");
-  }
-
-  S8 player_to_move = board_->GetPlayerToMove();
-  return history_heuristic_[player_to_move][move.start_sq][move.target_sq];
+  return NegamaxSearch(throwaway_move, alpha, beta, depth, ply,
+                       null_move_allowed);
 }
 
 inline auto Engine::CheckSearchTime() const -> void {
@@ -239,18 +222,6 @@ inline auto Engine::RecordKillerMove(const Move& move, int ply) -> void {
     killer_moves_[ply].second = killer_moves_[ply].first;
     killer_moves_[ply].first = move;
   }
-}
-
-inline auto Engine::UpdateHistoryHeuristic(const Move& move, int depth)
-    -> void {
-  if (move.start_sq < kSqA1 || move.start_sq > kSqH8 ||
-      move.target_sq < kSqA1 || move.target_sq > kSqH8) {
-    throw invalid_argument("move in Engine::UpdateHistoryHeuristic");
-  }
-
-  S8 player_to_move = board_->GetPlayerToMove();
-  history_heuristic_[player_to_move][move.start_sq][move.target_sq] +=
-      depth * depth;
 }
 
 }  // namespace omegazero

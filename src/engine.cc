@@ -50,10 +50,6 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   board_ = board;
   search_time_ = search_time;
 
-  constexpr U64 kNoHistory = 0ULL;
-  fill(begin(history_heuristic_[kWhite][kSqA1]),
-       end(history_heuristic_[kBlack][kSqH8]), kNoHistory);
-
   if (tolower(player_side) == 'w') {
     user_side_ = kWhite;
   } else if (tolower(player_side) == 'b') {
@@ -71,14 +67,17 @@ auto Engine::GetBestMove() -> Move {
   transp_table_.Clear();
   Move best_move;
   board_->SavePos();
+  constexpr int kRootNodePly = 0;
+  // Initialize the first guess for the MTD(f) algorithm, f.
+  int f = 0;
 
-  // Perform an iterative deepening search within a given time limit.
+  // Perform an MTD(f) search inside an iterative deepening framework.
   search_start_ = high_resolution_clock::now();
   for (int search_depth = 1; search_depth <= kSearchLimit; ++search_depth) {
     try {
       // DEBUG
       NODES_SEARCHED = 0;
-      best_move = Search(search_depth);
+      f = MtdfSearch(f, search_depth, kRootNodePly, best_move);
       // DEBUG
       cout << "NODES SEARCHED: " << NODES_SEARCHED << endl;
     } catch (OutOfTime& e) {
@@ -184,8 +183,32 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
 
 // Implement private member functions.
 
-auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply,
-                    bool null_move_allowed) -> int {
+auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
+  // Perform the MTD(f) algorithm, where
+  // TODO: Explain what each variable is.
+  int g = f;
+  int upper_bound = kBestEval;
+  int lower_bound = kWorstEval;
+  int beta;
+  Move move;
+  while (lower_bound < upper_bound) {
+    beta = max(g, lower_bound + 1);
+    g = NegamaxSearch(move, beta - 1, beta, d, ply, true);
+    if (g < beta) {
+      upper_bound = g;
+    } else {
+      lower_bound = g;
+    }
+  }
+
+  if (move.moving_piece != kNA) {
+    best_move = move;
+  }
+  return g;
+}
+
+auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
+                           int ply, bool null_move_allowed) -> int {
   CheckSearchTime();
   // DEBUG
   ++NODES_SEARCHED;
@@ -229,7 +252,8 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply,
   if (depth >= kNullMoveDepthMin && null_move_allowed && !at_pv_node &&
       ZugzwangUnlikely() && !board_->KingInCheck()) {
     board_->MakeNullMove();
-    int null_move_eval = -Search(-beta, -alpha, depth - R - 1, ply + 1, false);
+    int null_move_eval =
+        -NegamaxSearch(-beta, -alpha, depth - R - 1, ply + 1, false);
     board_->UnmakeNullMove();
     if (null_move_eval >= beta) {
       // Perform a null-move prune.
@@ -241,7 +265,7 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply,
   // Reduction, the number of early moves.
   constexpr S8 kNumEarlyMoves = 3;
   constexpr S8 kMinReductionDepth = 3;
-  // Use the NegaMax algorithm to traverse the search tree.
+  // Use the Negamax algorithm to traverse the search tree.
   vector<Move> move_list = GenerateMoves();
   move_list = OrderMoves(move_list, ply);
   queue<U64> saved_pos_history = pos_history_;
@@ -269,27 +293,27 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply,
       depth_reduction =
           static_cast<int>(sqrt(static_cast<double>(depth - 1)) +
                            sqrt(static_cast<double>(move_idx - 1)));
-      search_eval =
-          -Search(-beta, -alpha, depth - depth_reduction - 1, ply + 1, true);
+      search_eval = -NegamaxSearch(-beta, -alpha, depth - depth_reduction - 1,
+                                   ply + 1, true);
       if (search_eval > alpha) {
         // Perform a re-search at full depth.
-        search_eval = -Search(-beta, -alpha, depth - 1, ply + 1, true);
+        search_eval = -NegamaxSearch(-beta, -alpha, depth - 1, ply + 1, true);
       }
     } else {
       // Search at full depth.
-      search_eval = -Search(-beta, -alpha, depth - 1, ply + 1, true);
+      search_eval = -NegamaxSearch(-beta, -alpha, depth - 1, ply + 1, true);
     }
     board_->UnmakeMove(move);
     pos_history_.swap(saved_pos_history);
     if (search_eval > best_eval) {
       best_move = move;
+      pv_move = best_move;
       best_eval = search_eval;
     }
     alpha = max(alpha, search_eval);
     if (alpha >= beta) {
       if (move.captured_piece == kNA) {
         RecordKillerMove(move, ply);
-        UpdateHistoryHeuristic(move, depth);
       }
       // Prune a subtree when a beta cutoff is detected.
       break;
@@ -303,7 +327,6 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply,
     transp_table_.Update(board_, depth, best_eval, kCutNode, best_move);
   } else {
     transp_table_.Update(board_, depth, best_eval, kPvNode, best_move);
-    pv_move = best_move;
   }
 
   return best_eval;
@@ -365,7 +388,7 @@ auto Engine::OrderMoves(vector<Move> move_list, int ply) const -> vector<Move> {
   Move hash_move = transp_table_.GetHashMove(board_);
 
   vector<pair<Move, int>> ordered_capture_pairs;
-  vector<pair<Move, U64>> ordered_silent_pairs;
+  vector<Move> silent_moves;
   vector<Move> killer_moves;
   vector<Move> ordered_moves;
   ordered_moves.reserve(move_list.size());
@@ -384,7 +407,7 @@ auto Engine::OrderMoves(vector<Move> move_list, int ply) const -> vector<Move> {
       killer_moves.push_back(move);
     } else {
       // Use the history heuristic to order silent, non-killer moves.
-      ordered_silent_pairs.emplace_back(move, GetHistoryHeuristic(move));
+      silent_moves.push_back(move);
     }
   }
 
@@ -397,18 +420,6 @@ auto Engine::OrderMoves(vector<Move> move_list, int ply) const -> vector<Move> {
   captures.reserve(ordered_capture_pairs.size());
   for (const pair<Move, int>& capture_eval_pair : ordered_capture_pairs) {
     captures.push_back(capture_eval_pair.first);
-  }
-
-  // Sort silent, non-killer moves by descending value of their history
-  // heuristic.
-  sort(ordered_silent_pairs.begin(), ordered_silent_pairs.end(),
-       [](const pair<Move, U64>& lhs, const pair<Move, U64>& rhs) {
-         return lhs.second > rhs.second;
-       });
-  vector<Move> silent_moves;
-  silent_moves.reserve(ordered_silent_pairs.size());
-  for (const pair<Move, U64>& silent_move_eval_pair : ordered_silent_pairs) {
-    silent_moves.push_back(silent_move_eval_pair.first);
   }
 
   // Place all hash moves first, followed by captures, then killer moves, and

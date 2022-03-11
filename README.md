@@ -15,11 +15,8 @@ logo for this project.
 
 ### Status: In Progress
 
-An AI has been implemented using the NegaMax search algorithm with some
-optimizations and an evaluation function based purely on computing material 
-advantage. This basic evaluation implementation's purpose is to serve as a 
-placeholder for developing the search algorithm. Once development is finished
-with search, a more advanced evaluation function will be implemented.
+The search portion of the AI is now complete! Work can now commence on
+developing the Evaluation function.
 
 ### Usage
 
@@ -123,11 +120,23 @@ implementation. The Transposition Table is [two-tiered](https://www.chessprogram
 
 #### Search
 
-The search algorithm used is the [NegaMax](https://www.chessprogramming.org/Negamax) algorithm with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta) inside of an [iterative deepening](https://www.chessprogramming.org/Iterative_Deepening) framework.
-A [transposition table](https://www.chessprogramming.org/Transposition_Table) is also used to prevent re-evaluating positions that
-have already been seen during a search. After search to a specified depth, all
-captures are searched during the [Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) to limit the
-[Horizon Effect](https://www.chessprogramming.org/Horizon_Effect).
+The [MTD(f)](https://www.chessprogramming.org/MTD(f)) search algorithm is used within an [Iterative Deepening](https://www.chessprogramming.org/Iterative_Deepening)
+framework. This routine calls an implementation of the [Negamax](https://www.chessprogramming.org/Negamax) algorithm
+with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta), [Null Move Pruning](https://www.chessprogramming.org/Null_Move_Pruning), and [Late Move Reduction](https://www.chessprogramming.org/Late_Move_Reductions). A depth reduction value [R](https://www.chessprogramming.org/Depth_Reduction_R)
+of 3 is used when depth is greater than 6, and 2 otherwise in Null Move Pruning.
+Late Move Reductions are computed using the formula
+```
+int(sqrt(double(depth-1)) + sqrt(double(move_idx-1)))
+```
+taken from [Fruit Reloaded](https://www.chessprogramming.org/Fruit_Reloaded). Reduction is only done on non-PV (Principle Variation) nodes. A
+Transposition Table is used to cache seen positions, allowing the engine to
+store each [node's type](https://www.chessprogramming.org/Node_Types) is and prevent costly re-evaluation of a node. This
+is especially important for storing the [Principle Variation](https://www.chessprogramming.org/Principal_Variation) during Iterative
+Deepening.
+
+After search to a specified depth, all captures are searched during the
+[Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) to limit the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect). [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning) is used to
+limit the number of nodes explored during Quiescence Search.
 
 To reduce the number of nodes needed to be searched, OmegaZero takes advantage
 of a set of heuristics to perform move ordering in `Engine::OrderMoves()` in
@@ -136,10 +145,7 @@ Moves are put in the following order:
 1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
 2. Captures, ordered using the [MVV-LVA](https://www.chessprogramming.org/MVV-LVA) heuristic
 3. Two [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
-4. All other moves, sorted using the [History Heuristic](https://www.chessprogramming.org/History_Heuristic)
-
-Furthermore, [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning) is used during the Quiescence Search to further
-trim the search tree.
+4. All other moves.
 
 #### Evaluation
 
@@ -153,7 +159,7 @@ score = pawn_value * (#white_pawns - #black_pawns)
         + queen_value * (#white_queens - #black_queens)
         + king_value * (#white_kings - #black_kings) * side_to_move
 ```
-Score is relative to the side to move, as required by NegaMax, with
+Score is relative to the side to move, as required by Negamax, with
 `side_to_move` being `1` for White and `-1` for Black. These are expressed in 
 centipawns, listed below:
 
