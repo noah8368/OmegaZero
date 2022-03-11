@@ -1,21 +1,20 @@
 /* Noah Himed
  *
- * Implement the TranspTable type.
+ * Implement the TranspositionTable type.
  *
  * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
  */
 
-#include "transp_table.h"
-
 #include "board.h"
 #include "move.h"
+#include "transposition_table.h"
 
 namespace omegazero {
 
 constexpr U64 kHashMask = 0X7FFFF;
 
-auto TranspTable::Access(const Board* board, int depth, int& eval,
-                         S8& node_type) const -> bool {
+auto TranspositionTable::Access(const Board* board, int depth, int& eval,
+                                S8& node_type) const -> bool {
   U64 board_hash = board->GetBoardHash();
   int index = board_hash & kHashMask;
   if (occupancy_table_[index]) {
@@ -41,7 +40,7 @@ auto TranspTable::Access(const Board* board, int depth, int& eval,
   return false;
 }
 
-auto TranspTable::PosIsPvNode(const Board* board) const -> bool {
+auto TranspositionTable::PosIsPvNode(const Board* board) const -> bool {
   U64 board_hash = board->GetBoardHash();
   int index = board_hash & kHashMask;
   if (occupancy_table_[index]) {
@@ -62,7 +61,7 @@ auto TranspTable::PosIsPvNode(const Board* board) const -> bool {
   return false;
 }
 
-auto TranspTable::GetHashMove(const Board* board) const -> Move {
+auto TranspositionTable::GetHashMove(const Board* board) const -> Move {
   U64 board_hash = board->GetBoardHash();
   int index = board_hash & kHashMask;
   Move hash_move;
@@ -83,8 +82,8 @@ auto TranspTable::GetHashMove(const Board* board) const -> Move {
   return hash_move;
 }
 
-auto TranspTable::Update(const Board* board, int depth, int eval, S8 node_type,
-                         const Move& hash_move) -> void {
+auto TranspositionTable::Update(const Board* board, int depth, int eval,
+                                S8 node_type, const Move& hash_move) -> void {
   TableEntry new_entry;
   new_entry.hash_move = hash_move;
   U64 board_hash = board->GetBoardHash();

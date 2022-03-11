@@ -21,7 +21,7 @@
 #include "board.h"
 #include "move.h"
 #include "out_of_time.h"
-#include "transp_table.h"
+#include "transposition_table.h"
 
 namespace omegazero {
 
@@ -36,9 +36,6 @@ using std::vector;
 using std::chrono::duration;
 using std::chrono::duration_cast;
 using std::chrono::high_resolution_clock;
-// DEBUG
-using std::cout;
-using std::endl;
 
 enum GameStatus : S8 {
   kPlayerToMove,
@@ -133,7 +130,7 @@ class Engine {
   S8 user_side_;
 
   // Keep track of information for positions that've already been evaluated.
-  TranspTable transp_table_;
+  TranspositionTable transposition_table_;
 };
 
 // Implement public inline member functions.

@@ -1,13 +1,13 @@
 /* Noah Himed
  *
- * Define and implement the TranspTable type, a custom implementation of a
- * Transposition Table.
+ * Define and implement the TranspositionTable type, a custom implementation of
+ * a Transposition Table.
  *
  * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
  */
 
-#ifndef OMEGAZERO_SRC_TRANSP_TABLE_H
-#define OMEGAZERO_SRC_TRANSP_TABLE_H
+#ifndef OMEGAZERO_SRC_TRANSPOSITION_TABLE_H
+#define OMEGAZERO_SRC_TRANSPOSITION_TABLE_H
 
 #include <algorithm>
 #include <cstring>
@@ -42,9 +42,9 @@ struct TableEntry {
   S8 node_type;
 };
 
-class TranspTable {
+class TranspositionTable {
  public:
-  TranspTable();
+  TranspositionTable();
 
   // Loop up the board position in the hash table and set eval to the
   // corresponding evaluation if the position is found. Return a bool to
@@ -69,7 +69,7 @@ class TranspTable {
   vector<TableEntry> depth_pref_entries_;
 };
 
-inline TranspTable::TranspTable() {
+inline TranspositionTable::TranspositionTable() {
   always_replace_entries_.reserve(kTableSize);
   depth_pref_entries_.reserve(kTableSize);
   occupancy_table_.reserve(kTableSize);
@@ -77,16 +77,16 @@ inline TranspTable::TranspTable() {
   Clear();
 }
 
-inline auto TranspTable::Update(const Board* board, int depth, int eval,
-                                S8 node_type) -> void {
+inline auto TranspositionTable::Update(const Board* board, int depth, int eval,
+                                       S8 node_type) -> void {
   Move throwaway_move;
   Update(board, depth, eval, node_type, throwaway_move);
 }
 
-inline auto TranspTable::Clear() -> void {
+inline auto TranspositionTable::Clear() -> void {
   fill(occupancy_table_.begin(), occupancy_table_.end(), false);
 }
 
 }  // namespace omegazero
 
-#endif  // OMEGAZERO_SRC_TRANSP_TABLE_H
+#endif  // OMEGAZERO_SRC_TRANSPOSITION_TABLE_H

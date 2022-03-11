@@ -84,26 +84,25 @@ class MagicsGenerator:
                                                                rank, file)
             if blocker_mask != 0X0:
                 blocker_to_attack_mask_map[blocker_mask] = attack_mask
-        # print(blocker_to_attack_mask_map.keys())
+
         for trial in range(self.max_attempts):
             magic_is_valid = True
             # Compute a 64 bit random number with only a few set bits
             magic = (random.getrandbits(self.num_sq)
                      & random.getrandbits(self.num_sq)
                      & random.getrandbits(self.num_sq))
+
             # Discard magics with less than six bits set in the upper byte
             # of a 64-bit product since they are unlikely to be valid
             upper_bits = (magic ** 2) & 0xFF00000000000000
             if self.count_set_bits(upper_bits) < 6:
                 continue
+
             # Check that the magic number hashes all occupancy masks correctly
             # to each corresponding attack set
-            for blocker_mask, \
-                    attack_mask in blocker_to_attack_mask_map.items():
-                # print("possible magic:", hex(magic))
-                # print("blocker mask:", hex(blocker_mask))
+            for blocker_mask, attack_mask in blocker_to_attack_mask_map.items():
                 index = magic * blocker_mask >> self.num_sq - magic_len
-                # print("possible index:", str(index))
+
                 # Check that the index is not bigger than magic_len bits
                 if index > 0XFFFFFFFFFFFFFFFF:
                     magic_is_valid = False

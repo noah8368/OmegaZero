@@ -22,7 +22,7 @@
 #include "game.h"
 #include "move.h"
 #include "out_of_time.h"
-#include "transp_table.h"
+#include "transposition_table.h"
 
 namespace omegazero {
 
@@ -36,9 +36,6 @@ using std::unordered_map;
 using std::vector;
 using std::chrono::high_resolution_clock;
 
-// DEBUG
-U64 NODES_SEARCHED = 0;
-
 // Store values used for the MVV-LVA heuristic. Piece order in array is
 // pawn, knight, bishop, rook, queen, king.
 constexpr int kAggressorSortVals[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
@@ -48,6 +45,11 @@ constexpr int kVictimSortVals[kNumPieceTypes] = {10, 20, 30, 40, 50, 60};
 
 Engine::Engine(Board* board, S8 player_side, float search_time) {
   board_ = board;
+
+  constexpr float kMinSearchTime = 0.1f;
+  if (search_time < kMinSearchTime) {
+    throw invalid_argument("Search time must be at least 0.1s");
+  }
   search_time_ = search_time;
 
   if (tolower(player_side) == 'w') {
@@ -64,7 +66,7 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
 }
 
 auto Engine::GetBestMove() -> Move {
-  transp_table_.Clear();
+  transposition_table_.Clear();
   Move best_move;
   board_->SavePos();
   constexpr int kRootNodePly = 0;
@@ -75,11 +77,7 @@ auto Engine::GetBestMove() -> Move {
   search_start_ = high_resolution_clock::now();
   for (int search_depth = 1; search_depth <= kSearchLimit; ++search_depth) {
     try {
-      // DEBUG
-      NODES_SEARCHED = 0;
       f = MtdfSearch(f, search_depth, kRootNodePly, best_move);
-      // DEBUG
-      cout << "NODES SEARCHED: " << NODES_SEARCHED << endl;
     } catch (OutOfTime& e) {
       board_->ResetPos();
       break;
@@ -201,7 +199,7 @@ auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
     }
   }
 
-  if (move.moving_piece != kNA) {
+  if (move.moving_piece != kNA || move.castling_type != kNA) {
     best_move = move;
   }
   return g;
@@ -210,26 +208,24 @@ auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
 auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
                            int ply, bool null_move_allowed) -> int {
   CheckSearchTime();
-  // DEBUG
-  ++NODES_SEARCHED;
 
   int orig_alpha = alpha;
-  int transp_table_stored_eval;
+  int transposition_table_stored_eval;
   S8 node_type;
   // Check the transposition table for previously stored evaluations.
-  if (transp_table_.Access(board_, depth, transp_table_stored_eval,
-                           node_type)) {
+  if (transposition_table_.Access(board_, depth,
+                                  transposition_table_stored_eval, node_type)) {
     if (node_type == kPvNode) {
-      return transp_table_stored_eval;
+      return transposition_table_stored_eval;
     } else if (node_type == kCutNode) {
-      alpha = max(alpha, transp_table_stored_eval);
+      alpha = max(alpha, transposition_table_stored_eval);
     } else if (node_type == kAllNode) {
-      beta = min(beta, transp_table_stored_eval);
+      beta = min(beta, transposition_table_stored_eval);
     }
 
     if (alpha >= beta) {
       // Perform a beta-cutoff from the stored value of the transposition table.
-      return transp_table_stored_eval;
+      return transposition_table_stored_eval;
     }
   }
 
@@ -243,7 +239,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     return QuiescenceSearch(alpha, beta);
   }
 
-  bool at_pv_node = transp_table_.PosIsPvNode(board_);
+  bool at_pv_node = transposition_table_.PosIsPvNode(board_);
 
   // Compute the depth reduction value (R) for Null-Move pruning.
   constexpr int kNullMoveDepthMin = 4;
@@ -322,11 +318,11 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
 
   // Store a searched node in the transposition table.
   if (best_eval <= orig_alpha) {
-    transp_table_.Update(board_, depth, best_eval, kAllNode);
+    transposition_table_.Update(board_, depth, best_eval, kAllNode);
   } else if (best_eval >= beta) {
-    transp_table_.Update(board_, depth, best_eval, kCutNode, best_move);
+    transposition_table_.Update(board_, depth, best_eval, kCutNode, best_move);
   } else {
-    transp_table_.Update(board_, depth, best_eval, kPvNode, best_move);
+    transposition_table_.Update(board_, depth, best_eval, kPvNode, best_move);
   }
 
   return best_eval;
@@ -385,7 +381,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
 }
 
 auto Engine::OrderMoves(vector<Move> move_list, int ply) const -> vector<Move> {
-  Move hash_move = transp_table_.GetHashMove(board_);
+  Move hash_move = transposition_table_.GetHashMove(board_);
 
   vector<pair<Move, int>> ordered_capture_pairs;
   vector<Move> silent_moves;

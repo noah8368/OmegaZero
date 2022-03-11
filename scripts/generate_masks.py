@@ -83,7 +83,7 @@ class MaskGenerator:
     def get_slider_attack_mask(self, moves, blocker_mask, pos_rank,
                                pos_file):
         """Generates the attack mask for a blocked sliding piece.
-        
+
         Given a bitboard of all pieces (potentially) blocking the rays
         of a sliding piece"""
         blocker_board = [[0 for file in range(self.num_files)] for rank in
