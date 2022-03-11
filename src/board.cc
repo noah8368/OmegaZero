@@ -503,9 +503,11 @@ auto Board::AddPiece(S8 piece_type, S8 player, S8 sq) -> void {
 }
 
 auto Board::InitBoardHash() -> void {
-  board_hash_ = 0X0;
+  // Use the Zobrist Hashing algorithm to initialize a board hash.
+  board_hash_ = 0ULL;
   // Initialize the Mersenne Twister 64 bit pseudo-random number generator.
-  U64 seed = std::chrono::system_clock::now().time_since_epoch().count();
+  // U64 seed = std::chrono::system_clock::now().time_since_epoch().count();
+  U64 seed = 69420ULL;
   std::mt19937_64 rand_num_gen(seed);
   // Generate a set of random numbers for Zobrist Hashing.
   for (S8 player = kWhite; player < kNumPlayers; ++player) {

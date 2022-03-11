@@ -150,8 +150,6 @@ auto GetNumSetSq(const Bitboard& board) -> S8;
 auto GetFileFromSq(S8 sq) -> S8;
 auto GetRankFromSq(S8 sq) -> S8;
 auto GetSqFromRankFile(S8 rank, S8 file) -> S8;
-// A Bitscan Forward function based on Kim Walisch's implementation
-// of the De Bruijn Bitscan Routine.
 auto GetSqOfFirstPiece(const Bitboard& board) -> S8;
 
 // Clear the least significant bit set of the passed in bitboard.
@@ -199,17 +197,17 @@ class Board {
   auto MakeNullMove() -> void;
   // Unmake the given move, assuming it was already made with MakeMove(). Note
   // that this function does not flip the player to move variable.
+  // WARNING: Calling this function without first calling MakeMove() with the
+  // same move param will cause undefined behavior.
   auto UnmakeMove(const Move& move) -> void;
+  // WARNING: Calling this function without first calling MakeNullMove() will
+  // cause undefined behavior.
   auto UnmakeNullMove() -> void;
 
  private:
   auto GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard;
 
   auto AddPiece(S8 piece_type, S8 player, S8 sq) -> void;
-  // Use the Zobrist Hashing algorithm to compute a hash of the board
-  // state. This involves hashing all stored pseudo-random numbers applicable
-  // to a given game position. Note that there is a small chance of collisions
-  // which is mostly unavoidable.
   auto InitBoardHash() -> void;
   // Parse a FEN string to initialize the board state.
   auto InitBoardPos(const std::string& init_pos) -> void;
@@ -353,6 +351,8 @@ inline auto GetSqOfFirstPiece(const Bitboard& board) -> S8 {
     throw invalid_argument("board in GetSqOfFirstPiece()");
   }
 
+  // Use a Bitscan Forward algoirthm based on Kim Walisch's implementation
+  // of the De Bruijn Bitscan Routine.
   constexpr U64 kDebruijn64bitSeq = 0X03F79D71B4CB0A89ULL;
   constexpr S8 kDebruijn64bitSeqRightShiftAmt = 58;
   S8 bitscan_index = static_cast<S8>(((board & -board) * kDebruijn64bitSeq) >>

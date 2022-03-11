@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <queue>
 #include <stdexcept>
@@ -104,6 +105,7 @@ auto Engine::GetGameStatus() -> S8 {
     no_legal_moves = false;
     break;
   }
+
   if (board_->KingInCheck()) {
     string player_name = GetPlayerStr(board_->GetPlayerToMove());
     if (no_legal_moves) {
@@ -213,7 +215,7 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply,
     return kWorstEval;
   } else if (game_status == kDraw || RepDetected()) {
     return kNeutralEval;
-  } else if (depth == 0) {
+  } else if (depth <= 0) {
     // Initiate the Quiescence search when maximum depth is reached.
     return QuiescenceSearch(alpha, beta);
   }
@@ -235,15 +237,23 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply,
     }
   }
 
+  // Store the number of moves to begin searching at full depth during Late Move
+  // Reduction, the number of early moves.
+  constexpr S8 kNumEarlyMoves = 3;
+  constexpr S8 kMinReductionDepth = 3;
   // Use the NegaMax algorithm to traverse the search tree.
   vector<Move> move_list = GenerateMoves();
   move_list = OrderMoves(move_list, ply);
   queue<U64> saved_pos_history = pos_history_;
   Move best_move;
+  Move move;
   int best_eval = kWorstEval;
   int search_eval;
+  int depth_reduction;
   // Iterate through all child nodes of the current position.
-  for (const Move& move : move_list) {
+  size_t num_moves = move_list.size();
+  for (size_t move_idx = 0; move_idx < num_moves; ++move_idx) {
+    move = move_list[move_idx];
     try {
       board_->MakeMove(move);
     } catch (BadMove& e) {
@@ -252,7 +262,23 @@ auto Engine::Search(Move& pv_move, int alpha, int beta, int depth, int ply,
     }
 
     AddPosToHistory();
-    search_eval = -Search(-beta, -alpha, depth - 1, ply + 1, true);
+    if (move_idx >= kNumEarlyMoves && !at_pv_node &&
+        move.captured_piece == kNA && move.promoted_to_piece == kNA &&
+        !board_->KingInCheck() && depth >= kMinReductionDepth) {
+      // Perform Late Move Reduction.
+      depth_reduction =
+          static_cast<int>(sqrt(static_cast<double>(depth - 1)) +
+                           sqrt(static_cast<double>(move_idx - 1)));
+      search_eval =
+          -Search(-beta, -alpha, depth - depth_reduction - 1, ply + 1, true);
+      if (search_eval > alpha) {
+        // Perform a re-search at full depth.
+        search_eval = -Search(-beta, -alpha, depth - 1, ply + 1, true);
+      }
+    } else {
+      // Search at full depth.
+      search_eval = -Search(-beta, -alpha, depth - 1, ply + 1, true);
+    }
     board_->UnmakeMove(move);
     pos_history_.swap(saved_pos_history);
     if (search_eval > best_eval) {
