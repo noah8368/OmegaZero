@@ -15,7 +15,7 @@ logo for this project.
 
 ### Status: In Progress
 
-The search portion of the AI is now complete! Work can now commence on
+The search portion of the AI is now complete! Work is now underway for 
 developing the Evaluation function.
 
 ### Usage
@@ -28,6 +28,11 @@ On Ubuntu systems, users may use the `apt-get` package manager to
 install Boost like so:
 ```
 sudo apt-get install libboost-all-dev
+```
+You'll also need to install the [python-chess](https://github.com/niklasf/python-chess) module if you wish to train
+the evaluation network. This can be done using `pip`:
+```
+pip3 install chess
 ```
 
 #### Building the Engine

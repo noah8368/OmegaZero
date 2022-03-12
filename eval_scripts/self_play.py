@@ -5,6 +5,8 @@ Perform self-play to train the evaluation function.
 Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
 """
 
+import chess
+import game
 import numpy as np
 
 from mcts import MCTS
@@ -18,9 +20,7 @@ def assign_rewards(training_examples, reward):
 def get_training_examples(model, c_puct, num_sims):
     training_examples = []
     mcts = MCTS(c_puct)
-    # TODO: Write the game class.
-    game = None
-    s = game.state()
+    s = chess.Board()
 
     while True:
         # Perform a series of Monte Carlo Tree Searches.
@@ -29,7 +29,7 @@ def get_training_examples(model, c_puct, num_sims):
 
         actions, pi = mcts.get_policy(s)
         training_examples.append([s, pi])
-        # Selet a random action a, where a is a UCI string of a chess move.
+        # Selet a random action a, where a is a SAN string of a chess move.
         a = np.random.choice(actions, p=pi)
         s = game.get_next_state(s, a)
         if game.ended(s):
