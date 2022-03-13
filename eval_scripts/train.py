@@ -18,14 +18,14 @@ def __assign_rewards(training_examples, reward):
         example.append(reward)
 
 
-def __get_training_examples(model, c_puct, num_sims):
+def __self_play(model, c_puct, num_sims):
     training_examples = []
     mcts = MCTS(c_puct)
     s = chess.Board()
 
     while True:
         # Perform a series of Monte Carlo Tree Searches.
-        for _ in range(num_sims):
+        for _ in np.arange(num_sims):
             mcts.search(s, game, model)
 
         pi = mcts.get_policy(s)
@@ -41,10 +41,9 @@ def __get_training_examples(model, c_puct, num_sims):
 def gen_model(num_iters, num_sims, num_eps, c_puct, threshold):
     model = Model()
     training_examples = []
-    for _ in range(num_iters):
-        for _ in range(num_eps):
-            training_examples += __get_training_examples(model, c_puct,
-                                                         num_sims)
+    for _ in np.arange(num_iters):
+        for _ in np.arange(num_eps):
+            training_examples += __self_play(model, c_puct, num_sims)
         new_model = model.train(training_examples)
         frac_win = game.pit(new_model, model)
         if frac_win > threshold:

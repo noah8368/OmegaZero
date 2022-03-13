@@ -26,6 +26,7 @@ class MCTS:
     def get_policy(self, s: chess.Board):
         """Computes the policy vector pi and its corresponding actions."""
 
+        # TODO: Convert get_policy() to return probabilities for legal moves.
         N_sum = self.__get_node_count(s)
         s_hash = zobrist_hash(s)
         pi = self.P[s_hash] / N_sum

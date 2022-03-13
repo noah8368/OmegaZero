@@ -5,33 +5,128 @@ Define neural network model architectures to evaluate board states.
 Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
 """
 
-from keras.layers import BatchNormalization, Conv2D, Dense, Dropout
+import chess
+import game
+import numpy as np
+
+from enum import IntEnum
+
+'''from keras.layers import BatchNormalization, Conv2D, Dense, Dropout
 from keras.layers import Activation, Flatten, Input, Reshape
-from keras.optimizers import Adam
+from keras.optimizers import Adam'''
+
+
+def get_model_input(state_list):
+    """Convert a list of board states into an image stack for model input."""
+
+    class LayerIdx(IntEnum):
+        """Enumerates the order of the additional L layers in model input."""
+
+        COLOR, FULL_COUNT, HALF_COUNT = np.arange(3)
+        W_QS_CASTLE, W_KS_CASTLE, B_QS_CASTLE, B_KS_CASTLE = np.arange(3, 7)
+
+    def get_piece_idx(piece: chess.PieceType, player: chess.Color):
+        """Convert a piece type and color into a feature map index."""
+
+        player_idx = chess.WHITE - player
+        piece_idx = piece - chess.PAWN
+        return game.NUM_PIECES * player_idx + piece_idx
+
+    # Define the number of time steps T, the number of feature maps per time
+    # step M, and the number of additional time-independent layers L.
+    T = len(state_list)
+    M = 14
+    L = 7
+
+    PIECE_OFFSET = 12
+    model_input = np.zeros((game.NUM_RANK, game.NUM_FILE, M * T + L))
+
+    pieces = [chess.PAWN, chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN,
+              chess.KING]
+
+    # Set all time-dependent feature maps.
+    for t in np.arange(T):
+        time_offset = M * t
+        board = state_list[t]
+
+        # Fill in the piece presence information.
+        for rank in np.arange(game.NUM_RANK):
+            for file in np.arange(game.NUM_FILE):
+                sq = game.get_sq(rank, file)
+                if board.piece_at(sq):
+                    for piece in pieces:
+                        white_piece_on_sq = (
+                            board.piece_at(sq).piece_type == piece
+                            and board.piece_at(sq).color == chess.WHITE
+                        )
+                        if white_piece_on_sq:
+                            piece_idx = get_piece_idx(piece, chess.WHITE)
+                            model_input[rank, file,
+                                        time_offset + piece_idx] = 1
+                            break
+
+                        black_piece_on_sq = (
+                            board.piece_at(sq).piece_type == piece
+                            and board.piece_at(sq).color == chess.BLACK
+                        )
+                        if black_piece_on_sq:
+                            piece_idx = get_piece_idx(piece, chess.BLACK)
+                            model_input[rank, file,
+                                        time_offset + piece_idx] = 1
+                            break
+
+        # Fill in threefold repetition information.
+        if board.can_claim_threefold_repetition():
+            time_offset = M * t
+            player_idx = 0 if board.turn == chess.WHITE else 1
+            model_input[:, :,
+                        time_offset + PIECE_OFFSET + player_idx] = np.full(
+                            (game.NUM_RANK, game.NUM_FILE), 1
+                        )
+
+    # Set all time-independent feature maps.
+    TIME_OFFSET = M * T
+    print(TIME_OFFSET)
+
+    # Indicate the side the AI is playing.
+    # TODO: Add non-constant player to move.
+    model_input[:, :, TIME_OFFSET + LayerIdx.COLOR] = np.full(
+        (game.NUM_RANK, game.NUM_FILE), 1 - chess.WHITE
+    )
+
+    # Set the half and fullmove counter information.
+    last_state = state_list[-1]
+    model_input[:, :, TIME_OFFSET + LayerIdx.FULL_COUNT] = np.full(
+        (game.NUM_RANK, game.NUM_FILE), last_state.fullmove_number
+    )
+    model_input[:, :, TIME_OFFSET + LayerIdx.HALF_COUNT] = np.full(
+        (game.NUM_RANK, game.NUM_FILE), last_state.halfmove_clock
+    )
+
+    # Set the castling rights information.
+    castling_rights = last_state.castling_rights
+    model_input[:, :, TIME_OFFSET + LayerIdx.W_QS_CASTLE] = np.full(
+        (game.NUM_RANK, game.NUM_FILE),
+        int(bool(castling_rights & chess.BB_A1))
+    )
+    model_input[:, :, TIME_OFFSET + LayerIdx.W_KS_CASTLE] = np.full(
+        (game.NUM_RANK, game.NUM_FILE),
+        int(bool(castling_rights & chess.BB_H1))
+    )
+    model_input[:, :, TIME_OFFSET + LayerIdx.B_QS_CASTLE] = np.full(
+        (game.NUM_RANK, game.NUM_FILE),
+        int(bool(castling_rights & chess.BB_A8))
+    )
+    model_input[:, :, TIME_OFFSET + LayerIdx.B_KS_CASTLE] = np.full(
+        (game.NUM_RANK, game.NUM_FILE),
+        int(bool(castling_rights & chess.BB_H8))
+    )
+
+    return model_input
 
 
 class Model:
     def __init__(self):
         """Defines the model architecture."""
-        # game params
-        self.num_files = 8
-        self.num_ranks = 8
-        # TODO: Implement AlphaZero move indexing.
-        self.args = args
-
-        # Neural Net
-        self.input_boards = Input(shape=(self.num_files, self.num_ranks))    # s: batch_size x num_files x num_ranks
-
-        x_image = Reshape((self.num_files, self.num_ranks, 1))(self.input_boards)                # batch_size  x num_files x num_ranks x 1
-        h_conv1 = Activation('relu')(BatchNormalization(axis=3)(Conv2D(args.num_channels, 3, padding='same', use_bias=False)(x_image)))         # batch_size  x num_files x num_ranks x num_channels
-        h_conv2 = Activation('relu')(BatchNormalization(axis=3)(Conv2D(args.num_channels, 3, padding='same', use_bias=False)(h_conv1)))         # batch_size  x num_files x num_ranks x num_channels
-        h_conv3 = Activation('relu')(BatchNormalization(axis=3)(Conv2D(args.num_channels, 3, padding='valid', use_bias=False)(h_conv2)))        # batch_size  x (num_files-2) x (num_ranks-2) x num_channels
-        h_conv4 = Activation('relu')(BatchNormalization(axis=3)(Conv2D(args.num_channels, 3, padding='valid', use_bias=False)(h_conv3)))        # batch_size  x (num_files-4) x (num_ranks-4) x num_channels
-        h_conv4_flat = Flatten()(h_conv4)       
-        s_fc1 = Dropout(args.dropout)(Activation('relu')(BatchNormalization(axis=1)(Dense(1024, use_bias=False)(h_conv4_flat))))  # batch_size x 1024
-        s_fc2 = Dropout(args.dropout)(Activation('relu')(BatchNormalization(axis=1)(Dense(512, use_bias=False)(s_fc1))))          # batch_size x 1024
-        self.pi = Dense(self.action_size, activation='softmax', name='pi')(s_fc2)   # batch_size x self.action_size
-        self.v = Dense(1, activation='tanh', name='v')(s_fc2)                    # batch_size x 1
-
-        self.model = Model(inputs=self.input_boards, outputs=[self.pi, self.v])
-        self.model.compile(loss=['categorical_crossentropy','mean_squared_error'], optimizer=Adam(args.lr))
+        # TODO: Implement a network.
+        pass

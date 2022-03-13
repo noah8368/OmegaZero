@@ -1,30 +1,35 @@
 """Noah Himed
 
-Define an API to manipulate chess board positions.
+Define an API to manipulate chess board positions and index chess moves.
 
 Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
 """
 
-import enum
-from multiprocessing.sharedctypes import Value
-from random import randbytes
 import chess
+import numpy as np
+
+from enum import IntEnum
 
 
 NUM_ACTIONS = 4672
+NUM_RANK = 8
+NUM_FILE = 8
+NUM_SQ = 64
+NUM_PLAYER = 2
+NUM_PIECES = 6
 
 
 def pit(new_model, baseline_model, num_games=100):
     """Compares the performance of two models by returning a win ratio."""
 
     num_new_model_wins = 0
-    for _ in range(num_games):
+    for _ in np.arange(num_games):
         s = chess.Board()
         player = new_model
         while not ended(s):
             move_idx = player.get_move(s)
-            move_str = __get_move(s, move_idx)
-            s.push(move_str)
+            move = __get_move(s, move_idx)
+            s.push(move)
             player = baseline_model if player == new_model else new_model
 
         if s.outcome() == chess.WHITE:
@@ -46,6 +51,7 @@ def get_reward(s: chess.Board):
     if not ended(s):
         raise ValueError("position isn't an ended game")
 
+    # TODO: Add non-constant player to move.
     # Return a positive reward only is White wins, since the model will
     # always play White.
     if s.outcome() == chess.WHITE:
@@ -59,8 +65,8 @@ def get_reward(s: chess.Board):
 def get_next_state(s: chess.Board, move_idx: int):
     """Plays the move denoted by the move index on the board s."""
 
-    move_str = __get_move(move_idx)
-    s.push_uci(move_str)
+    move = __get_move(move_idx)
+    s.push(move)
     if not s.is_valid():
         s.pop()
         raise ValueError("move is illegal")
@@ -71,9 +77,26 @@ def ended(s: chess.Board):
     return s.is_checkmate() or s.is_stalemate
 
 
+def get_file(sq):
+    """Computes the index of the file given a LERF indexed square."""
+
+    return int(sq) & 7
+
+
+def get_rank(sq):
+    """Computes the index of the rank given a LERF indexed square."""
+
+    return int(sq) >> 3
+
+
+def get_sq(rank, file):
+    """Computes the LERF square index given the rank and file indices."""
+
+    return NUM_FILE * rank + file
+
+
 # Define a set of constants needed to convert between move indices and
 # chess.Move objects.
-__NUM_SQ = 64
 __MAX_NUM_SQ_MOVED = 7
 __KNIGHT_MOVE_OFFSET = 56
 __UNDERPROMOTION_OFFSET = 64
@@ -81,16 +104,16 @@ __NUM_PLANES = 73
 __NUM_UNDERPROMOTION_TYPES = 3
 
 
-class __RayDir(enum.Enum):
+class __RayDir(IntEnum):
     """Defines ray directions."""
 
-    NW, N, NE, E, SE, S, SW, W = range(8)
+    NW, N, NE, E, SE, S, SW, W = np.arange(8)
 
 
-class __KnightDir(enum.Enum):
+class __KnightDir(IntEnum):
     """Defines knight directions."""
 
-    NNE, NEE, SEE, SSE, SSW, SWW, NWW, NNW = range(8)
+    NNE, NEE, SEE, SSE, SSW, SWW, NWW, NNW = np.arange(8)
 
 
 def __get_move_idx(move: chess.Move):
@@ -103,7 +126,26 @@ def __get_move_idx(move: chess.Move):
         if sq_diff == 0:
             return None
 
-        # Check for knight directions.
+        start_rank = get_rank(start_sq)
+        start_file = get_file(start_sq)
+        target_rank = get_rank(target_sq)
+        target_file = get_file(target_sq)
+        # Check if the two squares are on the same diagonal.
+        if (start_rank - start_file == target_rank - target_file or
+           start_rank + start_file == target_rank + target_file):
+            # Check all possible ray directions.
+            if sq_diff % 7 == 0:
+                return __RayDir.NW if sq_diff > 0 else __RayDir.SE
+            if sq_diff % 9 == 0:
+                return __RayDir.NE if sq_diff > 0 else __RayDir.SW
+
+        # Check the N, S, E, and W directions.
+        if sq_diff % 8 == 0:
+            return __RayDir.N if sq_diff > 0 else __RayDir.S
+        if start_rank == target_rank:
+            return __RayDir.E if sq_diff > 0 else __RayDir.W
+
+        # Check all possible knight directions.
         if sq_diff % 17 == 0:
             return __KnightDir.NNE if sq_diff > 0 else __KnightDir.SSW
         if sq_diff % 15 == 0:
@@ -113,19 +155,7 @@ def __get_move_idx(move: chess.Move):
         if sq_diff % 6 == 0:
             return __KnightDir.NWW if sq_diff > 0 else __KnightDir.SEE
 
-        # Check all possible ray directions.
-        if sq_diff % 7 == 0:
-            return __RayDir.NW if sq_diff > 0 else __RayDir.SE
-        if sq_diff % 8 == 0:
-            return __RayDir.N if sq_diff > 0 else __RayDir.S
-        if sq_diff % 9 == 0:
-            return __RayDir.NE if sq_diff > 0 else __RayDir.SW
-        start_rank = __get_rank(start_sq)
-        target_rank = __get_rank(target_sq)
-        if start_rank == target_rank:
-            return __RayDir.E if sq_diff > 0 else __RayDir.W
-
-        return None
+        raise ValueError("Unable to compute move direction")
 
     dir = get_move_dir(move.from_square, move.to_square)
     if type(dir) is __RayDir:
@@ -144,20 +174,25 @@ def __get_move_idx(move: chess.Move):
             plane_idx = (__UNDERPROMOTION_OFFSET
                          + dir_idx * __NUM_UNDERPROMOTION_TYPES
                          + underpromotion_idx)
-            move_idx = plane_idx * __NUM_SQ + move.from_square
+            move_idx = plane_idx * NUM_SQ + move.from_square
             return move_idx
 
         # Handle all promotions to queen and other ray moves.
-        start_rank = __get_rank(move.from_square)
-        target_rank = __get_rank(move.to_square & 7)
-        num_sq_moved = abs(target_rank - start_rank)
+        start_rank = get_rank(move.from_square)
+        target_rank = get_rank(move.to_square)
+        if start_rank != target_rank:
+            num_sq_moved = abs(target_rank - start_rank)
+        else:
+            start_file = get_file(move.from_square)
+            target_file = get_file(move.to_square)
+            num_sq_moved = abs(target_file - start_file)
         plane_idx = dir * __MAX_NUM_SQ_MOVED + (num_sq_moved - 1)
-        move_idx = plane_idx * __NUM_SQ + move.from_square
+        move_idx = plane_idx * NUM_SQ + move.from_square
         return move_idx
 
     if type(dir) is __KnightDir:
         plane_idx = __KNIGHT_MOVE_OFFSET + dir
-        move_idx = plane_idx * __NUM_SQ + move.from_square
+        move_idx = plane_idx * NUM_SQ + move.from_square
         return move_idx
 
     raise ValueError("Unable to map move to index")
@@ -167,8 +202,8 @@ def __get_move(s: chess.Board, move_idx: int):
     """Given a move index, constuct a chess.Move object."""
 
     move = chess.Move(0, 0)
-    move.from_square = move_idx % __NUM_SQ
-    plane_idx = move_idx // __NUM_SQ
+    move.from_square = move_idx % NUM_SQ
+    plane_idx = move_idx // NUM_SQ
 
     # Define the single step increments per ray direction on a LERF indexed
     # 8x8 board representation for NW, N, NE, E, SE, S, SW, and W.
@@ -184,9 +219,9 @@ def __get_move(s: chess.Board, move_idx: int):
         # Check for promotions.
         RANK8 = 7
         RANK1 = 0
-        if ((__get_rank(move.to_square) == RANK8
-           or __get_rank(move.to_square) == RANK1)
-           and s.piece_at(move.from_square) == chess.PAWN):
+        if ((get_rank(move.to_square) == RANK8
+           or get_rank(move.to_square) == RANK1)
+           and s.piece_at(move.from_square).piece_type == chess.PAWN):
             move.promotion = chess.QUEEN
             return move
         return move
@@ -196,7 +231,7 @@ def __get_move(s: chess.Board, move_idx: int):
         dir_idx = ((plane_idx - __UNDERPROMOTION_OFFSET)
                    // __NUM_UNDERPROMOTION_TYPES)
         RANK7 = 6
-        start_rank = __get_rank(move.from_square)
+        start_rank = get_rank(move.from_square)
         if dir_idx == 2:
             dir = __RayDir.NE if (start_rank == RANK7) else __RayDir.SW
         elif dir_idx == 1:
@@ -223,11 +258,6 @@ def __get_move(s: chess.Board, move_idx: int):
         dir = plane_idx - __KNIGHT_MOVE_OFFSET
         step_inc = KNIGHT_COMPASS_ROSE[dir]
         move.to_square = move.from_square + step_inc
+        return move
 
     raise ValueError("Invalid move index passed in")
-
-
-def __get_rank(sq):
-    """Computes the index of the rank given a LERF indexed square."""
-
-    return sq & 7
