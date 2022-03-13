@@ -7,13 +7,10 @@ Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
 
 import chess
 import game
+import numpy as np
 
-from collections import OrderedDict
+from chess.polyglot import zobrist_hash
 from math import sqrt
-
-
-def get_board_hash(s: chess.Board):
-    return chess.polygloat.zobrist_hash(s)
 
 
 class MCTS:
@@ -21,20 +18,19 @@ class MCTS:
         self.c_puct = c_puct
         # Store the Q, N, and P tables as dictionaries associating board states
         # to dictionaries associating actions to values.
-        self.Q = OrderedDict()
-        self.N = OrderedDict()
-        self.P = OrderedDict()
+        self.Q = {}
+        self.N = {}
+        self.P = {}
         self.visited_nodes = set()
 
     def get_policy(self, s: chess.Board):
         """Computes the policy vector pi and its corresponding actions."""
 
         N_sum = self.__get_node_count(s)
-        s_hash = get_board_hash(s)
-        pi = [p / N_sum for p in self.P[s_hash].values()]
-        actions = self.P[s_hash].keys()
+        s_hash = zobrist_hash(s)
+        pi = self.P[s_hash] / N_sum
 
-        return actions, pi
+        return pi
 
     def search(self, s: chess.Board, model):
         """Performs a Monte Carlo Tree Search on the Chess game tree."""
@@ -42,17 +38,15 @@ class MCTS:
         if game.ended(s):
             return game.get_reward(s)
 
-        s_hash = get_board_hash(s)
+        s_hash = zobrist_hash(s)
 
         if s not in self.visited_nodes:
             self.visited_nodes.add(s)
-            actions = game.generate_moves(s)
             # Compute the policy vector and board evaluation given a list of
             # actions to be taken.
-            policy, v = model.predict(s, actions)
-            self.P[s_hash] = OrderedDict(zip(actions, policy))
-            self.Q[s_hash] = OrderedDict.fromkeys(actions, 0)
-            self.N[s_hash] = OrderedDict.fromkeys(actions, 0)
+            self.P[s_hash], v = model.predict(s)
+            self.Q[s_hash] = np.zeros(game.NUM_ACTIONS)
+            self.N[s_hash] = np.zeros(game.NUM_ACTIONS)
             # Return the value of the current board from the perspective of
             # the other player.
             return -v
@@ -87,5 +81,5 @@ class MCTS:
     def __get_node_count(self, s: chess.Board):
         """Compute the number of times s has been visited during a search."""
 
-        s_hash = get_board_hash(s)
-        return sum(self.N[s_hash].values())
+        s_hash = zobrist_hash(s)
+        return np.sum(self.N[s_hash])
