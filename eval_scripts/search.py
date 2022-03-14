@@ -12,19 +12,36 @@ import numpy as np
 from chess.polyglot import zobrist_hash
 from enum import IntEnum
 from math import sqrt
-from architecture import Model
+
+
+# Define constants for MCTS.
+_DRAW_REWARD = 0
+_WIN_REWARD = 1
+_LOSS_REWARD = -1
+_NUM_ACTIONS = 4672
+
+# Define the number of time steps _T, the number of feature maps per time
+# step _M, and the number of additional time-independent layers _L for a game
+# state. Set _T to 1 for ease of implementation in the main engine.
+_T = 1
+_M = 14
+_L = 7
 
 
 def self_play(model, c_puct, num_sims):
+    if (num_sims < 2):
+        raise ValueError("num_sims must be at least 2")
+
     training_examples = []
     mcts = __MCTS(c_puct)
-    position, s = __start_mcts()
+    position, s = init_game_state()
 
     while True:
         # Perform the "Simulation" step of MCTS.
+        search_position = position.copy()
         for _ in np.arange(num_sims):
             # Perform a number of MCTS simulations.
-            mcts.search(position, s, model)
+            mcts.search(search_position, s, model)
 
         # Perform the "Expansion" step in MCTS. Choose a single node to expand
         # the search tree by using the policy vector pi from the model, a.
@@ -34,47 +51,25 @@ def self_play(model, c_puct, num_sims):
         # with the intent of overwriting this information with the game reward
         # at the end of a game.
         training_examples.append([s, pi, position.turn])
-        a = np.random.choice(game.NUM_ACTIONS, p=pi)
-        __update_state(position, s, a)
+        a = np.random.choice(_NUM_ACTIONS, p=pi)
+        update_game_state(position, s, a)
         if game.ended(position):
-            # Perform the "Backpropagation" step in MCTS by assigning a
+            # Perform the "Backpropagation" step in MreturnCTS by assigning a
             # "reward" to each training example.
             __assign_rewards(training_examples, position.outcome().winner)
             return training_examples
 
 
-# Define constants for MCTS.
-_DRAW_REWARD = 0
-_WIN_REWARD = 1
-_LOSS_REWARD = -1
-# Define the number of time steps _T, the number of feature maps per time
-# step _M, and the number of additional time-independent layers _L for a game
-# state.
-_T = 8
-_M = 14
-_L = 7
-
-
-def __assign_rewards(training_examples, winner: chess.Color):
-    """Assigns rewards to a list of training examples."""
-
-    for example in training_examples:
-        if winner:
-            model_player = example[-1]
-            example[-1] = (_WIN_REWARD if model_player == winner
-                           else _LOSS_REWARD)
-        else:
-            example[-1] = _DRAW_REWARD
-
-
-def __start_mcts():
+def init_game_state():
     """Returns the starting position and game state for a chess game."""
 
     position = chess.Board()
 
     game_state = np.zeros((game.NUM_RANK, game.NUM_FILE, _M * _T + _L))
     start_time_idx = _M * (_T - 1)
-    game_state[:, :, start_time_idx] = __get_time_plane(position)
+    game_state[:, :, start_time_idx:start_time_idx + _M] = (
+        __get_time_plane(position)
+    )
     curr_info_idx = _M * _T
     game_state[:, :, curr_info_idx: curr_info_idx + _L] = (
         __get_constant_planes(position)
@@ -83,7 +78,7 @@ def __start_mcts():
     return position, game_state
 
 
-def __update_state(position: chess.Board, game_state: np.array, a: int):
+def update_game_state(position: chess.Board, game_state: np.array, a: int):
     """Updates the game state and chess position in place with the action."""
 
     # Advance all time planes forward by one time step.
@@ -100,11 +95,25 @@ def __update_state(position: chess.Board, game_state: np.array, a: int):
 
     # Update the latest time plane and constant planes in the game state.
     latest_time_idx = _M * (_T - 1)
-    game_state[:, :, latest_time_idx] = __get_time_plane(position)
+    game_state[:, :, latest_time_idx:latest_time_idx + _M] = (
+        __get_time_plane(position)
+    )
     curr_info_idx = _M * _T
     game_state[:, :, curr_info_idx: curr_info_idx + _L] = (
         __get_constant_planes(position)
     )
+
+
+def __assign_rewards(training_examples, winner: chess.Color):
+    """Assigns rewards to a list of training examples."""
+
+    for example in training_examples:
+        if winner:
+            model_player = example[-1]
+            example[-1] = (_WIN_REWARD if model_player == winner
+                           else _LOSS_REWARD)
+        else:
+            example[-1] = _DRAW_REWARD
 
 
 def __get_time_plane(board: chess.Board):
@@ -147,7 +156,7 @@ def __get_time_plane(board: chess.Board):
     # Flip the board representation to the correct orientation.
     PIECE_OFFSET = game.NUM_PIECES * game.NUM_PLAYER
     if board.turn == chess.WHITE:
-        np.flipud(time_plane[:PIECE_OFFSET])
+        time_plane[:PIECE_OFFSET] = np.flipud(time_plane[:PIECE_OFFSET])
 
     # Fill in repetition information.
     FIRST_REP_IDX = 0
@@ -224,20 +233,20 @@ class __MCTS:
     def get_policy(self, position: chess.Board):
         """Computes the policy vector pi, normalized for legal moves only."""
 
-        N_sum = self.__get_node_count(position)
         position_hash = zobrist_hash(position)
+        N_sum = self.__get_node_count(position_hash)
         pi = self.P[position_hash] / N_sum
 
         # Zero out all illegal moves in the policy vector and re-normalize.
         legal_moves = game.generate_moves(position)
-        for p, p_idx in zip(pi, np.arange(game.NUM_ACTIONS)):
-            if p not in legal_moves:
-                pi[p_idx] = 0
-        pi /= np.sum(pi)
+        legal_idx_list = np.in1d(np.arange(_NUM_ACTIONS), legal_moves)
+        illegal_idx_list = np.invert(legal_idx_list)
+        pi[illegal_idx_list] = 0
+        pi /= np.linalg.norm(pi, ord=1)
 
         return pi
 
-    def search(self, position: chess.Board, s: np.array, model: Model):
+    def search(self, position: chess.Board, s: np.array, model):
         """Performs a Monte Carlo Tree Search on the Chess game tree."""
 
         if game.ended(position):
@@ -255,8 +264,8 @@ class __MCTS:
             # Compute the policy vector and board evaluation given a list of
             # actions to be taken.
             self.P[position_hash], v = model.predict(s)
-            self.Q[position_hash] = np.zeros(game.NUM_ACTIONS)
-            self.N[position_hash] = np.zeros(game.NUM_ACTIONS)
+            self.Q[position_hash] = np.zeros(_NUM_ACTIONS)
+            self.N[position_hash] = np.zeros(_NUM_ACTIONS)
             # Propagate the value of the node estimated by the model up the
             # search path.
             return -v
@@ -268,7 +277,7 @@ class __MCTS:
         actions = game.generate_moves(position)
         for a in actions:
             # Compute the upper confidence bound on Q-values, U.
-            N_sum = self.__get_node_count(position)
+            N_sum = self.__get_node_count(position_hash)
             U = (self.Q[position_hash][a]
                  + self.c_puct * self.P[position_hash][a] * sqrt(N_sum)
                  / (1 + self.N[position_hash][a]))
@@ -277,7 +286,7 @@ class __MCTS:
                 best_a = a
 
         a = best_a
-        __update_state(position, s, a)
+        update_game_state(position, s, a)
         v = self.search(position, s, model)
 
         # Update the expected reward and number of times a was taken from s.
@@ -288,8 +297,7 @@ class __MCTS:
 
         return -v
 
-    def __get_node_count(self, position: chess.Board):
+    def __get_node_count(self, position_hash):
         """Compute the number of times s has been visited during a search."""
 
-        position_hash = zobrist_hash(position)
         return np.sum(self.N[position_hash])

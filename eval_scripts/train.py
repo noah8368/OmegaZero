@@ -7,27 +7,31 @@ Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
 
 import numpy as np
 
-from architecture import Model
+from architecture import EvalModel
 from game import pit
 from search import self_play
 
 
-def train_model(num_iters, num_sims, num_eps, c_puct, threshold):
-    model = Model()
+def train_model(model_choice, num_iters, num_sims, num_eps, c_puct, threshold):
+    model = EvalModel(model_choice)
     training_examples = []
-    for _ in np.arange(num_iters):
-        for _ in np.arange(num_eps):
+    for iter_idx in np.arange(num_iters):
+        print("---Training iteration", str(iter_idx + 1) + "/"
+              + str(num_iters) + "---")
+        # Collect training data from self-play.
+        for ep_idx in np.arange(num_eps):
+            print("Self-play episode", str(ep_idx + 1) + '/' + str(num_eps))
             training_examples += self_play(model, c_puct, num_sims)
-        new_model = model.train(training_examples)
-        frac_win = pit(new_model, model)
+        new_model = model.copy()
+        new_model.train(training_examples)
+        frac_win = pit(new_model, model, 2)
         if frac_win > threshold:
             model = new_model
-
+    print("MODEL GENERATED")
     model.save()
 
 
 if __name__ == "__main__":
-    """Train a model over 80 iterations of 100 episodes of self-play each, with
-    25 MCTS simulations per episode. Use a value of 1 for c_puct and a
-    model comparision threshold of 55%."""
-    train_model(80, 25, 100, 1, 0.55)
+    # Train a test model.
+    train_model(model_choice='A', num_iters=1, num_sims=2, num_eps=1, c_puct=1,
+                threshold=0.55)

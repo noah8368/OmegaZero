@@ -6,12 +6,13 @@ Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
 """
 
 import chess
+import random
 import numpy as np
 
 from enum import IntEnum
+from search import init_game_state, update_game_state
 
 
-NUM_ACTIONS = 4672
 NUM_RANK = 8
 NUM_FILE = 8
 NUM_SQ = 64
@@ -24,15 +25,17 @@ def pit(new_model, baseline_model, num_games=100):
 
     num_new_model_wins = 0
     for _ in np.arange(num_games):
-        s = chess.Board()
-        player = new_model
-        while not ended(s):
-            move_idx = player.get_move(s)
-            move = get_move(s, move_idx)
-            s.push(move)
-            player = baseline_model if player == new_model else new_model
+        game = chess.Board()
+        game, s = init_game_state()
+        new_model_player = chess.WHITE if random.randint(0, 1) else chess.BLACK
+        while not ended(game):
+            if game.turn == new_model_player:
+                move_idx = new_model.get_move(game, s)
+            else:
+                move_idx = baseline_model.get_move(game, s)
+            update_game_state(game, s, move_idx)
 
-        if s.outcome() == chess.WHITE:
+        if game.outcome().winner == new_model_player:
             num_new_model_wins += 1
 
     return num_new_model_wins / num_games
@@ -46,7 +49,7 @@ def generate_moves(s: chess.Board):
 
 
 def ended(s: chess.Board):
-    return s.is_checkmate() or s.is_stalemate
+    return s.outcome() is not None
 
 
 def get_file(sq):
