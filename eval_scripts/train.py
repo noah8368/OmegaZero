@@ -24,7 +24,7 @@ def train_model(model_choice, num_iters, num_sims, num_eps, c_puct, threshold):
             training_examples += self_play(model, c_puct, num_sims)
         new_model = model.copy()
         new_model.train(training_examples)
-        frac_win = pit(new_model, model, 2)
+        frac_win = pit(new_model, model)
         if frac_win > threshold:
             model = new_model
     print("MODEL GENERATED")

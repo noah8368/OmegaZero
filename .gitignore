@@ -2,3 +2,5 @@ build
 debug_build
 __pycache__
 **/.vscode/**
+**/.ipynb_checkpoints/**
+*.h5

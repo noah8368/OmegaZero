@@ -20,7 +20,7 @@ NUM_PLAYER = 2
 NUM_PIECES = 6
 
 
-def pit(new_model, baseline_model, num_games=100):
+def pit(new_model, baseline_model, num_games=20):
     """Compares the performance of two models by returning a win ratio."""
 
     num_new_model_wins = 0
