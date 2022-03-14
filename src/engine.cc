@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <queue>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -32,6 +33,7 @@ using std::pair;
 using std::queue;
 using std::runtime_error;
 using std::sort;
+using std::string;
 using std::unordered_map;
 using std::vector;
 using std::chrono::high_resolution_clock;
@@ -41,9 +43,12 @@ using std::chrono::high_resolution_clock;
 constexpr int kAggressorSortVals[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
 constexpr int kVictimSortVals[kNumPieceTypes] = {10, 20, 30, 40, 50, 60};
 
+U64 NODES_SEARCHED = 0;
+
 // Implement public member functions.
 
-Engine::Engine(Board* board, S8 player_side, float search_time) {
+Engine::Engine(Board* board, S8 player_side, float search_time,
+               string eval_model_weights) {
   board_ = board;
 
   constexpr float kMinSearchTime = 0.1f;
@@ -63,11 +68,15 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   } else {
     throw invalid_argument("invalid side choice");
   }
+
+  if (eval_model_weights != "-") {
+    throw invalid_argument("Model forward pass not implemented yet");
+  }
 }
 
 auto Engine::GetBestMove() -> Move {
-  transposition_table_.Clear();
   Move best_move;
+  transposition_table_.Clear();
   board_->SavePos();
   constexpr int kRootNodePly = 0;
   // Initialize the first guess for the MTD(f) algorithm, f.
@@ -79,11 +88,10 @@ auto Engine::GetBestMove() -> Move {
     try {
       f = MtdfSearch(f, search_depth, kRootNodePly, best_move);
     } catch (OutOfTime& e) {
-      board_->ResetPos();
       break;
     }
   }
-
+  board_->ResetPos();
   return best_move;
 }
 
@@ -197,17 +205,18 @@ auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
     } else {
       lower_bound = g;
     }
+    if (move.moving_piece != kNA || move.castling_type != kNA) {
+      best_move = move;
+    }
   }
 
-  if (move.moving_piece != kNA || move.castling_type != kNA) {
-    best_move = move;
-  }
   return g;
 }
 
-auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
+auto Engine::NegamaxSearch(Move& selected_move, int alpha, int beta, int depth,
                            int ply, bool null_move_allowed) -> int {
   CheckSearchTime();
+  ++NODES_SEARCHED;
 
   int orig_alpha = alpha;
   int transposition_table_stored_eval;
@@ -216,6 +225,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   if (transposition_table_.Access(board_, depth,
                                   transposition_table_stored_eval, node_type)) {
     if (node_type == kPvNode) {
+      selected_move = transposition_table_.GetHashMove(board_);
       return transposition_table_stored_eval;
     } else if (node_type == kCutNode) {
       alpha = max(alpha, transposition_table_stored_eval);
@@ -224,6 +234,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     }
 
     if (alpha >= beta) {
+      selected_move = transposition_table_.GetHashMove(board_);
       // Perform a beta-cutoff from the stored value of the transposition table.
       return transposition_table_stored_eval;
     }
@@ -303,7 +314,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     pos_history_.swap(saved_pos_history);
     if (search_eval > best_eval) {
       best_move = move;
-      pv_move = best_move;
+      selected_move = best_move;
       best_eval = search_eval;
     }
     alpha = max(alpha, search_eval);

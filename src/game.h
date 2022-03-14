@@ -32,10 +32,16 @@ auto GetPieceType(char piece_ch) -> S8;
 
 class Game {
  public:
-  Game(const string& init_pos, char player_side, float search_time);
+  Game(const string& init_pos, char player_side, float search_time,
+       string engine_weights = "-");
 
   auto IsActive() const -> bool;
 
+  auto MakeEngineMove() -> Move;
+
+  auto GetWinner() const -> S8;
+
+  auto MakeOtherEngineMove(const Move& move) -> void;
   auto OutputWinner() const -> void;
   auto Play() -> void;
   // Output the results of Perft in readable format.
@@ -99,6 +105,8 @@ inline auto GetPlayerStr(S8 player) -> string {
 // Implement inline member functions.
 
 inline auto Game::IsActive() const -> bool { return game_active_; }
+
+inline auto Game::GetWinner() const -> S8 { return winner_; }
 
 inline auto Game::OutputWinner() const -> void {
   if (winner_ == kNA) {

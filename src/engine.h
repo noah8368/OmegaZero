@@ -12,9 +12,9 @@
 
 #include <algorithm>
 #include <chrono>
-#include <iostream>  // DEBUG
 #include <queue>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -31,6 +31,7 @@ using std::end;
 using std::invalid_argument;
 using std::pair;
 using std::queue;
+using std::string;
 using std::unordered_map;
 using std::vector;
 using std::chrono::duration;
@@ -58,7 +59,8 @@ constexpr S8 kSixPlys = 6;
 
 class Engine {
  public:
-  Engine(Board* board, S8 player_side, float search_time);
+  Engine(Board* board, S8 player_side, float search_time,
+         string eval_model_weights);
 
   // Searches possible games in a search tree to find the best legal move. Act
   // as the root function to call the Negamax search algorithm in an iterative

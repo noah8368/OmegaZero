@@ -5,11 +5,17 @@
  * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
  */
 
-#include "board.h"
-#include "move.h"
 #include "transposition_table.h"
 
+#include <iostream>
+
+#include "board.h"
+#include "move.h"
+
 namespace omegazero {
+
+using std::cout;
+using std::endl;
 
 constexpr U64 kHashMask = 0X7FFFF;
 

@@ -4,3 +4,6 @@ __pycache__
 **/.vscode/**
 **/.ipynb_checkpoints/**
 *.h5
+eval_models
+eval_scripts/train_B.py
+**/*_history_*

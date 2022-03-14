@@ -68,8 +68,10 @@ auto GetPieceType(char piece_ch) -> S8 {
   }
 }
 
-Game::Game(const string& init_pos, char player_side, float search_time)
-    : board_(init_pos), engine_(&board_, player_side, search_time) {
+Game::Game(const string& init_pos, char player_side, float search_time,
+           string engine_weights)
+    : board_(init_pos),
+      engine_(&board_, player_side, search_time, engine_weights) {
   game_active_ = true;
   search_time_ = search_time;
   winner_ = kNA;
@@ -87,7 +89,70 @@ Game::Game(const string& init_pos, char player_side, float search_time)
   piece_symbols_[kBlack][kKing] = "♚";
 }
 
-void Game::Play() {
+auto Game::MakeEngineMove() -> Move {
+  DisplayBoard();
+
+  // Record the current board state to enforce move repitition rules.
+  RecordBoardState();
+  engine_.AddPosToHistory();
+
+  Move engine_move;
+
+  // Check the status of the game.
+  constexpr S8 kMaxMoveRep = 5;
+  S8 game_status = engine_.GetGameStatus();
+  S8 player_to_move = board_.GetPlayerToMove();
+  if (game_status == kPlayerInCheck) {
+    // Inform the user that a player is in check.
+    cout << GetPlayerStr(player_to_move) << " is in check" << endl;
+  } else if (game_status == kDraw || pos_history_[board_] == kMaxMoveRep) {
+    // End the game if a draw has occured.
+    game_active_ = false;
+    return engine_move;
+  } else if (game_status == kPlayerCheckmated) {
+    // Inform the user that a player has been mated.
+    cout << GetPlayerStr(player_to_move) << " has been checkmated" << endl;
+    game_active_ = false;
+    winner_ = GetOtherPlayer(player_to_move);
+    return engine_move;
+  }
+
+  engine_move = engine_.GetBestMove();
+  cout << "\n\n"
+       << GetPlayerStr(player_to_move)
+       << "'s move: " << GetFideMoveStr(engine_move) << endl;
+  board_.MakeMove(engine_move);
+  return engine_move;
+}
+
+auto Game::MakeOtherEngineMove(const Move& move) -> void {
+  // Record the current board state to enforce move repitition rules.
+  RecordBoardState();
+  engine_.AddPosToHistory();
+
+  // Check the status of the game.
+  constexpr S8 kMaxMoveRep = 5;
+  S8 game_status = engine_.GetGameStatus();
+  S8 player_to_move = board_.GetPlayerToMove();
+  if (game_status == kPlayerInCheck) {
+    // Inform the user that a player is in check.
+    cout << GetPlayerStr(player_to_move) << " is in check" << endl;
+  } else if (game_status == kDraw || pos_history_[board_] == kMaxMoveRep) {
+    // End the game if a draw has occured.
+    game_active_ = false;
+    return;
+  } else if (game_status == kPlayerCheckmated) {
+    // Inform the user that a player has been mated.
+    cout << GetPlayerStr(player_to_move) << " has been checkmated" << endl;
+    game_active_ = false;
+    winner_ = GetOtherPlayer(player_to_move);
+    return;
+  }
+
+  board_.MakeMove(move);
+}
+
+auto Game::Play() -> void {
   DisplayBoard();
 
   // Record the current board state to enforce move repitition rules.
@@ -254,10 +319,10 @@ auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
 
 auto Game::GetFideMoveStr(const Move& move) -> string {
   string move_str;
-  S8 start_file = GetFileFromSq(move.start_sq);
-  S8 target_file = GetFileFromSq(move.target_sq);
-  S8 target_rank = GetRankFromSq(move.target_sq);
   if (move.castling_type == kNA) {
+    S8 start_file = GetFileFromSq(move.start_sq);
+    S8 target_file = GetFileFromSq(move.target_sq);
+    S8 target_rank = GetRankFromSq(move.target_sq);
     if (move.moving_piece == kPawn && move.captured_piece != kNA) {
       move_str += static_cast<char>(start_file + 'a');
       move_str += 'x';

@@ -7,6 +7,8 @@ Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
 
 import chess
 import numpy as np
+import os
+import pickle
 import tensorflow as tf
 
 from game import generate_moves
@@ -176,6 +178,7 @@ class EvalModel:
         self.model.compile(loss=["categorical_crossentropy",
                                  "mean_squared_error"],
                            optimizer="Adam")
+        self.train_iter = 0
 
     def copy(self):
         """Performs a shallow copy of the current EvalModel object."""
@@ -209,5 +212,10 @@ class EvalModel:
         game_states = np.asarray(game_states)
         policy_vectors = np.asarray(policy_vectors)
         rewards = np.asarray(rewards)
-        self.model.fit(x=game_states, y=[policy_vectors, rewards],
-                       batch_size=_BATCH_SIZE)
+        history = self.model.fit(x=game_states, y=[policy_vectors, rewards],
+                                 batch_size=_BATCH_SIZE)
+        with open(os.path.join(os.curdir,
+                               self.model_name + '_history_'
+                               + str(self.train_iter)), 'wb') as history_f:
+            pickle.dump(history.history, history_f)
+        self.train_iter += 1
