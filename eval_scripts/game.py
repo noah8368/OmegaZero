@@ -28,7 +28,7 @@ def pit(new_model, baseline_model, num_games=100):
         player = new_model
         while not ended(s):
             move_idx = player.get_move(s)
-            move = __get_move(s, move_idx)
+            move = get_move(s, move_idx)
             s.push(move)
             player = baseline_model if player == new_model else new_model
 
@@ -41,36 +41,8 @@ def pit(new_model, baseline_model, num_games=100):
 def generate_moves(s: chess.Board):
     """Returns a list of legal moves denoted by their indices."""
 
-    move_idx_list = [__get_move_idx(move) for move in s.legal_moves]
+    move_idx_list = [get_move_idx(move) for move in s.legal_moves]
     return move_idx_list
-
-
-def get_reward(s: chess.Board):
-    """Returns the game reward needed in MCTS."""
-
-    if not ended(s):
-        raise ValueError("position isn't an ended game")
-
-    # TODO: Add non-constant player to move.
-    # Return a positive reward only is White wins, since the model will
-    # always play White.
-    if s.outcome() == chess.WHITE:
-        return 1
-    elif s.outcome() == chess.BLACK:
-        return -1
-    else:
-        return 0
-
-
-def get_next_state(s: chess.Board, move_idx: int):
-    """Plays the move denoted by the move index on the board s."""
-
-    move = __get_move(move_idx)
-    s.push(move)
-    if not s.is_valid():
-        s.pop()
-        raise ValueError("move is illegal")
-    return s
 
 
 def ended(s: chess.Board):
@@ -116,7 +88,7 @@ class __KnightDir(IntEnum):
     NNE, NEE, SEE, SSE, SSW, SWW, NWW, NNW = np.arange(8)
 
 
-def __get_move_idx(move: chess.Move):
+def get_move_idx(move: chess.Move):
     """Given a chess.Move object, compute the move index."""
 
     def get_move_dir(start_sq, target_sq):
@@ -198,7 +170,7 @@ def __get_move_idx(move: chess.Move):
     raise ValueError("Unable to map move to index")
 
 
-def __get_move(s: chess.Board, move_idx: int):
+def get_move(s: chess.Board, move_idx: int):
     """Given a move index, constuct a chess.Move object."""
 
     move = chess.Move(0, 0)
