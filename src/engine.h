@@ -59,8 +59,7 @@ constexpr S8 kSixPlys = 6;
 
 class Engine {
  public:
-  Engine(Board* board, S8 player_side, float search_time,
-         string eval_model_weights);
+  Engine(Board* board, S8 player_side, float search_time);
 
   // Searches possible games in a search tree to find the best legal move. Act
   // as the root function to call the Negamax search algorithm in an iterative

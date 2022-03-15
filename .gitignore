@@ -7,3 +7,9 @@ __pycache__
 eval_models
 eval_scripts/train_B.py
 **/*_history_*
+
+# Ignore third-party libraries.
+FunctionalPlus
+json
+frugally-deep
+eigen

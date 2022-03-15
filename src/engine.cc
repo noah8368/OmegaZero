@@ -43,12 +43,9 @@ using std::chrono::high_resolution_clock;
 constexpr int kAggressorSortVals[kNumPieceTypes] = {-1, -2, -3, -4, -5, -6};
 constexpr int kVictimSortVals[kNumPieceTypes] = {10, 20, 30, 40, 50, 60};
 
-U64 NODES_SEARCHED = 0;
-
 // Implement public member functions.
 
-Engine::Engine(Board* board, S8 player_side, float search_time,
-               string eval_model_weights) {
+Engine::Engine(Board* board, S8 player_side, float search_time) {
   board_ = board;
 
   constexpr float kMinSearchTime = 0.1f;
@@ -67,10 +64,6 @@ Engine::Engine(Board* board, S8 player_side, float search_time,
     user_side_ = static_cast<S8>(rand() % static_cast<int>(kNumPlayers));
   } else {
     throw invalid_argument("invalid side choice");
-  }
-
-  if (eval_model_weights != "-") {
-    throw invalid_argument("Model forward pass not implemented yet");
   }
 }
 
@@ -216,7 +209,6 @@ auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
 auto Engine::NegamaxSearch(Move& selected_move, int alpha, int beta, int depth,
                            int ply, bool null_move_allowed) -> int {
   CheckSearchTime();
-  ++NODES_SEARCHED;
 
   int orig_alpha = alpha;
   int transposition_table_stored_eval;
@@ -349,7 +341,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
 
   // Establish a lower bound for the node evaluation (stand_pat_eval),
   // and perform a beta cutoff if this value exceeds beta.
-  int stand_pat_eval = board_->Evaluate();
+  int stand_pat_eval = board_->Evaluate(RepDetected());
   if (stand_pat_eval >= beta) {
     return beta;
   }

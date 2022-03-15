@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "move.h"
 
@@ -21,6 +22,9 @@ namespace omegazero {
 
 using std::invalid_argument;
 using std::stack;
+using std::string;
+using std::unordered_map;
+using std::vector;
 
 typedef uint64_t Bitboard;
 typedef uint64_t U64;
@@ -138,7 +142,7 @@ extern const Bitboard kUnblockedSliderAttackMaps[kNumSliderMaps][kNumSq];
 
 extern const U64 kMagics[kNumSliderMaps][kNumSq];
 
-extern const std::unordered_map<U64, Bitboard> kMagicIndexToAttackMap;
+extern const unordered_map<U64, Bitboard> kMagicIndexToAttackMap;
 
 auto OneSqSet(const Bitboard& board) -> bool;
 auto RankOnBoard(S8 rank) -> bool;
@@ -157,7 +161,7 @@ auto RemoveFirstSq(Bitboard& board) -> void;
 
 class Board {
  public:
-  Board(const std::string& init_pos);
+  Board(const string& init_pos, const string& eval_weights);
 
   auto operator==(const Board& rhs) const -> bool;
 
@@ -173,7 +177,7 @@ class Board {
   // Compute and return a static evaluation of the board state. This score is
   // relative to the side being evaluated and symmetric, as required by the
   // Negamax Algorithm.
-  auto Evaluate() const -> int;
+  auto Evaluate(bool rep_detected) const -> int;
 
   auto GetEpTargetSq() const -> S8;
   auto GetHalfmoveClock() const -> S8;
@@ -210,7 +214,7 @@ class Board {
   auto AddPiece(S8 piece_type, S8 player, S8 sq) -> void;
   auto InitBoardHash() -> void;
   // Parse a FEN string to initialize the board state.
-  auto InitBoardPos(const std::string& init_pos) -> void;
+  auto InitBoardPos(const string& init_pos) -> void;
   auto MakeNonCastlingMove(const Move& move) -> void;
   auto MovePiece(S8 piece, S8 start_sq, S8 target_sq,
                  S8 promoted_to_piece = kNA) -> void;
@@ -261,6 +265,8 @@ class Board {
   S8 player_layout_[kNumSq];
   S8 player_to_move_;
 
+  string eval_weight_path_;
+
   // Store a history of irreversible position aspects for UnmakeMove().
   stack<bool> white_queenside_castling_rights_history_;
   stack<bool> white_kingside_castling_rights_history_;
@@ -277,7 +283,7 @@ class Board {
   U64 black_to_move_rand_num_;
 };
 
-// Implement public inline non-member functions.
+// Implement public inline non-member functions
 
 inline auto OneSqSet(const Bitboard& board) -> bool {
   return board && !static_cast<bool>(board & (board - 1));

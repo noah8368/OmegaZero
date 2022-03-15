@@ -1,6 +1,6 @@
 CC = g++
 FLAGS = -lboost_program_options -march=native -pedantic -std=c++17 -Wall \
-        -Wconversion -Werror -Wextra -Wshadow
+        -Wconversion -Werror -Wextra -Wshadow -I ./frugally-deep/include/fdeep
 DEBUG_FLAGS = -O0 -g
 OPT_FLAGS = -Ofast -D_GLIBCXX_PARALLEL -fno-signed-zeros -fno-trapping-math \
             -fopenmp -frename-registers -funroll-loops

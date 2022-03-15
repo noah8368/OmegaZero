@@ -12,10 +12,12 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <fdeep/fdeep.hpp>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "bad_move.h"
 #include "move.h"
@@ -29,10 +31,13 @@ using std::end;
 using std::endl;
 using std::invalid_argument;
 using std::string;
+using std::vector;
 
 typedef boost::multiprecision::uint128_t U128;
 
-Board::Board(const string& init_pos) {
+fdeep::model* EVAL_MODEL;
+
+Board::Board(const string& init_pos, const string& eval_weights) {
   for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
     pieces_[piece_type] = 0ULL;
   }
@@ -49,6 +54,13 @@ Board::Board(const string& init_pos) {
   // Set the piece positions, castling rights, and player to move.
   InitBoardPos(init_pos);
   InitBoardHash();
+
+  if (eval_weights == "-") {
+    EVAL_MODEL = nullptr;
+  } else {
+    fdeep::model eval_model = fdeep::load_model("../fdeep_model.json");
+    EVAL_MODEL = new fdeep::model(eval_model);
+  }
 }
 
 auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
@@ -196,18 +208,93 @@ auto Board::DoublePawnPushLegal(S8 file) const -> bool {
          player_layout_[rank7_double_pawn_push_sq] == kBlack;
 }
 
-auto Board::Evaluate() const -> int {
-  Bitboard white_pieces;
-  Bitboard black_pieces;
-  int board_score = 0;
-  for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
-    white_pieces = GetPiecesByType(piece_type, kWhite);
-    black_pieces = GetPiecesByType(piece_type, kBlack);
-    board_score += kPieceVals[piece_type] *
-                   (GetNumSetSq(white_pieces) - GetNumSetSq(black_pieces));
+auto Board::Evaluate(bool rep_detected) const -> int {
+  if (EVAL_MODEL == nullptr) {
+    // Compute the material evaluation.
+    Bitboard white_pieces;
+    Bitboard black_pieces;
+    int board_score = 0;
+    for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
+      white_pieces = GetPiecesByType(piece_type, kWhite);
+      black_pieces = GetPiecesByType(piece_type, kBlack);
+      board_score += kPieceVals[piece_type] *
+                     (GetNumSetSq(white_pieces) - GetNumSetSq(black_pieces));
+    }
+    S8 moving_side = (player_to_move_ == kWhite) ? 1 : -1;
+    return board_score * moving_side;
   }
-  S8 moving_side = (player_to_move_ == kWhite) ? 1 : -1;
-  return board_score * moving_side;
+
+  // Define the number of time-dependent and time-independent feature maps,
+  // M, and L;
+  constexpr S8 kM = 14;
+  constexpr S8 kL = 7;
+  fdeep::tensor game_state(fdeep::tensor_shape(kNumRanks, kNumFiles, kM + kL),
+                           0);
+
+  // Compute the game state tensor for the model input.
+  constexpr S8 kRepIdx = 12;
+  constexpr S8 kColorIdx = 14;
+  constexpr S8 kHalfmoveIdx = 16;
+  constexpr S8 kQueensideWhiteCastlingIdx = 17;
+  constexpr S8 kKingsideWhiteCastlingIdx = 18;
+  constexpr S8 kQueensideBlackCastlingIdx = 19;
+  constexpr S8 kKingsideBlackCastlingIdx = 20;
+  S8 piece_idx;
+  S8 player_idx;
+  S8 player;
+  S8 piece;
+  S8 sq;
+  S8 start_rank = (player_to_move_ == kWhite) ? kFileH : kFileA;
+  for (S8 rank = start_rank; rank < kNumRanks && rank >= kRank1;) {
+    for (S8 file = kFileA; file < kNumFiles; ++file) {
+      // Fill in the piece presence information.
+      sq = GetSqFromRankFile(rank, file);
+      piece = GetPieceOnSq(sq);
+      if (piece != kNA) {
+        player = GetPlayerOnSq(sq);
+        player_idx = (player == player_to_move_) ? 0 : 1;
+        piece_idx = static_cast<S8>(kNumPieceTypes * player_idx + piece);
+        game_state.set(fdeep::tensor_pos(rank, file, piece_idx), 1);
+      }
+
+      // Fill in the repitition information.
+      if (rep_detected) {
+        game_state.set(fdeep::tensor_pos(rank, file, kRepIdx), 1);
+      }
+
+      // Indicate which side is going to be played.
+      game_state.set(fdeep::tensor_pos(rank, file, kColorIdx), player_to_move_);
+
+      // Fill in the halfmove clock information.
+      game_state.set(fdeep::tensor_pos(rank, file, kHalfmoveIdx),
+                     halfmove_clock_);
+
+      // Fill in caslting rights information.
+      game_state.set(fdeep::tensor_pos(rank, file, kQueensideWhiteCastlingIdx),
+                     castling_rights_[kWhite][kQueenSide]);
+      game_state.set(fdeep::tensor_pos(rank, file, kKingsideWhiteCastlingIdx),
+                     castling_rights_[kWhite][kKingSide]);
+      game_state.set(fdeep::tensor_pos(rank, file, kQueensideBlackCastlingIdx),
+                     castling_rights_[kBlack][kQueenSide]);
+      game_state.set(fdeep::tensor_pos(rank, file, kKingsideBlackCastlingIdx),
+                     castling_rights_[kBlack][kKingSide]);
+    }
+
+    // Iterate over the board correctly to orient it towards the current player.
+    if (player_to_move_ == kWhite) {
+      --rank;
+    } else {
+      ++rank;
+    }
+  }
+
+  // Compute an evaluation based on the model output.
+  const vector<fdeep::tensor> model_output = EVAL_MODEL->predict({game_state});
+  float eval = model_output.at(1).get(fdeep::tensor_pos(0));
+  // DEBUG
+  const int kCentipawnConversionFactor = 1000;
+  cout << "MODEL EVAL: " << eval * kCentipawnConversionFactor << endl;
+  return static_cast<int>(eval * kCentipawnConversionFactor);
 }
 
 auto Board::ResetPos() -> void {

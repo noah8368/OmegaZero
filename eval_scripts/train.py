@@ -32,5 +32,5 @@ def train_model(model_choice, num_iters, num_sims, num_eps, c_puct, threshold):
 
 
 if __name__ == "__main__":
-    train_model(model_choice='C', num_iters=10, num_sims=10, num_eps=15,
+    train_model(model_choice='B', num_iters=10, num_sims=10, num_eps=10,
                 c_puct=1, threshold=0.55)

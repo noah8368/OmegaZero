@@ -33,7 +33,7 @@ auto GetPieceType(char piece_ch) -> S8;
 class Game {
  public:
   Game(const string& init_pos, char player_side, float search_time,
-       string engine_weights = "-");
+       const string& eval_weights = "-");
 
   auto IsActive() const -> bool;
 

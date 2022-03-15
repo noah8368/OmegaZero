@@ -69,9 +69,9 @@ auto GetPieceType(char piece_ch) -> S8 {
 }
 
 Game::Game(const string& init_pos, char player_side, float search_time,
-           string engine_weights)
-    : board_(init_pos),
-      engine_(&board_, player_side, search_time, engine_weights) {
+           const string& eval_weights)
+    : board_(init_pos, eval_weights),
+      engine_(&board_, player_side, search_time) {
   game_active_ = true;
   search_time_ = search_time;
   winner_ = kNA;
