@@ -13,10 +13,12 @@ best Chess engines. The [Chess Programming Wiki](https://www.chessprogramming.or
 development. Credit goes to [Bradon Hsu](https://github.com/2brandonh) for designing the
 logo for this project.
 
-### Status: In Progress
+### Status: Abandoned Branch
 
-The search portion of the AI is now complete! Work is now underway for 
-developing the Evaluation function.
+A neural network was trained to evaluate board states in this branch. However,
+this approach was not very successful, and added many project dependencies that
+muddied the project organization. As such, this branch has been abandoned, and
+will be preserved for historical purposes.
 
 ### Usage
 
@@ -150,32 +152,12 @@ Moves are put in the following order:
 1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
 2. Captures, ordered using the [MVV-LVA](https://www.chessprogramming.org/MVV-LVA) heuristic
 3. Two [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
-4. All other moves.
+4. All other moves
 
 #### Evaluation
 
-The evaluation function scores the board based purely on material. The formula
-for board scores is
-```
-score = pawn_value * (#white_pawns - #black_pawns)
-        + knight_value * (#white_knights - #black_knights)
-        + bishop_value * (#white_bishops - #black_bishops)
-        + rook_value * (#white_roooks - #black_rooks)
-        + queen_value * (#white_queens - #black_queens)
-        + king_value * (#white_kings - #black_kings) * side_to_move
-```
-Score is relative to the side to move, as required by Negamax, with
-`side_to_move` being `1` for White and `-1` for Black. These are expressed in 
-centipawns, listed below:
-
-| Piece | Value |
-|-------|-------|
-| Pawn  | 100   |
-| Knight| 320   |
-| Bishop| 330   |
-| Rook  | 500   |
-| Queen | 900   |
-| King  | 20000 |
+The self-play algorithm from AlphaZero was implemented in the scripts under the
+`eval_models` script, and a neural network was trained to evaluate board states.
 
 ### Performance
 
