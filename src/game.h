@@ -22,6 +22,7 @@ namespace omegazero {
 using std::cout;
 using std::endl;
 using std::string;
+using std::to_string;
 using std::unordered_map;
 
 auto GetPieceLetter(S8 piece) -> char;
@@ -32,10 +33,17 @@ auto GetPieceType(char piece_ch) -> S8;
 
 class Game {
  public:
-  Game(const string& init_pos, char player_side, float search_time);
+  Game(const string& init_pos, const string& opening_book_path,
+       char player_side, float search_time);
 
   auto IsActive() const -> bool;
+  auto GetOpeningMove(Move& opening_move) -> bool;
 
+  auto MakeEngineMove() -> Move;
+
+  auto GetWinner() const -> S8;
+
+  auto MakeOtherEngineMove(const Move& move) -> void;
   auto OutputWinner() const -> void;
   auto Play() -> void;
   // Output the results of Perft in readable format.
@@ -60,17 +68,25 @@ class Game {
                          S8& start_file, S8& target_rank, S8& target_file,
                          bool& capture_indicated) -> void;
   auto RecordBoardState() -> void;
+  // NOTE: This should be called AFTER a move is made.
+  auto UpdateMoveHistory(string move_str) -> void;
 
   Board board_;
 
   bool game_active_;
+  bool on_opening_;
 
   Engine engine_;
 
   float search_time_;
 
+  int turn_num_;
+  // Store the possible lines to choose from in the opening book.
+  vector<string> opening_book_;
+
   S8 winner_;
 
+  string move_history_;
   string piece_symbols_[kNumPlayers][kNumPieceTypes];
 
   // Implement a custom hash function for unordered_map that calls the board's
@@ -99,6 +115,8 @@ inline auto GetPlayerStr(S8 player) -> string {
 // Implement inline member functions.
 
 inline auto Game::IsActive() const -> bool { return game_active_; }
+
+inline auto Game::GetWinner() const -> S8 { return winner_; }
 
 inline auto Game::OutputWinner() const -> void {
   if (winner_ == kNA) {

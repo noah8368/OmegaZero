@@ -145,7 +145,14 @@ Moves are put in the following order:
 1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
 2. Captures, ordered using the [MVV-LVA](https://www.chessprogramming.org/MVV-LVA) heuristic
 3. Two [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
-4. All other moves.
+4. All other moves, unordered
+
+#### Opening Book
+
+In the beginning of the game, the engine randomly picks an opening from an
+opening book. This list of openings are provided from the text file,
+`p3ECO.txt` written by Paul Onstad (with contributions by Franz Hemmer and
+J.E.H.Shaw). Slight modifications have been made to the file to aid in parsing.
 
 #### Evaluation
 

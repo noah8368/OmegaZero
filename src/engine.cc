@@ -79,11 +79,11 @@ auto Engine::GetBestMove() -> Move {
     try {
       f = MtdfSearch(f, search_depth, kRootNodePly, best_move);
     } catch (OutOfTime& e) {
-      board_->ResetPos();
       break;
     }
   }
 
+  board_->ResetPos();
   return best_move;
 }
 
@@ -182,8 +182,8 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
 // Implement private member functions.
 
 auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
-  // Perform the MTD(f) algorithm, where
-  // TODO: Explain what each variable is.
+  // Perform the MTD(f) algorithm, where f is the first guess for best value,
+  // d is the depth to loop for, and g is the current guess.
   int g = f;
   int upper_bound = kBestEval;
   int lower_bound = kWorstEval;
@@ -216,16 +216,12 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   if (transposition_table_.Access(board_, depth,
                                   transposition_table_stored_eval, node_type)) {
     if (node_type == kPvNode) {
+      pv_move = transposition_table_.GetHashMove(board_);
       return transposition_table_stored_eval;
     } else if (node_type == kCutNode) {
       alpha = max(alpha, transposition_table_stored_eval);
     } else if (node_type == kAllNode) {
       beta = min(beta, transposition_table_stored_eval);
-    }
-
-    if (alpha >= beta) {
-      // Perform a beta-cutoff from the stored value of the transposition table.
-      return transposition_table_stored_eval;
     }
   }
 

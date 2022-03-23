@@ -9,7 +9,10 @@
 
 #include <cstdint>
 #include <ctime>
+#include <fstream>
 #include <iostream>
+#include <iterator>
+#include <random>
 #include <stack>
 #include <stdexcept>
 #include <string>
@@ -25,8 +28,13 @@ namespace omegazero {
 using std::cin;
 using std::cout;
 using std::endl;
+using std::ifstream;
 using std::invalid_argument;
+using std::ios;
+using std::mt19937;
+using std::random_device;
 using std::string;
+using std::uniform_int_distribution;
 using std::vector;
 
 auto GetPieceLetter(S8 piece) -> char {
@@ -68,9 +76,11 @@ auto GetPieceType(char piece_ch) -> S8 {
   }
 }
 
-Game::Game(const string& init_pos, char player_side, float search_time)
+Game::Game(const string& init_pos, const string& opening_book_path,
+           char player_side, float search_time)
     : board_(init_pos), engine_(&board_, player_side, search_time) {
   game_active_ = true;
+  on_opening_ = true;
   search_time_ = search_time;
   winner_ = kNA;
   piece_symbols_[kWhite][kPawn] = "♙";
@@ -85,6 +95,145 @@ Game::Game(const string& init_pos, char player_side, float search_time)
   piece_symbols_[kBlack][kRook] = "♜";
   piece_symbols_[kBlack][kQueen] = "♛";
   piece_symbols_[kBlack][kKing] = "♚";
+
+  // Initialize the opening book with the opening book text file.
+  ifstream opening_book_f(opening_book_path);
+  if (opening_book_f.is_open()) {
+    string f_line;
+    string opening_line;
+    while (getline(opening_book_f, f_line)) {
+      if (f_line.rfind("1.", 0) != string::npos) {
+        for (;;) {
+          // Remove the newline character at the end of the line.
+          f_line.pop_back();
+          opening_line += f_line;
+          // Check if the last three characters of the line are "1/2".
+          if (opening_line.substr(opening_line.length() - 3) == "1/2") {
+            // Add the current opening to the opening book.
+            opening_book_.push_back(opening_line);
+            opening_line.clear();
+            // Start looking for the next opening.
+            break;
+          }
+          // Add on to a current opening.
+          getline(opening_book_f, f_line);
+        }
+      }
+    }
+    opening_book_f.close();
+  } else {
+    throw invalid_argument("Opening book can't be opened");
+  }
+}
+
+auto Game::MakeEngineMove() -> Move {
+  DisplayBoard();
+
+  // Record the current board state to enforce move repitition rules.
+  RecordBoardState();
+  engine_.AddPosToHistory();
+
+  Move engine_move;
+
+  // Check the status of the game.
+  constexpr S8 kMaxMoveRep = 5;
+  S8 game_status = engine_.GetGameStatus();
+  S8 player_to_move = board_.GetPlayerToMove();
+  if (game_status == kPlayerInCheck) {
+    // Inform the user that a player is in check.
+    cout << GetPlayerStr(player_to_move) << " is in check" << endl;
+  } else if (game_status == kDraw || pos_history_[board_] == kMaxMoveRep) {
+    // End the game if a draw has occured.
+    game_active_ = false;
+    return engine_move;
+  } else if (game_status == kPlayerCheckmated) {
+    // Inform the user that a player has been mated.
+    cout << GetPlayerStr(player_to_move) << " has been checkmated" << endl;
+    game_active_ = false;
+    winner_ = GetOtherPlayer(player_to_move);
+    return engine_move;
+  }
+
+  engine_move = engine_.GetBestMove();
+
+  cout << "\n\n"
+       << GetPlayerStr(player_to_move)
+       << "'s move: " << GetFideMoveStr(engine_move) << endl;
+  board_.MakeMove(engine_move);
+  return engine_move;
+}
+
+auto Game::MakeOtherEngineMove(const Move& move) -> void {
+  // Record the current board state to enforce move repitition rules.
+  RecordBoardState();
+  engine_.AddPosToHistory();
+
+  // Check the status of the game.
+  constexpr S8 kMaxMoveRep = 5;
+  S8 game_status = engine_.GetGameStatus();
+  S8 player_to_move = board_.GetPlayerToMove();
+  if (game_status == kPlayerInCheck) {
+    // Inform the user that a player is in check.
+    cout << GetPlayerStr(player_to_move) << " is in check" << endl;
+  } else if (game_status == kDraw || pos_history_[board_] == kMaxMoveRep) {
+    // End the game if a draw has occured.
+    game_active_ = false;
+    return;
+  } else if (game_status == kPlayerCheckmated) {
+    // Inform the user that a player has been mated.
+    cout << GetPlayerStr(player_to_move) << " has been checkmated" << endl;
+    game_active_ = false;
+    winner_ = GetOtherPlayer(player_to_move);
+    return;
+  }
+
+  board_.MakeMove(move);
+}
+
+auto Game::GetOpeningMove(Move& opening_move) -> bool {
+  if (on_opening_) {
+    string opening_line;
+    // Remove all irrelevant opening lines.
+    int last_opening_line_idx = static_cast<int>(opening_book_.size()) - 1;
+    for (int opening_line_idx = last_opening_line_idx; opening_line_idx >= 0;
+         --opening_line_idx) {
+      opening_line = opening_book_[opening_line_idx];
+      // If an opening doesn't match the move history or has no moves left,
+      // remove it as an option.
+      if (opening_line.rfind(move_history_, 0) == string::npos ||
+          opening_line.substr(move_history_.size(), 3) == "1/2") {
+        opening_book_.erase(opening_book_.begin() + opening_line_idx);
+      }
+    }
+
+    // Get next move string.
+    int num_opening_lines = static_cast<int>(opening_book_.size());
+    if (num_opening_lines > 0) {
+      // Pick a random valid opening line.
+      random_device dev;
+      mt19937 rng(dev());
+      uniform_int_distribution<mt19937::result_type> opening_line_rand_dist(
+          0, num_opening_lines - 1);
+      size_t opening_line_idx = opening_line_rand_dist(rng);
+      string rand_opening_line = opening_book_[opening_line_idx];
+
+      // Extract the next move from the line.
+      size_t move_start_idx;
+      if (board_.GetPlayerToMove() == kWhite) {
+        move_start_idx = rand_opening_line.find(".", move_history_.size()) + 1;
+      } else {
+        move_start_idx = move_history_.size();
+      }
+      size_t move_str_len =
+          rand_opening_line.find(" ", move_start_idx) - move_start_idx;
+      string opening_move_str =
+          rand_opening_line.substr(move_start_idx, move_str_len);
+      opening_move = ParseMoveCmd(opening_move_str);
+    } else {
+      on_opening_ = false;
+    }
+  }
+  return on_opening_;
 }
 
 void Game::Play() {
@@ -127,23 +276,24 @@ void Game::Play() {
     return;
   }
 
+  string move_str;
   if (player_to_move == user_side) {
     // Allow the user to take their turn.
     string player_name = GetPlayerStr(player_to_move);
     cout << "\n\n" << player_name << " to move" << endl;
     Move user_move;
-    string err_msg, user_cmd;
+    string err_msg;
   GetMove:
     cout << "Enter move: ";
-    getline(cin, user_cmd);
+    getline(cin, move_str);
 
     // Check if the player has resigned.
-    if (user_cmd == "q") {
+    if (move_str == "q") {
       game_active_ = false;
       winner_ = GetOtherPlayer(player_to_move);
     } else {
       try {
-        user_move = ParseMoveCmd(user_cmd);
+        user_move = ParseMoveCmd(move_str);
         board_.MakeMove(user_move);
       } catch (BadMove& e) {
         cout << "ERROR: Bad Move: " << e.what() << endl;
@@ -152,12 +302,16 @@ void Game::Play() {
     }
   } else {
     // Allow the engine to take its turn.
-    Move engine_move = engine_.GetBestMove();
+    Move engine_move;
+    if (!GetOpeningMove(engine_move)) {
+      engine_move = engine_.GetBestMove();
+    }
+    move_str = GetFideMoveStr(engine_move);
     cout << "\n\n"
-         << GetPlayerStr(player_to_move)
-         << "'s move: " << GetFideMoveStr(engine_move) << endl;
+         << GetPlayerStr(player_to_move) << "'s move: " << move_str << endl;
     board_.MakeMove(engine_move);
   }
+  UpdateMoveHistory(move_str);
 }
 
 auto Game::Test(int depth) -> void {
@@ -254,10 +408,10 @@ auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
 
 auto Game::GetFideMoveStr(const Move& move) -> string {
   string move_str;
-  S8 start_file = GetFileFromSq(move.start_sq);
-  S8 target_file = GetFileFromSq(move.target_sq);
-  S8 target_rank = GetRankFromSq(move.target_sq);
   if (move.castling_type == kNA) {
+    S8 start_file = GetFileFromSq(move.start_sq);
+    S8 target_file = GetFileFromSq(move.target_sq);
+    S8 target_rank = GetRankFromSq(move.target_sq);
     if (move.moving_piece == kPawn && move.captured_piece != kNA) {
       move_str += static_cast<char>(start_file + 'a');
       move_str += 'x';
@@ -273,9 +427,9 @@ auto Game::GetFideMoveStr(const Move& move) -> string {
       if (!OneSqSet(start_sqs)) {
         S8 start_rank = GetRankFromSq(move.start_sq);
         if (OneSqSet(start_sqs & kRankMasks[start_rank])) {
-          move_str += static_cast<char>(start_file + 'a');
-        } else if (OneSqSet(start_sqs & kFileMasks[start_file])) {
           move_str += static_cast<char>(start_rank + '1');
+        } else if (OneSqSet(start_sqs & kFileMasks[start_file])) {
+          move_str += static_cast<char>(start_file + 'a');
         } else {
           move_str += static_cast<char>(start_file + 'a');
           move_str += static_cast<char>(start_rank + '1');
@@ -608,6 +762,26 @@ auto Game::InterpAlgNotation(const string& user_cmd, Move& move, S8& start_rank,
   }
 
   move.target_sq = GetSqFromRankFile(target_rank, target_file);
+}
+
+auto Game::UpdateMoveHistory(string move_str) -> void {
+  S8 moved_player = GetOtherPlayer(board_.GetPlayerToMove());
+  if (moved_player == kWhite) {
+    move_history_ += to_string(turn_num_) + "." + move_str;
+  } else {
+    move_history_ += move_str;
+    ++turn_num_;
+  }
+
+  // Add check and mate indicators.
+  S8 game_status = engine_.GetGameStatus();
+  if (game_status == kPlayerInCheck) {
+    move_history_ += "+ ";
+  } else if (game_status == kPlayerCheckmated) {
+    move_history_ += "#";
+  } else {
+    move_history_ += " ";
+  }
 }
 
 }  // namespace omegazero
