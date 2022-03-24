@@ -334,7 +334,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
 
   // Establish a lower bound for the node evaluation (stand_pat_eval),
   // and perform a beta cutoff if this value exceeds beta.
-  int stand_pat_eval = board_->Evaluate();
+  int stand_pat_eval = board_->Evaluate(InEndgame());
   if (stand_pat_eval >= beta) {
     return beta;
   }
@@ -342,7 +342,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
 
   if (!InEndgame()) {
     // Perfrom delta pruning if not in the endgame.
-    constexpr int kDelta = kPieceVals[kQueen];
+    const int kDelta = kPieceVals[kQueen];
     if (stand_pat_eval < alpha - kDelta) {
       // If the biggest possible material swing won't increase alpha, don't
       // bother searching any captures.

@@ -2,3 +2,4 @@ build
 debug_build
 __pycache__
 **/.vscode/**
+games

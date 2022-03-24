@@ -32,6 +32,7 @@ auto main(int argc, char* argv[]) -> int {
   namespace prog_opt = boost::program_options;
   prog_opt::options_description desc("Options");
   string init_pos;
+  string game_record_file;
   float search_time;
   int depth;
   char player_side;
@@ -48,7 +49,9 @@ auto main(int argc, char* argv[]) -> int {
        "Search time")
       ("opening-book-path,o", prog_opt::value<string>(&opening_book_path),
        "Opening book file path")
-       ("compare,c", "Have two engines play against each other");
+      ("compare,c", "Have two engines play against each other")
+      ("save,s", prog_opt::value<string>(&game_record_file),
+       "File to save the move history to after a game is finished.");
   prog_opt::variables_map var_map;
   try {
     prog_opt::store(prog_opt::parse_command_line(argc, argv, desc), var_map);
@@ -104,8 +107,10 @@ auto main(int argc, char* argv[]) -> int {
       exit(EXIT_SUCCESS);
     }
 
+    bool on_opening =
+      init_pos == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     omegazero::Game game(init_pos, opening_book_path, player_side,
-                         search_time);
+                         search_time, on_opening);
     if (var_map.count("depth")) {
       // Output perft results.
       game.Test(depth);
@@ -115,6 +120,10 @@ auto main(int argc, char* argv[]) -> int {
         game.Play();
       }
       game.OutputWinner();
+
+      if (var_map.count("save")) {
+        game.Save(game_record_file);
+      }
     }
   } catch (invalid_argument& e) {
     cout << "ERROR: Invalid argument: " << e.what() << endl;

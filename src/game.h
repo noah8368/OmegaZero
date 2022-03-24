@@ -34,7 +34,7 @@ auto GetPieceType(char piece_ch) -> S8;
 class Game {
  public:
   Game(const string& init_pos, const string& opening_book_path,
-       char player_side, float search_time);
+       char player_side, float search_time, bool on_opening = true);
 
   auto IsActive() const -> bool;
   auto GetOpeningMove(Move& opening_move) -> bool;
@@ -46,6 +46,7 @@ class Game {
   auto MakeOtherEngineMove(const Move& move) -> void;
   auto OutputWinner() const -> void;
   auto Play() -> void;
+  auto Save(string game_record_file) -> void;
   // Output the results of Perft in readable format.
   auto Test(int depth) -> void;
 
@@ -68,6 +69,7 @@ class Game {
                          S8& start_file, S8& target_rank, S8& target_file,
                          bool& capture_indicated) -> void;
   auto RecordBoardState() -> void;
+  auto RecordFinalScore() -> void;
   // NOTE: This should be called AFTER a move is made.
   auto UpdateMoveHistory(string move_str) -> void;
 
@@ -132,6 +134,16 @@ inline auto Game::RecordBoardState() -> void {
     pos_history_[board_] = 1;
   } else {
     ++pos_history_[board_];
+  }
+}
+
+inline auto Game::RecordFinalScore() -> void {
+  if (winner_ == kWhite) {
+    move_history_ += "1-0";
+  } else if (winner_ == kBlack) {
+    move_history_ += "0-1";
+  } else {
+    move_history_ += "1/2-1/2";
   }
 }
 

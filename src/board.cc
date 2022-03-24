@@ -196,15 +196,33 @@ auto Board::DoublePawnPushLegal(S8 file) const -> bool {
          player_layout_[rank7_double_pawn_push_sq] == kBlack;
 }
 
-auto Board::Evaluate() const -> int {
-  Bitboard white_pieces;
-  Bitboard black_pieces;
+auto Board::Evaluate(bool in_endgame) const -> int {
   int board_score = 0;
-  for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
-    white_pieces = GetPiecesByType(piece_type, kWhite);
-    black_pieces = GetPiecesByType(piece_type, kBlack);
-    board_score += kPieceVals[piece_type] *
-                   (GetNumSetSq(white_pieces) - GetNumSetSq(black_pieces));
+  S8 piece_type;
+  S8 mirror_sq;
+  for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
+    piece_type = GetPieceOnSq(sq);
+    if (piece_type != kNA) {
+      if (GetPlayerOnSq(sq) == kWhite) {
+        // Compute the score contribution of a white piece.
+        board_score += kPieceVals[piece_type];
+        if (in_endgame && piece_type == kKing) {
+          board_score += kKingEndgamePieceSqTable[sq];
+        } else {
+          board_score += kPieceSqTable[piece_type][sq];
+        }
+      } else {
+        // Compute the score contribution of a black piece.
+        board_score -= kPieceVals[piece_type];
+        mirror_sq =
+            GetSqFromRankFile(kRank8 - GetRankFromSq(sq), GetFileFromSq(sq));
+        if (in_endgame && piece_type == kKing) {
+          board_score -= kKingEndgamePieceSqTable[mirror_sq];
+        } else {
+          board_score -= kPieceSqTable[piece_type][mirror_sq];
+        }
+      }
+    }
   }
   S8 moving_side = (player_to_move_ == kWhite) ? 1 : -1;
   return board_score * moving_side;

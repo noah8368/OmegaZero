@@ -156,28 +156,9 @@ J.E.H.Shaw). Slight modifications have been made to the file to aid in parsing.
 
 #### Evaluation
 
-The evaluation function scores the board based purely on material. The formula
-for board scores is
-```
-score = pawn_value * (#white_pawns - #black_pawns)
-        + knight_value * (#white_knights - #black_knights)
-        + bishop_value * (#white_bishops - #black_bishops)
-        + rook_value * (#white_roooks - #black_rooks)
-        + queen_value * (#white_queens - #black_queens)
-        + king_value * (#white_kings - #black_kings) * side_to_move
-```
-Score is relative to the side to move, as required by Negamax, with
-`side_to_move` being `1` for White and `-1` for Black. These are expressed in 
-centipawns, listed below:
-
-| Piece | Value |
-|-------|-------|
-| Pawn  | 100   |
-| Knight| 320   |
-| Bishop| 330   |
-| Rook  | 500   |
-| Queen | 900   |
-| King  | 20000 |
+The evaluation function scores the board by counting material and using
+[Piece Square Tables](https://www.chessprogramming.org/Simplified_Evaluation_Function). Material values and positional bonuses can be easily
+viewed in `eval.cc`.
 
 ### Performance
 

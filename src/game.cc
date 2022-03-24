@@ -32,6 +32,7 @@ using std::ifstream;
 using std::invalid_argument;
 using std::ios;
 using std::mt19937;
+using std::ofstream;
 using std::random_device;
 using std::string;
 using std::uniform_int_distribution;
@@ -77,11 +78,12 @@ auto GetPieceType(char piece_ch) -> S8 {
 }
 
 Game::Game(const string& init_pos, const string& opening_book_path,
-           char player_side, float search_time)
+           char player_side, float search_time, bool on_opening)
     : board_(init_pos), engine_(&board_, player_side, search_time) {
   game_active_ = true;
-  on_opening_ = true;
+  on_opening_ = on_opening;
   search_time_ = search_time;
+  turn_num_ = 1;
   winner_ = kNA;
   piece_symbols_[kWhite][kPawn] = "♙";
   piece_symbols_[kWhite][kKnight] = "♘";
@@ -255,6 +257,7 @@ void Game::Play() {
   } else if (game_status == kDraw || pos_history_[board_] == kMaxMoveRep) {
     // End the game if a draw has occured.
     game_active_ = false;
+    RecordFinalScore();
     return;
   } else if (pos_history_[board_] == kNumMoveRepForOptionalDraw &&
              player_to_move != user_side) {
@@ -266,6 +269,7 @@ void Game::Play() {
     getline(cin, draw_decision);
     if (draw_decision == "y") {
       game_active_ = false;
+      RecordFinalScore();
       return;
     }
   } else if (game_status == kPlayerCheckmated) {
@@ -273,6 +277,7 @@ void Game::Play() {
     cout << GetPlayerStr(player_to_move) << " has been checkmated" << endl;
     game_active_ = false;
     winner_ = GetOtherPlayer(player_to_move);
+    RecordFinalScore();
     return;
   }
 
@@ -291,14 +296,15 @@ void Game::Play() {
     if (move_str == "q") {
       game_active_ = false;
       winner_ = GetOtherPlayer(player_to_move);
-    } else {
-      try {
-        user_move = ParseMoveCmd(move_str);
-        board_.MakeMove(user_move);
-      } catch (BadMove& e) {
-        cout << "ERROR: Bad Move: " << e.what() << endl;
-        goto GetMove;
-      }
+      RecordFinalScore();
+      return;
+    }
+    try {
+      user_move = ParseMoveCmd(move_str);
+      board_.MakeMove(user_move);
+    } catch (BadMove& e) {
+      cout << "ERROR: Bad Move: " << e.what() << endl;
+      goto GetMove;
     }
   } else {
     // Allow the engine to take its turn.
@@ -312,6 +318,17 @@ void Game::Play() {
     board_.MakeMove(engine_move);
   }
   UpdateMoveHistory(move_str);
+}
+
+auto Game::Save(string game_record_file) -> void {
+  // Initialize the opening book with the opening book text file.
+  ofstream game_record_f(game_record_file);
+  if (game_record_f.is_open()) {
+    game_record_f << move_history_ << "\n";
+    game_record_f.close();
+  } else {
+    throw invalid_argument("Game record file can't be created");
+  }
 }
 
 auto Game::Test(int depth) -> void {
@@ -778,7 +795,7 @@ auto Game::UpdateMoveHistory(string move_str) -> void {
   if (game_status == kPlayerInCheck) {
     move_history_ += "+ ";
   } else if (game_status == kPlayerCheckmated) {
-    move_history_ += "#";
+    move_history_ += "# ";
   } else {
     move_history_ += " ";
   }

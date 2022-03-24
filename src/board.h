@@ -99,10 +99,6 @@ constexpr S8 kNumRanks = 8;
 constexpr S8 kNumSliderMaps = 2;
 constexpr S8 kNumSq = 64;
 
-// Store piece values expressed in centipawns for evaluation function. Piece
-// order in array is pawn, knight, bishop, rook, queen, king.
-constexpr int kPieceVals[kNumPieceTypes] = {100, 320, 330, 500, 900, 20000};
-
 constexpr Bitboard kFileMasks[kNumFiles] = {
     0X0101010101010101, 0X0202020202020202, 0X0404040404040404,
     0X0808080808080808, 0X1010101010101010, 0X2020202020202020,
@@ -135,6 +131,10 @@ extern const Bitboard kSliderPieceMaps[kNumSliderMaps][kNumSq];
 // Store all positions bishop and rook pieces can move to on an empty board,
 // including endpoints.
 extern const Bitboard kUnblockedSliderAttackMaps[kNumSliderMaps][kNumSq];
+
+extern const int kPieceVals[kNumPieceTypes];
+extern const int kPieceSqTable[kNumPieceTypes][kNumSq];
+extern const int kKingEndgamePieceSqTable[kNumSq];
 
 extern const U64 kMagics[kNumSliderMaps][kNumSq];
 
@@ -173,7 +173,7 @@ class Board {
   // Compute and return a static evaluation of the board state. This score is
   // relative to the side being evaluated and symmetric, as required by the
   // Negamax Algorithm.
-  auto Evaluate() const -> int;
+  auto Evaluate(bool in_endgame) const -> int;
 
   auto GetEpTargetSq() const -> S8;
   auto GetHalfmoveClock() const -> S8;
