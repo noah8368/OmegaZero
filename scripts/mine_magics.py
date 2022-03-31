@@ -10,7 +10,8 @@ should be ran by the included project Makefile.
 Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
 """
 
-from generate_masks import format_hex, MaskGenerator
+from generate_masks import get_slider_attack_mask, get_slider_piece_mask
+from generate_masks import format_hex
 import os
 import random
 
@@ -43,7 +44,6 @@ class MagicsGenerator:
           [12, 11, 11, 11, 11, 11, 11, 12]
         ]
         self.rook_moves = [(0, 1), (1, 0), (0, -1), (-1, 0)]
-        self.mask_gen = MaskGenerator()
         self.max_attempts = max_attempts
 
         self.index_to_attack_mask_map = {}
@@ -62,7 +62,7 @@ class MagicsGenerator:
         """Generates a random value and checks if it is a valid magic."""
         num_set_bits = self.count_set_bits(piece_mask)
         num_blocker_masks = 2 ** num_set_bits
-        blocker_to_attack_mask_map = {}
+        blocker_to_attack_map = {}
         if piece_type == "BISHOP":
             moves = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
         elif piece_type == "ROOK":
@@ -79,11 +79,10 @@ class MagicsGenerator:
                     if not (blocker_mask_index & (1 << set_bit_index)):
                         blocker_mask &= ~(1 << square_index)
                     set_bit_index += 1
-            attack_mask = self.mask_gen.get_slider_attack_mask(moves,
-                                                               blocker_mask,
-                                                               rank, file)
+            attack_mask = get_slider_attack_mask(moves, blocker_mask,
+                                                 rank, file)
             if blocker_mask != 0X0:
-                blocker_to_attack_mask_map[blocker_mask] = attack_mask
+                blocker_to_attack_map[blocker_mask] = attack_mask
 
         for trial in range(self.max_attempts):
             magic_is_valid = True
@@ -100,7 +99,7 @@ class MagicsGenerator:
 
             # Check that the magic number hashes all occupancy masks correctly
             # to each corresponding attack set
-            for blocker_mask, attack_mask in blocker_to_attack_mask_map.items():
+            for blocker_mask, attack_mask in blocker_to_attack_map.items():
                 index = magic * blocker_mask >> self.num_sq - magic_len
 
                 # Check that the index is not bigger than magic_len bits
@@ -125,7 +124,7 @@ class MagicsGenerator:
         for rank in range(self.num_ranks):
             for file in range(self.num_files):
                 if piece_type == "BISHOP":
-                    bishop_mask = self.mask_gen.get_slider_piece_mask(
+                    bishop_mask = get_slider_piece_mask(
                         rank, file, self.bishop_moves
                     )
                     magic_len = self.bishop_magics_lengths[rank][file]
@@ -133,7 +132,7 @@ class MagicsGenerator:
                         rank, file, bishop_mask, magic_len, piece_type
                     )
                 elif piece_type == "ROOK":
-                    rook_mask = self.mask_gen.get_slider_piece_mask(
+                    rook_mask = get_slider_piece_mask(
                         rank, file, self.rook_moves
                     )
                     magic_len = self.rook_magics_lengths[rank][file]

@@ -6,9 +6,10 @@ OPT_FLAGS = -Ofast -D_GLIBCXX_PARALLEL -fno-signed-zeros -fno-trapping-math \
             -fopenmp -frename-registers -funroll-loops
 DEBUG_OBJECTS = debug_build/board.o debug_build/engine.o debug_build/game.o \
 				debug_build/magics.o debug_build/main.o debug_build/masks.o \
-				debug_build/transposition_table.o debug_build/eval.o
+				debug_build/transposition_table.o debug_build/piece_sq_tables.o
 OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \
-          build/main.o build/masks.o build/transposition_table.o build/eval.o
+          build/main.o build/masks.o build/transposition_table.o \
+		  build/piece_sq_tables.o
 
 all : build $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS) $(OPT_FLAGS)

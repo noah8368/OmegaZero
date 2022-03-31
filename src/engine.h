@@ -10,9 +10,10 @@
 #ifndef OMEGAZERO_SRC_ENGINE_H_
 #define OMEGAZERO_SRC_ENGINE_H_
 
+#include <float.h>
+
 #include <algorithm>
 #include <chrono>
-#include <iostream>  // DEBUG
 #include <queue>
 #include <stdexcept>
 #include <utility>
@@ -29,6 +30,7 @@ using std::begin;
 using std::copy;
 using std::end;
 using std::invalid_argument;
+using std::numeric_limits;
 using std::pair;
 using std::queue;
 using std::unordered_map;
@@ -48,11 +50,11 @@ constexpr int kRanOutOfTime = 2;
 constexpr int kSearchLimit = 30;
 
 // Store values used for transposition table move ordering.
-constexpr int kBestEval = INT32_MAX;
-constexpr int kNeutralEval = 0;
+constexpr float kBestEval = FLT_MAX;
+constexpr float kNeutralEval = 0.0;
 // Use -INT32_MAX rather than INT32_MIN to avoid integer overflow when
 // multipying by -1 during the search function.
-constexpr int kWorstEval = -INT32_MAX;
+constexpr float kWorstEval = -FLT_MAX;
 
 constexpr S8 kSixPlys = 6;
 
@@ -92,14 +94,14 @@ class Engine {
   // Computes best evaluation resulting from a legal move for the moving
   // player by searching the tree of possible moves using the Negamax
   // algorithm.
-  auto MtdfSearch(int f, int d, int ply, Move& best_move) -> int;
-  auto NegamaxSearch(int alpha, int beta, int depth, int ply,
-                     bool null_move_allowed) -> int;
-  auto NegamaxSearch(Move& pv_move, int alpha, int beta, int depth, int ply,
-                     bool null_move_allowed) -> int;
+  auto MtdfSearch(float f, int d, int ply, Move& best_move) -> float;
+  auto NegamaxSearch(float alpha, float beta, int depth, int ply,
+                     bool null_move_allowed) -> float;
+  auto NegamaxSearch(Move& pv_move, float alpha, float beta, int depth, int ply,
+                     bool null_move_allowed) -> float;
   // Search until a "quiescent" position is reached (no capturing moves can be
   // made) to mitigate the horizon effect.
-  auto QuiescenceSearch(int alpha, int beta) -> int;
+  auto QuiescenceSearch(float alpha, float beta) -> float;
 
   // Attempts to predict which moves are likely to be better, and order those
   // towards the front of the move_list to increase the number of moves that
@@ -192,8 +194,8 @@ inline auto Engine::ZugzwangUnlikely() const -> bool {
   return GetNumSetSq(non_pawn_king_pieces) >= 1;
 }
 
-inline auto Engine::NegamaxSearch(int alpha, int beta, int depth, int ply,
-                                  bool null_move_allowed) -> int {
+inline auto Engine::NegamaxSearch(float alpha, float beta, int depth, int ply,
+                                  bool null_move_allowed) -> float {
   Move throwaway_move;
   return NegamaxSearch(throwaway_move, alpha, beta, depth, ply,
                        null_move_allowed);

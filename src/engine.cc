@@ -67,6 +67,7 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
 
 auto Engine::GetBestMove() -> Move {
   transposition_table_.Clear();
+  board_->ClearPawnTable();
   Move best_move;
   board_->SavePos();
   constexpr int kRootNodePly = 0;
@@ -181,13 +182,13 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
 
 // Implement private member functions.
 
-auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
+auto Engine::MtdfSearch(float f, int d, int ply, Move& best_move) -> float {
   // Perform the MTD(f) algorithm, where f is the first guess for best value,
   // d is the depth to loop for, and g is the current guess.
-  int g = f;
-  int upper_bound = kBestEval;
-  int lower_bound = kWorstEval;
-  int beta;
+  float g = f;
+  float upper_bound = kBestEval;
+  float lower_bound = kWorstEval;
+  float beta;
   Move move;
   while (lower_bound < upper_bound) {
     beta = max(g, lower_bound + 1);
@@ -205,12 +206,12 @@ auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
   return g;
 }
 
-auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
-                           int ply, bool null_move_allowed) -> int {
+auto Engine::NegamaxSearch(Move& pv_move, float alpha, float beta, int depth,
+                           int ply, bool null_move_allowed) -> float {
   CheckSearchTime();
 
-  int orig_alpha = alpha;
-  int transposition_table_stored_eval;
+  float orig_alpha = alpha;
+  float transposition_table_stored_eval;
   S8 node_type;
   // Check the transposition table for previously stored evaluations.
   if (transposition_table_.Access(board_, depth,
@@ -244,7 +245,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   if (depth >= kNullMoveDepthMin && null_move_allowed && !at_pv_node &&
       ZugzwangUnlikely() && !board_->KingInCheck()) {
     board_->MakeNullMove();
-    int null_move_eval =
+    float null_move_eval =
         -NegamaxSearch(-beta, -alpha, depth - R - 1, ply + 1, false);
     board_->UnmakeNullMove();
     if (null_move_eval >= beta) {
@@ -263,8 +264,8 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   queue<U64> saved_pos_history = pos_history_;
   Move best_move;
   Move move;
-  int best_eval = kWorstEval;
-  int search_eval;
+  float best_eval = kWorstEval;
+  float search_eval;
   int depth_reduction;
   // Iterate through all child nodes of the current position.
   size_t num_moves = move_list.size();
@@ -324,7 +325,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   return best_eval;
 }
 
-auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
+auto Engine::QuiescenceSearch(float alpha, float beta) -> float {
   S8 game_status = GetGameStatus();
   if (game_status == kPlayerCheckmated) {
     return kWorstEval;
@@ -334,7 +335,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
 
   // Establish a lower bound for the node evaluation (stand_pat_eval),
   // and perform a beta cutoff if this value exceeds beta.
-  int stand_pat_eval = board_->Evaluate(InEndgame());
+  float stand_pat_eval = board_->Evaluate();
   if (stand_pat_eval >= beta) {
     return beta;
   }
@@ -342,7 +343,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
 
   if (!InEndgame()) {
     // Perfrom delta pruning if not in the endgame.
-    const int kDelta = kPieceVals[kQueen];
+    const float kDelta = kPieceVals[kQueen];
     if (stand_pat_eval < alpha - kDelta) {
       // If the biggest possible material swing won't increase alpha, don't
       // bother searching any captures.

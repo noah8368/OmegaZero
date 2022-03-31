@@ -45,10 +45,12 @@ Board::Board(const string& init_pos) {
     }
   }
   ep_target_sq_ = kNA;
+  // Initialize player to move as White in case the FEN string doesn't specify.
+  player_to_move_ = kWhite;
 
   // Set the piece positions, castling rights, and player to move.
   InitBoardPos(init_pos);
-  InitBoardHash();
+  InitHash();
 }
 
 auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
@@ -196,34 +198,27 @@ auto Board::DoublePawnPushLegal(S8 file) const -> bool {
          player_layout_[rank7_double_pawn_push_sq] == kBlack;
 }
 
-auto Board::Evaluate(bool in_endgame) const -> int {
-  int board_score = 0;
-  S8 piece_type;
-  S8 mirror_sq;
-  for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
-    piece_type = GetPieceOnSq(sq);
-    if (piece_type != kNA) {
-      if (GetPlayerOnSq(sq) == kWhite) {
-        // Compute the score contribution of a white piece.
-        board_score += kPieceVals[piece_type];
-        if (in_endgame && piece_type == kKing) {
-          board_score += kKingEndgamePieceSqTable[sq];
-        } else {
-          board_score += kPieceSqTable[piece_type][sq];
-        }
-      } else {
-        // Compute the score contribution of a black piece.
-        board_score -= kPieceVals[piece_type];
-        mirror_sq =
-            GetSqFromRankFile(kRank8 - GetRankFromSq(sq), GetFileFromSq(sq));
-        if (in_endgame && piece_type == kKing) {
-          board_score -= kKingEndgamePieceSqTable[mirror_sq];
-        } else {
-          board_score -= kPieceSqTable[piece_type][mirror_sq];
-        }
-      }
-    }
+auto Board::Evaluate() -> float {
+  float board_score = 0.0;
+  Bitboard white_pawn_attackspan;
+  Bitboard white_pawn_attack_map;
+  Bitboard white_pawn_defender_map;
+  Bitboard black_pawn_attackspan;
+  Bitboard black_pawn_attack_map;
+  Bitboard black_pawn_defender_map;
+  board_score += EvaluatePiecePositions(
+      white_pawn_attackspan, white_pawn_attack_map, white_pawn_defender_map,
+      black_pawn_attackspan, black_pawn_attack_map, black_pawn_defender_map);
+
+  float pawn_eval;
+  U64 pawn_hash = GetPawnHash();
+  if (!pawn_table_.Access(pawn_hash, pawn_eval)) {
+    pawn_eval = EvaluatePawnStructure(
+        white_pawn_attackspan, white_pawn_attack_map, white_pawn_defender_map,
+        black_pawn_attackspan, black_pawn_attack_map, black_pawn_defender_map);
+    pawn_table_.Update(pawn_hash, pawn_eval);
   }
+  board_score += pawn_eval;
   S8 moving_side = (player_to_move_ == kWhite) ? 1 : -1;
   return board_score * moving_side;
 }
@@ -258,6 +253,10 @@ auto Board::ResetPos() -> void {
   halfmove_clock_history_ = saved_pos_info_.halfmove_clock_history;
 
   board_hash_ = saved_pos_info_.board_hash;
+  pawn_hash_ = saved_pos_info_.pawn_hash;
+
+  // DEBUG
+  pawn_table_.GetHitRate();
 }
 
 auto Board::SavePos() -> void {
@@ -288,6 +287,7 @@ auto Board::SavePos() -> void {
   saved_pos_info_.halfmove_clock_history = halfmove_clock_history_;
 
   saved_pos_info_.board_hash = board_hash_;
+  saved_pos_info_.pawn_hash = pawn_hash_;
 }
 
 auto Board::MakeMove(const Move& move) -> void {
@@ -500,6 +500,142 @@ auto Board::GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard {
           GetPiecesByType(kKing, attacking_player));
 }
 
+auto Board::EvaluatePiecePositions(
+    Bitboard& white_attackspan, Bitboard& white_attack_map,
+    Bitboard& white_defender_map, Bitboard& black_attackspan,
+    Bitboard& black_attack_map, Bitboard& black_defender_map) const -> float {
+  // Initialize the attacks and attackspans.
+  white_attackspan = 0X0;
+  white_attack_map = 0X0;
+  white_defender_map = 0X0;
+  black_attackspan = 0X0;
+  black_attack_map = 0X0;
+  black_defender_map = 0X0;
+
+  float material_bonus = 0.0;
+  S8 piece_type;
+  S8 mirror_sq;
+  for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
+    piece_type = GetPieceOnSq(sq);
+    if (piece_type != kNA) {
+      // Count material and add positional bonuses.
+      if (GetPlayerOnSq(sq) == kWhite) {
+        // Compute the score contribution of a white piece.
+        material_bonus +=
+            (kPieceVals[piece_type] + kPieceSqTable[piece_type][sq]);
+
+        if (piece_type == kPawn) {
+          // Compute the contribution to the cummulative white pawn attackspan,
+          // attack map, and defender map.
+          white_attackspan |= kPawnFrontAttackspanMasks[kWhite][sq];
+          white_attack_map |= kNonSliderAttackMaps[kWhitePawnCapture][sq];
+          white_defender_map |= kNonSliderAttackMaps[kBlackPawnCapture][sq];
+        }
+      } else {
+        // Compute the score contribution of a black piece.
+        mirror_sq =
+            GetSqFromRankFile(kRank8 - GetRankFromSq(sq), GetFileFromSq(sq));
+        material_bonus -=
+            (kPieceVals[piece_type] + kPieceSqTable[piece_type][mirror_sq]);
+
+        if (piece_type == kPawn) {
+          // Compute the contribution to the cummulative black pawn attackspan,
+          // attack map, and defender map.
+          black_attackspan |= kPawnFrontAttackspanMasks[kBlack][sq];
+          black_attack_map |= kNonSliderAttackMaps[kBlackPawnCapture][sq];
+          black_defender_map |= kNonSliderAttackMaps[kWhitePawnCapture][sq];
+        }
+      }
+    }
+  }
+  return material_bonus;
+}
+
+auto Board::EvaluatePawnStructure(Bitboard white_attackspan,
+                                  Bitboard white_attack_map,
+                                  Bitboard white_defender_map,
+                                  Bitboard black_attackspan,
+                                  Bitboard black_attack_map,
+                                  Bitboard black_defender_map) const -> float {
+  // Define pawn structure bonuses and penalties.
+  constexpr float kBackwardPawnPenalty = 1.5;
+  constexpr float kDoubledPawnPenalty = 7;
+  constexpr float kIsolatedPawnPenalty = 2;
+  constexpr float kNeighborBonus = 1.5;
+  constexpr float kDefenderBonus = 2;
+  constexpr float kPassedPawnBonus[kNumRanks] = {3, 8, 13, 18, 23, 28, 33, 0};
+
+  Bitboard pawns;
+  Bitboard pawns_on_file;
+  Bitboard neighor_files;
+  float pawn_eval = 0.0;
+  S8 player_side;
+  for (S8 player = kWhite; player <= kBlack; ++player) {
+    pawns = GetPiecesByType(kPawn, player);
+    player_side = (player == kWhite) ? 1 : -1;
+    for (S8 file = kFileA; file <= kFileH; ++file) {
+      pawns_on_file = pawns & kFileMasks[file];
+      if (static_cast<bool>(pawns_on_file)) {
+        if (MultipleSetSq(pawns_on_file)) {
+          // Add a penalty for doubled pawns.
+          pawn_eval -= (player_side * kDoubledPawnPenalty);
+        } else {
+          // Determine if a lone pawn on a file is a passer.
+          S8 pawn_sq = GetSqOfFirstPiece(pawns_on_file);
+          if (!static_cast<bool>(
+                  kPawnFrontSpanMasks[player][pawn_sq] &
+                  GetPiecesByType(kPawn, GetOtherPlayer(player)))) {
+            // Add a bonus for passed pawns.
+            S8 passer_rank = GetRankFromSq(pawn_sq);
+            pawn_eval += (player_side * kPassedPawnBonus[passer_rank]);
+          } else {
+            // Compute neighbor file bitmask.
+            neighor_files = 0X0;
+            if (file != kFileA) {
+              neighor_files |= kFileMasks[file - 1];
+            }
+            if (file != kFileH) {
+              neighor_files |= kFileMasks[file + 1];
+            }
+            // Determine if a non-passer pawn is isolated.
+            if (!static_cast<bool>(neighor_files & pawns)) {
+              // Add penalties for isolated pawns that aren't passers.
+              pawn_eval -= (player_side * kIsolatedPawnPenalty);
+            }
+          }
+        }
+      }
+    }
+
+    // Add penalties for backward pawns.
+    Bitboard pawn_stops = (player == kWhite)
+                              ? GetPiecesByType(kPawn, kWhite) << kNumFiles
+                              : GetPiecesByType(kPawn, kBlack) >> kNumFiles;
+    Bitboard backward_pawns =
+        (player == kWhite)
+            ? (pawn_stops & black_attack_map & ~white_attackspan) >> kNumFiles
+            : (pawn_stops & white_attack_map & ~black_attackspan) << kNumFiles;
+    pawn_eval -=
+        (player_side * GetNumSetSq(backward_pawns) * kBackwardPawnPenalty);
+
+    // Add bonuses for pawns with a east neighbor, which are at least members of
+    // a duo.
+    Bitboard pawns_with_east_neighbor = (GetPiecesByType(kPawn, player) >> 1) &
+                                        GetPiecesByType(kPawn, player) &
+                                        ~kFileMasks[kFileH];
+    pawn_eval +=
+        (player_side * GetNumSetSq(pawns_with_east_neighbor) * kNeighborBonus);
+
+    // Add bonuses for defended pawns.
+    Bitboard defenders =
+        (player == kWhite)
+            ? (GetPiecesByType(kPawn, kWhite) & white_defender_map)
+            : (GetPiecesByType(kPawn, kBlack) & black_defender_map);
+    pawn_eval += (player_side * GetNumSetSq(defenders) * kDefenderBonus);
+  }
+  return pawn_eval;
+}
+
 auto Board::AddPiece(S8 piece_type, S8 player, S8 sq) -> void {
   if (!SqOnBoard(sq)) {
     throw invalid_argument("sq in Board::AddPiece()");
@@ -520,9 +656,11 @@ auto Board::AddPiece(S8 piece_type, S8 player, S8 sq) -> void {
   }
 }
 
-auto Board::InitBoardHash() -> void {
-  // Use the Zobrist Hashing algorithm to initialize a board hash.
+// Use the Zobrist Hashing algorithm to initialize a board hash.
+auto Board::InitHash() -> void {
   board_hash_ = 0ULL;
+  pawn_hash_ = 0ULL;
+
   // Initialize the Mersenne Twister 64 bit pseudo-random number generator.
   U64 seed = std::chrono::system_clock::now().time_since_epoch().count();
   std::mt19937_64 rand_num_gen(seed);
@@ -551,6 +689,9 @@ auto Board::InitBoardHash() -> void {
       piece_type = piece_layout_[sq];
       if (piece_type != kNA) {
         board_hash_ ^= piece_rand_nums_[piece_type][sq];
+        if (piece_type == kPawn) {
+          pawn_hash_ ^= piece_rand_nums_[kPawn][sq];
+        }
       }
     }
   }
@@ -564,6 +705,8 @@ auto Board::InitBoardHash() -> void {
 auto Board::InitBoardPos(const std::string& init_pos) -> void {
   S8 FEN_field = 0;
   S8 current_sq = kSqA8;
+  bool white_king_added = false;
+  bool black_king_added = false;
   for (char ch : init_pos) {
     // Keep track of which of the six fields is currently being parsed.
     if (ch == ' ') {
@@ -597,6 +740,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
             break;
           case 'K':
             AddPiece(kKing, kWhite, current_sq);
+            white_king_added = true;
             break;
           // Check for black pieces.
           case 'p':
@@ -616,6 +760,7 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
             break;
           case 'k':
             AddPiece(kKing, kBlack, current_sq);
+            black_king_added = true;
             break;
           default:
             throw invalid_argument("board initialization FEN string");
@@ -704,6 +849,10 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
       throw invalid_argument("board initialization FEN string");
     }
   }
+
+  if (!white_king_added || !black_king_added) {
+    throw invalid_argument("board initialization FEN string");
+  }
 }
 
 auto Board::MakeNonCastlingMove(const Move& move) -> void {
@@ -729,6 +878,7 @@ auto Board::MakeNonCastlingMove(const Move& move) -> void {
       player_pieces_[other_player] &= ep_capture_mask;
       // Update the board hash to reflect piece removal.
       board_hash_ ^= piece_rand_nums_[kPawn][ep_capture_sq];
+      pawn_hash_ ^= piece_rand_nums_[kPawn][ep_capture_sq];
     } else {
       // Remove the captured piece from the board.
       Bitboard piece_capture_mask = ~(1ULL << move.target_sq);
@@ -736,6 +886,9 @@ auto Board::MakeNonCastlingMove(const Move& move) -> void {
       player_pieces_[other_player] &= piece_capture_mask;
       // Update the board hash to reflect piece removal.
       board_hash_ ^= piece_rand_nums_[move.captured_piece][move.target_sq];
+      if (move.captured_piece == kPawn) {
+        pawn_hash_ ^= piece_rand_nums_[kPawn][move.target_sq];
+      }
     }
   }
 
@@ -764,6 +917,9 @@ auto Board::MovePiece(S8 piece, S8 start_sq, S8 target_sq, S8 promoted_to_piece)
   player_pieces_[player_to_move_] &= rm_piece_mask;
   // Update the board hash to reflect piece removal.
   board_hash_ ^= piece_rand_nums_[piece][start_sq];
+  if (piece == kPawn) {
+    pawn_hash_ ^= piece_rand_nums_[kPawn][start_sq];
+  }
 
   // Add the selected piece back at its target position on the board and update
   // the board hash to reflect piece addition.
@@ -772,6 +928,9 @@ auto Board::MovePiece(S8 piece, S8 start_sq, S8 target_sq, S8 promoted_to_piece)
     pieces_[piece] |= new_piece_pos_mask;
     piece_layout_[target_sq] = piece;
     board_hash_ ^= piece_rand_nums_[piece][target_sq];
+    if (piece == kPawn) {
+      pawn_hash_ ^= piece_rand_nums_[kPawn][target_sq];
+    }
   } else {
     // Add a piece back as the type it promotes to if move is a pawn promotion.
     pieces_[promoted_to_piece] |= new_piece_pos_mask;
@@ -806,6 +965,7 @@ auto Board::UnmakeNonCastlingMove(const Move& move) -> void {
     player_layout_[move.start_sq] = player_to_move_;
     // Update the board hash to reflect piece addition.
     board_hash_ ^= piece_rand_nums_[kPawn][move.start_sq];
+    pawn_hash_ ^= piece_rand_nums_[kPawn][move.start_sq];
   }
 
   // Place a captured piece back onto the board.
@@ -829,6 +989,7 @@ auto Board::UnmakeNonCastlingMove(const Move& move) -> void {
       player_pieces_[other_player] |= undo_ep_capture_mask;
       // Update the board hash to reflect piece addition.
       board_hash_ ^= piece_rand_nums_[kPawn][ep_capture_sq];
+      pawn_hash_ ^= piece_rand_nums_[kPawn][ep_capture_sq];
     } else {
       Bitboard undo_capture_mask = 1ULL << move.target_sq;
       // Add the captured piece back to its original position.
@@ -838,6 +999,9 @@ auto Board::UnmakeNonCastlingMove(const Move& move) -> void {
       player_layout_[move.target_sq] = other_player;
       // Update the board hash to reflect piece addition.
       board_hash_ ^= piece_rand_nums_[move.captured_piece][move.target_sq];
+      if (move.captured_piece == kPawn) {
+        pawn_hash_ ^= piece_rand_nums_[kPawn][move.target_sq];
+      }
     }
   }
 }

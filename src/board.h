@@ -16,6 +16,7 @@
 #include <unordered_map>
 
 #include "move.h"
+#include "pawn_table.h"
 
 namespace omegazero {
 
@@ -99,6 +100,10 @@ constexpr S8 kNumRanks = 8;
 constexpr S8 kNumSliderMaps = 2;
 constexpr S8 kNumSq = 64;
 
+// Store piece values expressed in centipawns for evaluation function. Piece
+// order in array is pawn, knight, bishop, rook, queen, king.
+constexpr float kPieceVals[kNumPieceTypes] = {100, 320, 330, 500, 900, 20000};
+
 constexpr Bitboard kFileMasks[kNumFiles] = {
     0X0101010101010101, 0X0202020202020202, 0X0404040404040404,
     0X0808080808080808, 0X1010101010101010, 0X2020202020202020,
@@ -131,26 +136,27 @@ extern const Bitboard kSliderPieceMaps[kNumSliderMaps][kNumSq];
 // Store all positions bishop and rook pieces can move to on an empty board,
 // including endpoints.
 extern const Bitboard kUnblockedSliderAttackMaps[kNumSliderMaps][kNumSq];
+extern const Bitboard kPawnFrontAttackspanMasks[kNumPlayers][kNumSq];
+extern const Bitboard kPawnFrontSpanMasks[kNumPlayers][kNumSq];
 
-extern const int kPieceVals[kNumPieceTypes];
-extern const int kPieceSqTable[kNumPieceTypes][kNumSq];
-extern const int kKingEndgamePieceSqTable[kNumSq];
+extern const float kPieceSqTable[kNumPieceTypes][kNumSq];
 
 extern const U64 kMagics[kNumSliderMaps][kNumSq];
 
 extern const std::unordered_map<U64, Bitboard> kMagicIndexToAttackMap;
 
-auto OneSqSet(const Bitboard& board) -> bool;
+auto MultipleSetSq(Bitboard board) -> bool;
+auto OneSqSet(Bitboard board) -> bool;
 auto RankOnBoard(S8 rank) -> bool;
 auto FileOnBoard(S8 file) -> bool;
 auto SqOnBoard(S8 sq) -> bool;
 
 auto GetOtherPlayer(S8 player) -> S8;
-auto GetNumSetSq(const Bitboard& board) -> S8;
+auto GetNumSetSq(Bitboard board) -> S8;
 auto GetFileFromSq(S8 sq) -> S8;
 auto GetRankFromSq(S8 sq) -> S8;
 auto GetSqFromRankFile(S8 rank, S8 file) -> S8;
-auto GetSqOfFirstPiece(const Bitboard& board) -> S8;
+auto GetSqOfFirstPiece(Bitboard board) -> S8;
 
 // Clear the least significant bit set of the passed in bitboard.
 auto RemoveFirstSq(Bitboard& board) -> void;
@@ -173,7 +179,7 @@ class Board {
   // Compute and return a static evaluation of the board state. This score is
   // relative to the side being evaluated and symmetric, as required by the
   // Negamax Algorithm.
-  auto Evaluate(bool in_endgame) const -> int;
+  auto Evaluate() -> float;
 
   auto GetEpTargetSq() const -> S8;
   auto GetHalfmoveClock() const -> S8;
@@ -184,6 +190,7 @@ class Board {
   // Return an (almost) unique hash that represents the current board state.
   auto GetBoardHash() const -> U64;
 
+  auto ClearPawnTable() -> void;
   // Resets information edited during search after a search is interrupted
   // during iterative deepening.
   // WARNING: Calling this function without first calling SavePos() will cause
@@ -207,8 +214,26 @@ class Board {
  private:
   auto GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard;
 
+  // Weighs material balance and positional bonuses and computes the white and
+  // black pawn cummulative front attackspans for evaluating pawn structure.
+  auto EvaluatePiecePositions(Bitboard& white_attackspan,
+                              Bitboard& white_attack_map,
+                              Bitboard& white_defender_map,
+                              Bitboard& black_attackspan,
+                              Bitboard& black_attack_map,
+                              Bitboard& black_defender_map) const -> float;
+  auto EvaluatePawnStructure(Bitboard white_attackspan,
+                             Bitboard white_attack_map,
+                             Bitboard white_defender_map,
+                             Bitboard black_attackspan,
+                             Bitboard black_attack_map,
+                             Bitboard black_defender_map) const -> float;
+
+  // Get a hash of the current pawn structure;
+  auto GetPawnHash() const -> U64;
+
   auto AddPiece(S8 piece_type, S8 player, S8 sq) -> void;
-  auto InitBoardHash() -> void;
+  auto InitHash() -> void;
   // Parse a FEN string to initialize the board state.
   auto InitBoardPos(const std::string& init_pos) -> void;
   auto MakeNonCastlingMove(const Move& move) -> void;
@@ -239,6 +264,7 @@ class Board {
     stack<S8> halfmove_clock_history;
 
     U64 board_hash;
+    U64 pawn_hash;
   } saved_pos_info_;
 
   // Store bitboard board representations of each type
@@ -249,6 +275,8 @@ class Board {
   Bitboard player_pieces_[kNumPlayers];
 
   bool castling_rights_[kNumPlayers][kNumBoardSides];
+
+  PawnTable pawn_table_;
 
   // Keep track of the square (if it exists) an en passent move is elligible
   // to land on during a given turn.
@@ -271,6 +299,7 @@ class Board {
 
   // Store a set of pseudo-random numbers for Zobrist Hashing.
   U64 board_hash_;
+  U64 pawn_hash_;
   U64 castling_rights_rand_nums_[kNumPlayers][kNumBoardSides];
   U64 ep_file_rand_nums_[kNumFiles];
   U64 piece_rand_nums_[kNumPieceTypes][kNumSq];
@@ -279,7 +308,11 @@ class Board {
 
 // Implement public inline non-member functions.
 
-inline auto OneSqSet(const Bitboard& board) -> bool {
+inline auto MultipleSetSq(Bitboard board) -> bool {
+  return static_cast<bool>(board & (board - 1));
+}
+
+inline auto OneSqSet(Bitboard board) -> bool {
   return board && !static_cast<bool>(board & (board - 1));
 }
 
@@ -304,7 +337,7 @@ inline auto GetOtherPlayer(S8 player) -> S8 {
   throw invalid_argument("player in GetOtherPlayer()");
 }
 
-inline auto GetNumSetSq(Bitboard& board) -> S8 {
+inline auto GetNumSetSq(Bitboard board) -> S8 {
   constexpr U64 kOddBitsMask = 0X5555555555555555ULL;
   board = board - ((board >> 1) & kOddBitsMask);
   constexpr U64 kDuoCountMask = 0X3333333333333333ULL;
@@ -346,7 +379,7 @@ inline auto GetSqFromRankFile(S8 rank, S8 file) -> S8 {
   return static_cast<S8>(rank * kNumFiles + file);
 }
 
-inline auto GetSqOfFirstPiece(const Bitboard& board) -> S8 {
+inline auto GetSqOfFirstPiece(Bitboard board) -> S8 {
   if (board == 0X0) {
     throw invalid_argument("board in GetSqOfFirstPiece()");
   }
@@ -394,11 +427,15 @@ inline auto Board::GetPlayerToMove() const -> S8 { return player_to_move_; }
 
 inline auto Board::GetBoardHash() const -> U64 { return board_hash_; }
 
+inline auto Board::ClearPawnTable() -> void { pawn_table_.Clear(); }
+
 inline auto Board::SwitchPlayer() -> void {
   player_to_move_ = (player_to_move_ == kWhite) ? kBlack : kWhite;
   // Update the board hash to reflect player turnover.
   board_hash_ ^= black_to_move_rand_num_;
 }
+
+inline auto Board::GetPawnHash() const -> U64 { return pawn_hash_; }
 
 }  // namespace omegazero
 
