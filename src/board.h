@@ -249,6 +249,7 @@ class Board {
     Bitboard player_pieces[kNumPlayers];
 
     bool castling_rights[kNumPlayers][kNumBoardSides];
+    bool castling_status[kNumPlayers];
 
     S8 ep_target_sq;
     S8 halfmove_clock;
@@ -275,6 +276,7 @@ class Board {
   Bitboard player_pieces_[kNumPlayers];
 
   bool castling_rights_[kNumPlayers][kNumBoardSides];
+  bool castling_status_[kNumPlayers];
 
   PawnTable pawn_table_;
 

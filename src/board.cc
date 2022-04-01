@@ -48,6 +48,10 @@ Board::Board(const string& init_pos) {
   // Initialize player to move as White in case the FEN string doesn't specify.
   player_to_move_ = kWhite;
 
+  // Initialize neither side as having castled.
+  castling_status_[kBlack] = false;
+  castling_status_[kWhite] = false;
+
   // Set the piece positions, castling rights, and player to move.
   InitBoardPos(init_pos);
   InitHash();
@@ -206,10 +210,12 @@ auto Board::Evaluate() -> float {
   Bitboard black_pawn_attackspan;
   Bitboard black_pawn_attack_map;
   Bitboard black_pawn_defender_map;
+  // Count material and add positional bonuses using Piece Square Tables.
   board_score += EvaluatePiecePositions(
       white_pawn_attackspan, white_pawn_attack_map, white_pawn_defender_map,
       black_pawn_attackspan, black_pawn_attack_map, black_pawn_defender_map);
 
+  // Evaluate pawn structure.
   float pawn_eval;
   U64 pawn_hash = GetPawnHash();
   if (!pawn_table_.Access(pawn_hash, pawn_eval)) {
@@ -219,6 +225,40 @@ auto Board::Evaluate() -> float {
     pawn_table_.Update(pawn_hash, pawn_eval);
   }
   board_score += pawn_eval;
+
+  // Evaluate miscelaneous piece bonuses/penalties.
+  constexpr float kBishopPairBonus = 12.5;
+  constexpr float kConnectedRookBonus = 25;
+  constexpr float kCastlingRightsLossPenalty = 12.5;
+  S8 player_side;
+  S8 first_sq;
+  Bitboard bishops;
+  Bitboard rooks;
+  for (S8 player = kWhite; player <= kBlack; ++player) {
+    player_side = (player == kWhite) ? 1 : -1;
+
+    // Add a bonus for a bishop pair.
+    bishops = GetPiecesByType(kBishop, player);
+    if (GetNumSetSq(bishops) >= 2) {
+      board_score += (player_side * kBishopPairBonus);
+    }
+
+    // Add a bonus for connected rooks.
+    rooks = GetPiecesByType(kRook, player);
+    if (GetNumSetSq(rooks) >= 2) {
+      first_sq = GetSqOfFirstPiece(rooks);
+      if (static_cast<bool>(GetAttackMap(player, first_sq, kRook) & rooks)) {
+        board_score += (player_side * kConnectedRookBonus);
+      }
+    }
+
+    // Add a penalty for losing castling rights.
+    if (!castling_status_[player] && !castling_rights_[player][kQueenSide] &&
+        !castling_rights_[player][kKingSide]) {
+      board_score -= (player_side * kCastlingRightsLossPenalty);
+    }
+  }
+
   S8 moving_side = (player_to_move_ == kWhite) ? 1 : -1;
   return board_score * moving_side;
 }
@@ -232,6 +272,8 @@ auto Board::ResetPos() -> void {
   copy(begin(saved_pos_info_.castling_rights[kQueenSide]),
        end(saved_pos_info_.castling_rights[kKingSide]),
        begin(castling_rights_[kQueenSide]));
+  copy(begin(saved_pos_info_.castling_status),
+       end(saved_pos_info_.castling_status), begin(castling_status_));
 
   ep_target_sq_ = saved_pos_info_.ep_target_sq;
   halfmove_clock_ = saved_pos_info_.halfmove_clock;
@@ -254,9 +296,6 @@ auto Board::ResetPos() -> void {
 
   board_hash_ = saved_pos_info_.board_hash;
   pawn_hash_ = saved_pos_info_.pawn_hash;
-
-  // DEBUG
-  pawn_table_.GetHitRate();
 }
 
 auto Board::SavePos() -> void {
@@ -266,6 +305,8 @@ auto Board::SavePos() -> void {
 
   copy(begin(castling_rights_[kQueenSide]), end(castling_rights_[kKingSide]),
        begin(saved_pos_info_.castling_rights[kQueenSide]));
+  copy(begin(castling_status_), end(castling_status_),
+       begin(saved_pos_info_.castling_status));
 
   saved_pos_info_.ep_target_sq = ep_target_sq_;
   saved_pos_info_.halfmove_clock = halfmove_clock_;
@@ -298,18 +339,22 @@ auto Board::MakeMove(const Move& move) -> void {
     if (player_to_move_ == kWhite) {
       MovePiece(kRook, kSqA1, kSqD1);
       MovePiece(kKing, kSqE1, kSqC1);
+      castling_status_[kWhite] = true;
     } else if (player_to_move_ == kBlack) {
       MovePiece(kRook, kSqA8, kSqD8);
       MovePiece(kKing, kSqE8, kSqC8);
+      castling_status_[kBlack] = true;
     }
   } else if (move.castling_type == kKingSide) {
     // Make kingside castling moves.
     if (player_to_move_ == kWhite) {
       MovePiece(kRook, kSqH1, kSqF1);
       MovePiece(kKing, kSqE1, kSqG1);
+      castling_status_[kWhite] = true;
     } else if (player_to_move_ == kBlack) {
       MovePiece(kRook, kSqH8, kSqF8);
       MovePiece(kKing, kSqE8, kSqG8);
+      castling_status_[kBlack] = true;
     }
   }
 
@@ -387,18 +432,22 @@ auto Board::UnmakeMove(const Move& move) -> void {
     if (player_to_move_ == kWhite) {
       MovePiece(kRook, kSqD1, kSqA1);
       MovePiece(kKing, kSqC1, kSqE1);
+      castling_status_[kWhite] = false;
     } else if (player_to_move_ == kBlack) {
       MovePiece(kRook, kSqD8, kSqA8);
       MovePiece(kKing, kSqC8, kSqE8);
+      castling_status_[kBlack] = false;
     }
   } else if (move.castling_type == kKingSide) {
     // Undo kingside castling moves.
     if (player_to_move_ == kWhite) {
       MovePiece(kRook, kSqF1, kSqH1);
       MovePiece(kKing, kSqG1, kSqE1);
+      castling_status_[kWhite] = false;
     } else if (player_to_move_ == kBlack) {
       MovePiece(kRook, kSqF8, kSqH8);
       MovePiece(kKing, kSqG8, kSqE8);
+      castling_status_[kBlack] = false;
     }
   }
 
@@ -563,6 +612,7 @@ auto Board::EvaluatePawnStructure(Bitboard white_attackspan,
   constexpr float kIsolatedPawnPenalty = 2;
   constexpr float kNeighborBonus = 1.5;
   constexpr float kDefenderBonus = 2;
+  constexpr float kRookBehindPassedPawnBonus = 50;
   constexpr float kPassedPawnBonus[kNumRanks] = {3, 8, 13, 18, 23, 28, 33, 0};
 
   Bitboard pawns;
@@ -588,6 +638,12 @@ auto Board::EvaluatePawnStructure(Bitboard white_attackspan,
             // Add a bonus for passed pawns.
             S8 passer_rank = GetRankFromSq(pawn_sq);
             pawn_eval += (player_side * kPassedPawnBonus[passer_rank]);
+
+            // Add a bonus for rooks behind passed pawns.
+            if (static_cast<bool>(GetPiecesByType(kRook, player) &
+                                  kFileMasks[file])) {
+              pawn_eval += (player_side * kRookBehindPassedPawnBonus);
+            }
           } else {
             // Compute neighbor file bitmask.
             neighor_files = 0X0;

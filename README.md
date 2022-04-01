@@ -124,11 +124,11 @@ The [MTD(f)](https://www.chessprogramming.org/MTD(f)) search algorithm is used w
 framework. This routine calls an implementation of the [Negamax](https://www.chessprogramming.org/Negamax) algorithm
 with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta), [Null Move Pruning](https://www.chessprogramming.org/Null_Move_Pruning), and [Late Move Reduction](https://www.chessprogramming.org/Late_Move_Reductions). A depth reduction value [R](https://www.chessprogramming.org/Depth_Reduction_R)
 of 3 is used when depth is greater than 6, and 2 otherwise in Null Move Pruning.
-Late Move Reductions are computed using the formula
+For Late Move Reductions are computed using the formula
 ```
-int(sqrt(double(depth-1)) + sqrt(double(move_idx-1)))
+depth_reduction = (move_idx < 6) ? 1 : depth / 3;
 ```
-taken from [Fruit Reloaded](https://www.chessprogramming.org/Fruit_Reloaded). Reduction is only done on non-PV (Principle Variation) nodes. A
+taken from [Senpai](https://www.chessprogramming.org/Senpai). Reduction is only done on non-PV (Principle Variation) nodes. A
 Transposition Table is used to cache seen positions, allowing the engine to
 store each [node's type](https://www.chessprogramming.org/Node_Types) is and prevent costly re-evaluation of a node. This
 is especially important for storing the [Principle Variation](https://www.chessprogramming.org/Principal_Variation) during Iterative
@@ -156,12 +156,27 @@ J.E.H.Shaw). Slight modifications have been made to the file to aid in parsing.
 
 #### Evaluation
 
-The evaluation function scores the board by counting material and using
-[Piece Square Tables](https://www.chessprogramming.org/Simplified_Evaluation_Function). Material values and positional bonuses can be easily
-viewed in `eval.cc`.
+The evaluation function scores a board position based on the following factors:
+- Raw material, with the following piece values
+
+- Piece position, using the [Piece Square Tables](https://www.chessprogramming.org/Simplified_Evaluation_Function) defined in `piece_sq_tables.cc`
+
+- Pawn structure. The engine is aware of [backward pawns](), [isolated pawns](),
+[passed pawns](), [phalanxes](), and [defended pawns]().
+
+- Misc. bonuses/penalties for the following features: connnected rooks, loss of
+[castling rights](https://www.chessprogramming.org/Castling_Rights), [bishop pair](https://www.chessprogramming.org/Bishop_Pair), and [rook behind passed pawn](https://www.chessprogramming.org/Tarrasch_Rule).
 
 ### Performance
 
 #### Move Generation
 
 The move generator is capable of producing up to ~7 million moves/sec.
+
+#### ELO Approximation
+
+TBD
+
+#### A Sample Game
+
+TBD

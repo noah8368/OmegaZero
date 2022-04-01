@@ -72,7 +72,7 @@ auto Engine::GetBestMove() -> Move {
   board_->SavePos();
   constexpr int kRootNodePly = 0;
   // Initialize the first guess for the MTD(f) algorithm, f.
-  int f = 0;
+  float f = 0;
 
   // Perform an MTD(f) search inside an iterative deepening framework.
   search_start_ = high_resolution_clock::now();
@@ -198,10 +198,9 @@ auto Engine::MtdfSearch(float f, int d, int ply, Move& best_move) -> float {
     } else {
       lower_bound = g;
     }
-  }
-
-  if (move.moving_piece != kNA || move.castling_type != kNA) {
-    best_move = move;
+    if (move.moving_piece != kNA || move.castling_type != kNA) {
+      best_move = move;
+    }
   }
   return g;
 }
@@ -229,9 +228,11 @@ auto Engine::NegamaxSearch(Move& pv_move, float alpha, float beta, int depth,
   S8 game_status = GetGameStatus();
   if (game_status == kPlayerCheckmated) {
     return kWorstEval;
-  } else if (game_status == kDraw || RepDetected()) {
+  }
+  if (game_status == kDraw || RepDetected()) {
     return kNeutralEval;
-  } else if (depth <= 0) {
+  }
+  if (depth <= 0) {
     // Initiate the Quiescence search when maximum depth is reached.
     return QuiescenceSearch(alpha, beta);
   }
@@ -283,9 +284,7 @@ auto Engine::NegamaxSearch(Move& pv_move, float alpha, float beta, int depth,
         move.captured_piece == kNA && move.promoted_to_piece == kNA &&
         !board_->KingInCheck() && depth >= kMinReductionDepth) {
       // Perform Late Move Reduction.
-      depth_reduction =
-          static_cast<int>(sqrt(static_cast<double>(depth - 1)) +
-                           sqrt(static_cast<double>(move_idx - 1)));
+      depth_reduction = (move_idx < 6) ? 1 : depth / 3;
       search_eval = -NegamaxSearch(-beta, -alpha, depth - depth_reduction - 1,
                                    ply + 1, true);
       if (search_eval > alpha) {

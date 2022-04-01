@@ -38,6 +38,7 @@ purge:
 .PHONY: clean
 clean:
 	rm build/board.o build/engine.o build/game.o build/main.o \
-	   build/transp_table.o build/OmegaZero \
+	   build/transposition_table.o build/OmegaZero \
 	   debug_build/board.o debug_build/engine.o debug_build/game.o \
-	   debug_build/main.o debug_build/transp_table.o debug_build/OmegaZero
+	   debug_build/main.o debug_build/transposition_table.o \
+	   debug_build/OmegaZero

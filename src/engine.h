@@ -47,7 +47,7 @@ enum GameStatus : S8 {
 };
 
 constexpr int kRanOutOfTime = 2;
-constexpr int kSearchLimit = 30;
+constexpr int kSearchLimit = 50;
 
 // Store values used for transposition table move ordering.
 constexpr float kBestEval = FLT_MAX;

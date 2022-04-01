@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <iostream>  // DEBUG
 #include <stdexcept>
 #include <vector>
 
@@ -37,17 +36,10 @@ class PawnTable {
   // Loop up the board position in the hash table and set eval to the
   // corresponding evaluation if the position is found. Return a bool to
   // indicate if the position was found.
-  auto Access(U64 pawn_hash, float& pawn_eval) /* const */ -> bool;
+  auto Access(U64 pawn_hash, float& pawn_eval) const -> bool;
 
   auto Update(U64 pawn_hash, float pawn_eval) -> void;
   auto Clear() -> void;
-
-  // DEBUG
-  auto GetHitRate() -> void {
-    std::cout << "HIT RATE: " << HIT_COUNTER / ACCESS_COUNTER << std::endl;
-    HIT_COUNTER = 0;
-    ACCESS_COUNTER = 0;
-  }
 
  private:
   // Store which slots in the table are occupied.
@@ -59,10 +51,6 @@ class PawnTable {
   };
 
   vector<TableEntry> entries_;
-
-  // DEBUG
-  float ACCESS_COUNTER;
-  float HIT_COUNTER;
 };
 
 inline PawnTable::PawnTable() {
@@ -70,20 +58,13 @@ inline PawnTable::PawnTable() {
   occupancy_table_.reserve(kPawnTableSize);
   // Initialize all slots intable_entry the occupancy table to unoccupied.
   Clear();
-
-  // DEBUG
-  ACCESS_COUNTER = 0;
-  HIT_COUNTER = 0;
 }
 
-inline auto PawnTable::Access(U64 pawn_hash,
-                              float& pawn_eval) /* const */ -> bool {
-  ++ACCESS_COUNTER;
+inline auto PawnTable::Access(U64 pawn_hash, float& pawn_eval) const -> bool {
   int index = pawn_hash & kPawnHashMask;
   if (occupancy_table_[index]) {
     TableEntry entry = entries_[index];
     if (entry.pawn_hash == pawn_hash) {
-      ++HIT_COUNTER;
       pawn_eval = entry.pawn_eval;
       return true;
     }
