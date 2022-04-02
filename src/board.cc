@@ -150,6 +150,8 @@ auto Board::GetPiecesByType(S8 piece_type, S8 player) const -> Bitboard {
     return pieces_[piece_type] & player_pieces_[player];
   }
 
+  cout << (int)piece_type << endl;
+
   throw invalid_argument("player, piece_type in Board::GetPiecesByType");
 }
 
@@ -202,8 +204,8 @@ auto Board::DoublePawnPushLegal(S8 file) const -> bool {
          player_layout_[rank7_double_pawn_push_sq] == kBlack;
 }
 
-auto Board::Evaluate() -> float {
-  float board_score = 0.0;
+auto Board::Evaluate() -> int {
+  int board_score = 0;
   Bitboard white_pawn_attackspan;
   Bitboard white_pawn_attack_map;
   Bitboard white_pawn_defender_map;
@@ -216,7 +218,7 @@ auto Board::Evaluate() -> float {
       black_pawn_attackspan, black_pawn_attack_map, black_pawn_defender_map);
 
   // Evaluate pawn structure.
-  float pawn_eval;
+  int pawn_eval;
   U64 pawn_hash = GetPawnHash();
   if (!pawn_table_.Access(pawn_hash, pawn_eval)) {
     pawn_eval = EvaluatePawnStructure(
@@ -227,9 +229,9 @@ auto Board::Evaluate() -> float {
   board_score += pawn_eval;
 
   // Evaluate miscelaneous piece bonuses/penalties.
-  constexpr float kBishopPairBonus = 12.5;
-  constexpr float kConnectedRookBonus = 25;
-  constexpr float kCastlingRightsLossPenalty = 12.5;
+  constexpr int kBishopPairBonus = 12;
+  constexpr int kConnectedRookBonus = 25;
+  constexpr int kCastlingRightsLossPenalty = 6;
   S8 player_side;
   S8 first_sq;
   Bitboard bishops;
@@ -253,9 +255,13 @@ auto Board::Evaluate() -> float {
     }
 
     // Add a penalty for losing castling rights.
-    if (!castling_status_[player] && !castling_rights_[player][kQueenSide] &&
-        !castling_rights_[player][kKingSide]) {
-      board_score -= (player_side * kCastlingRightsLossPenalty);
+    if (!castling_status_[player]) {
+      if (!castling_rights_[player][kQueenSide]) {
+        board_score -= (player_side * kCastlingRightsLossPenalty);
+      }
+      if (!castling_rights_[player][kKingSide]) {
+        board_score -= (player_side * kCastlingRightsLossPenalty);
+      }
     }
   }
 
@@ -358,8 +364,8 @@ auto Board::MakeMove(const Move& move) -> void {
     }
   }
 
-  // Update the en passent target square and the board hash to reflect a change
-  // in the file of the en passent target square.
+  // Update the en passent target square and the board hash to reflect a
+  // change in the file of the en passent target square.
   ep_target_sq_history_.push(ep_target_sq_);
   S8 prev_ep_target_file =
       (ep_target_sq_ == kNA) ? kNA : GetFileFromSq(ep_target_sq_);
@@ -549,10 +555,12 @@ auto Board::GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard {
           GetPiecesByType(kKing, attacking_player));
 }
 
-auto Board::EvaluatePiecePositions(
-    Bitboard& white_attackspan, Bitboard& white_attack_map,
-    Bitboard& white_defender_map, Bitboard& black_attackspan,
-    Bitboard& black_attack_map, Bitboard& black_defender_map) const -> float {
+auto Board::EvaluatePiecePositions(Bitboard& white_attackspan,
+                                   Bitboard& white_attack_map,
+                                   Bitboard& white_defender_map,
+                                   Bitboard& black_attackspan,
+                                   Bitboard& black_attack_map,
+                                   Bitboard& black_defender_map) const -> int {
   // Initialize the attacks and attackspans.
   white_attackspan = 0X0;
   white_attack_map = 0X0;
@@ -561,7 +569,21 @@ auto Board::EvaluatePiecePositions(
   black_attack_map = 0X0;
   black_defender_map = 0X0;
 
-  float material_bonus = 0.0;
+  // Compute phase for tapered evaluation of king position.
+  constexpr int kPiecePhases[kNumPieceTypes - 1] = {0, 1, 1, 2, 4};
+  constexpr int kTotalPhase = 24;
+  int phase = kTotalPhase;
+  Bitboard pieces;
+  for (S8 player = kWhite; player <= kBlack; ++player) {
+    for (S8 piece = kPawn; piece <= kQueen; ++piece) {
+      pieces = GetPiecesByType(piece, player);
+      phase -= (GetNumSetSq(pieces) * kPiecePhases[piece]);
+    }
+  }
+  constexpr int kPhaseNorm = 256;
+  phase = (phase * kPhaseNorm + (kTotalPhase / 2)) / kTotalPhase;
+
+  int material_bonus = 0.0;
   S8 piece_type;
   S8 mirror_sq;
   for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
@@ -570,12 +592,20 @@ auto Board::EvaluatePiecePositions(
       // Count material and add positional bonuses.
       if (GetPlayerOnSq(sq) == kWhite) {
         // Compute the score contribution of a white piece.
-        material_bonus +=
-            (kPieceVals[piece_type] + kPieceSqTable[piece_type][sq]);
+        if (piece_type == kKing) {
+          // Compute the tapered evalution for the king position.
+          material_bonus += kPieceVals[kKing];
+          material_bonus += ((kPieceSqTable[kKing][sq] * (kPhaseNorm - phase) +
+                              kEndgameKingPieceSqTable[sq] * phase) /
+                             kPhaseNorm);
+        } else {
+          material_bonus +=
+              (kPieceVals[piece_type] + kPieceSqTable[piece_type][sq]);
+        }
 
         if (piece_type == kPawn) {
-          // Compute the contribution to the cummulative white pawn attackspan,
-          // attack map, and defender map.
+          // Compute the contribution to the cummulative white pawn
+          // attackspan, attack map, and defender map.
           white_attackspan |= kPawnFrontAttackspanMasks[kWhite][sq];
           white_attack_map |= kNonSliderAttackMaps[kWhitePawnCapture][sq];
           white_defender_map |= kNonSliderAttackMaps[kBlackPawnCapture][sq];
@@ -584,12 +614,23 @@ auto Board::EvaluatePiecePositions(
         // Compute the score contribution of a black piece.
         mirror_sq =
             GetSqFromRankFile(kRank8 - GetRankFromSq(sq), GetFileFromSq(sq));
-        material_bonus -=
-            (kPieceVals[piece_type] + kPieceSqTable[piece_type][mirror_sq]);
+
+        // Compute the score contribution of a black piece.
+        if (piece_type == kKing) {
+          // Compute the tapered evalution for the king position.
+          material_bonus -= kPieceVals[kKing];
+          material_bonus -=
+              ((kPieceSqTable[kKing][mirror_sq] * (kPhaseNorm - phase) +
+                kEndgameKingPieceSqTable[mirror_sq] * phase) /
+               kPhaseNorm);
+        } else {
+          material_bonus -=
+              (kPieceVals[piece_type] + kPieceSqTable[piece_type][mirror_sq]);
+        }
 
         if (piece_type == kPawn) {
-          // Compute the contribution to the cummulative black pawn attackspan,
-          // attack map, and defender map.
+          // Compute the contribution to the cummulative black pawn
+          // attackspan, attack map, and defender map.
           black_attackspan |= kPawnFrontAttackspanMasks[kBlack][sq];
           black_attack_map |= kNonSliderAttackMaps[kBlackPawnCapture][sq];
           black_defender_map |= kNonSliderAttackMaps[kWhitePawnCapture][sq];
@@ -605,21 +646,36 @@ auto Board::EvaluatePawnStructure(Bitboard white_attackspan,
                                   Bitboard white_defender_map,
                                   Bitboard black_attackspan,
                                   Bitboard black_attack_map,
-                                  Bitboard black_defender_map) const -> float {
+                                  Bitboard black_defender_map) const -> int {
   // Define pawn structure bonuses and penalties.
-  constexpr float kBackwardPawnPenalty = 1.5;
-  constexpr float kDoubledPawnPenalty = 7;
-  constexpr float kIsolatedPawnPenalty = 2;
-  constexpr float kNeighborBonus = 1.5;
-  constexpr float kDefenderBonus = 2;
-  constexpr float kRookBehindPassedPawnBonus = 50;
-  constexpr float kPassedPawnBonus[kNumRanks] = {3, 8, 13, 18, 23, 28, 33, 0};
+  constexpr int kBackwardPawnPenalty = 1;
+  constexpr int kDoubledPawnPenalty = 7;
+  constexpr int kIsolatedPawnPenalty = 2;
+  constexpr int kNeighborBonus = 1;
+  constexpr int kDefenderBonus = 2;
+  constexpr int kRookBehindPassedPawnBonus = 12;
+  constexpr int kPassedPawnBonus[kNumRanks] = {3, 8, 13, 18, 23, 28, 33, 0};
+  constexpr int kKingPawnShieldHolePenalty = 4;
 
+  Bitboard backward_pawns;
+  Bitboard defenders;
   Bitboard pawns;
   Bitboard pawns_on_file;
+  Bitboard pawn_stops;
+  Bitboard pawns_with_east_neighbor;
   Bitboard neighor_files;
-  float pawn_eval = 0.0;
+  Bitboard king_board;
+  int pawn_eval = 0.0;
   S8 player_side;
+  S8 pawn_sq;
+  S8 passer_rank;
+  S8 king_sq;
+  S8 king_rank;
+  S8 king_file;
+  S8 east_pawn_shield_sq;
+  S8 center_pawn_shield_sq;
+  S8 west_pawn_shield_sq;
+  S8 pawn_shield_dir;
   for (S8 player = kWhite; player <= kBlack; ++player) {
     pawns = GetPiecesByType(kPawn, player);
     player_side = (player == kWhite) ? 1 : -1;
@@ -631,12 +687,12 @@ auto Board::EvaluatePawnStructure(Bitboard white_attackspan,
           pawn_eval -= (player_side * kDoubledPawnPenalty);
         } else {
           // Determine if a lone pawn on a file is a passer.
-          S8 pawn_sq = GetSqOfFirstPiece(pawns_on_file);
+          pawn_sq = GetSqOfFirstPiece(pawns_on_file);
           if (!static_cast<bool>(
                   kPawnFrontSpanMasks[player][pawn_sq] &
                   GetPiecesByType(kPawn, GetOtherPlayer(player)))) {
             // Add a bonus for passed pawns.
-            S8 passer_rank = GetRankFromSq(pawn_sq);
+            passer_rank = GetRankFromSq(pawn_sq);
             pawn_eval += (player_side * kPassedPawnBonus[passer_rank]);
 
             // Add a bonus for rooks behind passed pawns.
@@ -664,30 +720,68 @@ auto Board::EvaluatePawnStructure(Bitboard white_attackspan,
     }
 
     // Add penalties for backward pawns.
-    Bitboard pawn_stops = (player == kWhite)
-                              ? GetPiecesByType(kPawn, kWhite) << kNumFiles
-                              : GetPiecesByType(kPawn, kBlack) >> kNumFiles;
-    Bitboard backward_pawns =
+    pawn_stops = (player == kWhite)
+                     ? GetPiecesByType(kPawn, kWhite) << kNumFiles
+                     : GetPiecesByType(kPawn, kBlack) >> kNumFiles;
+    backward_pawns =
         (player == kWhite)
             ? (pawn_stops & black_attack_map & ~white_attackspan) >> kNumFiles
             : (pawn_stops & white_attack_map & ~black_attackspan) << kNumFiles;
     pawn_eval -=
         (player_side * GetNumSetSq(backward_pawns) * kBackwardPawnPenalty);
 
-    // Add bonuses for pawns with a east neighbor, which are at least members of
-    // a duo.
-    Bitboard pawns_with_east_neighbor = (GetPiecesByType(kPawn, player) >> 1) &
-                                        GetPiecesByType(kPawn, player) &
-                                        ~kFileMasks[kFileH];
+    // Add bonuses for pawns with a east neighbor, which are at least members
+    // of a duo.
+    pawns_with_east_neighbor = (GetPiecesByType(kPawn, player) >> 1) &
+                               GetPiecesByType(kPawn, player) &
+                               ~kFileMasks[kFileH];
     pawn_eval +=
         (player_side * GetNumSetSq(pawns_with_east_neighbor) * kNeighborBonus);
 
     // Add bonuses for defended pawns.
-    Bitboard defenders =
-        (player == kWhite)
-            ? (GetPiecesByType(kPawn, kWhite) & white_defender_map)
-            : (GetPiecesByType(kPawn, kBlack) & black_defender_map);
+    defenders = (player == kWhite)
+                    ? (GetPiecesByType(kPawn, kWhite) & white_defender_map)
+                    : (GetPiecesByType(kPawn, kBlack) & black_defender_map);
     pawn_eval += (player_side * GetNumSetSq(defenders) * kDefenderBonus);
+
+    // Add penalties for holes in the pawn shield next to a castled king.
+    king_board = GetPiecesByType(kKing, player);
+    king_sq = GetSqOfFirstPiece(king_board);
+    king_rank = GetRankFromSq(king_sq);
+    king_file = GetFileFromSq(king_sq);
+    // Check if the king is in its "pawn shelter".
+    if (king_file != kFileD && king_rank != kFileE) {
+      if (player == kWhite && (king_rank == kRank1 || king_rank == kRank2)) {
+        pawn_shield_dir = 1;
+      } else if (player == kBlack &&
+                 (king_rank == kRank7 || king_rank == kRank8)) {
+        pawn_shield_dir = -1;
+      } else {
+        continue;
+      }
+      if (king_file != kFileA) {
+        east_pawn_shield_sq =
+            GetSqFromRankFile(king_rank + pawn_shield_dir, king_file - 1);
+        if (GetPlayerOnSq(east_pawn_shield_sq) != player ||
+            GetPieceOnSq(east_pawn_shield_sq) != kPawn) {
+          pawn_eval -= (player_side * kKingPawnShieldHolePenalty);
+        }
+      }
+      if (king_file != kFileH) {
+        west_pawn_shield_sq =
+            GetSqFromRankFile(king_rank + pawn_shield_dir, king_file + 1);
+        if (GetPlayerOnSq(west_pawn_shield_sq) != player ||
+            GetPieceOnSq(west_pawn_shield_sq) != kPawn) {
+          pawn_eval -= (player_side * kKingPawnShieldHolePenalty);
+        }
+      }
+      center_pawn_shield_sq =
+          GetSqFromRankFile(king_rank + pawn_shield_dir, king_file);
+      if (GetPlayerOnSq(center_pawn_shield_sq) != player ||
+          GetPieceOnSq(center_pawn_shield_sq) != kPawn) {
+        pawn_eval -= (player_side * kKingPawnShieldHolePenalty);
+      }
+    }
   }
   return pawn_eval;
 }
@@ -977,8 +1071,8 @@ auto Board::MovePiece(S8 piece, S8 start_sq, S8 target_sq, S8 promoted_to_piece)
     pawn_hash_ ^= piece_rand_nums_[kPawn][start_sq];
   }
 
-  // Add the selected piece back at its target position on the board and update
-  // the board hash to reflect piece addition.
+  // Add the selected piece back at its target position on the board and
+  // update the board hash to reflect piece addition.
   Bitboard new_piece_pos_mask = 1ULL << target_sq;
   if (promoted_to_piece == kNA) {
     pieces_[piece] |= new_piece_pos_mask;
@@ -988,7 +1082,8 @@ auto Board::MovePiece(S8 piece, S8 start_sq, S8 target_sq, S8 promoted_to_piece)
       pawn_hash_ ^= piece_rand_nums_[kPawn][target_sq];
     }
   } else {
-    // Add a piece back as the type it promotes to if move is a pawn promotion.
+    // Add a piece back as the type it promotes to if move is a pawn
+    // promotion.
     pieces_[promoted_to_piece] |= new_piece_pos_mask;
     piece_layout_[target_sq] = promoted_to_piece;
     board_hash_ ^= piece_rand_nums_[promoted_to_piece][target_sq];
@@ -1104,7 +1199,8 @@ auto Board::UpdateCastlingRights(const Move& move) -> void {
   }
 
   if (move.captured_piece == kRook) {
-    // Revoke the other player's castling rights if a player's rook is captured.
+    // Revoke the other player's castling rights if a player's rook is
+    // captured.
     if (player_to_move_ == kWhite) {
       if (move.target_sq == kSqA8 && castling_rights_[kBlack][kQueenSide]) {
         castling_rights_[kBlack][kQueenSide] = false;

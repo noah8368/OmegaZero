@@ -102,7 +102,7 @@ constexpr S8 kNumSq = 64;
 
 // Store piece values expressed in centipawns for evaluation function. Piece
 // order in array is pawn, knight, bishop, rook, queen, king.
-constexpr float kPieceVals[kNumPieceTypes] = {100, 320, 330, 500, 900, 20000};
+constexpr int kPieceVals[kNumPieceTypes] = {100, 320, 330, 500, 900, 20000};
 
 constexpr Bitboard kFileMasks[kNumFiles] = {
     0X0101010101010101, 0X0202020202020202, 0X0404040404040404,
@@ -139,7 +139,8 @@ extern const Bitboard kUnblockedSliderAttackMaps[kNumSliderMaps][kNumSq];
 extern const Bitboard kPawnFrontAttackspanMasks[kNumPlayers][kNumSq];
 extern const Bitboard kPawnFrontSpanMasks[kNumPlayers][kNumSq];
 
-extern const float kPieceSqTable[kNumPieceTypes][kNumSq];
+extern const int kPieceSqTable[kNumPieceTypes][kNumSq];
+extern const int kEndgameKingPieceSqTable[kNumSq];
 
 extern const U64 kMagics[kNumSliderMaps][kNumSq];
 
@@ -179,7 +180,7 @@ class Board {
   // Compute and return a static evaluation of the board state. This score is
   // relative to the side being evaluated and symmetric, as required by the
   // Negamax Algorithm.
-  auto Evaluate() -> float;
+  auto Evaluate() -> int;
 
   auto GetEpTargetSq() const -> S8;
   auto GetHalfmoveClock() const -> S8;
@@ -221,13 +222,13 @@ class Board {
                               Bitboard& white_defender_map,
                               Bitboard& black_attackspan,
                               Bitboard& black_attack_map,
-                              Bitboard& black_defender_map) const -> float;
+                              Bitboard& black_defender_map) const -> int;
   auto EvaluatePawnStructure(Bitboard white_attackspan,
                              Bitboard white_attack_map,
                              Bitboard white_defender_map,
                              Bitboard black_attackspan,
                              Bitboard black_attack_map,
-                             Bitboard black_defender_map) const -> float;
+                             Bitboard black_defender_map) const -> int;
 
   // Get a hash of the current pawn structure;
   auto GetPawnHash() const -> U64;

@@ -724,9 +724,10 @@ auto Game::InterpAlgNotation(const string& user_cmd, Move& move, S8& start_rank,
         }
       }
       break;
-    // Handle the cases of pawn capture with promotion (ex: exd8Q) and
+    // Handle the cases of pawn capture with promotion (ex: exd8Q),
     // ambiguous non-pawn moves requiring both a specified start rank and file
-    // (ex: Qh4e1).
+    // (ex: Qh4e1), and ambiguous non-pawn capture with specified start rank
+    // or file (ex: N7xf6).
     case 5:
       if (move.moving_piece == kPawn) {
         if (user_cmd[1] != 'x') {
@@ -741,10 +742,24 @@ auto Game::InterpAlgNotation(const string& user_cmd, Move& move, S8& start_rank,
         target_file = static_cast<S8>(user_cmd[2] - 'a');
         target_rank = static_cast<S8>(user_cmd[3] - '1');
       } else {
-        start_file = static_cast<S8>(user_cmd[1] - 'a');
-        start_rank = static_cast<S8>(user_cmd[2] - '1');
-        target_file = static_cast<S8>(user_cmd[3] - 'a');
-        target_rank = static_cast<S8>(user_cmd[4] - '1');
+        if (user_cmd[2] == 'x') {
+          capture_indicated = true;
+          char second_ch = user_cmd[1];
+          if (second_ch - '1' >= kRank1 && second_ch - '1' <= kRank8) {
+            start_rank = static_cast<S8>(second_ch - '1');
+          } else if (second_ch - 'a' >= kFileA && second_ch - 'a' <= kFileH) {
+            start_file = static_cast<S8>(second_ch - 'a');
+          } else {
+            throw BadMove("bad command formatting");
+          }
+          target_file = static_cast<S8>(user_cmd[3] - 'a');
+          target_rank = static_cast<S8>(user_cmd[4] - '1');
+        } else {
+          start_file = static_cast<S8>(user_cmd[1] - 'a');
+          start_rank = static_cast<S8>(user_cmd[2] - '1');
+          target_file = static_cast<S8>(user_cmd[3] - 'a');
+          target_rank = static_cast<S8>(user_cmd[4] - '1');
+        }
       }
       break;
     // Handle the case of an ambiguous non-pawn capture requiring specified

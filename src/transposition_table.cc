@@ -14,7 +14,7 @@ namespace omegazero {
 
 constexpr U64 kHashMask = 0X7FFFF;
 
-auto TranspositionTable::Access(const Board* board, int depth, float& eval,
+auto TranspositionTable::Access(const Board* board, int depth, int& eval,
                                 S8& node_type) const -> bool {
   U64 board_hash = board->GetBoardHash();
   int index = board_hash & kHashMask;
@@ -83,7 +83,7 @@ auto TranspositionTable::GetHashMove(const Board* board) const -> Move {
   return hash_move;
 }
 
-auto TranspositionTable::Update(const Board* board, int depth, float eval,
+auto TranspositionTable::Update(const Board* board, int depth, int eval,
                                 S8 node_type, const Move& hash_move) -> void {
   TableEntry new_entry;
   new_entry.hash_move = hash_move;

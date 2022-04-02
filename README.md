@@ -13,11 +13,6 @@ best Chess engines. The [Chess Programming Wiki](https://www.chessprogramming.or
 development. Credit goes to [Bradon Hsu](https://github.com/2brandonh) for designing the
 logo for this project.
 
-### Status: In Progress
-
-The search portion of the AI is now complete! Work can now commence on
-developing the Evaluation function.
-
 ### Usage
 
 #### Prerequisites
@@ -126,9 +121,9 @@ with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta), [Null Mo
 of 3 is used when depth is greater than 6, and 2 otherwise in Null Move Pruning.
 For Late Move Reductions are computed using the formula
 ```
-depth_reduction = (move_idx < 6) ? 1 : depth / 3;
+int(sqrt(double(depth-1)) + sqrt(double(move_idx-1)))
 ```
-taken from [Senpai](https://www.chessprogramming.org/Senpai). Reduction is only done on non-PV (Principle Variation) nodes. A
+taken from [Fruit](https://www.chessprogramming.org/Fruit). Reduction is only done on non-PV (Principle Variation) nodes. A
 Transposition Table is used to cache seen positions, allowing the engine to
 store each [node's type](https://www.chessprogramming.org/Node_Types) is and prevent costly re-evaluation of a node. This
 is especially important for storing the [Principle Variation](https://www.chessprogramming.org/Principal_Variation) during Iterative
@@ -156,16 +151,21 @@ J.E.H.Shaw). Slight modifications have been made to the file to aid in parsing.
 
 #### Evaluation
 
-The evaluation function scores a board position based on the following factors:
-- Raw material, with the following piece values
+Following in the footsteps of [Fruit](https://www.chessprogramming.org/Fruit), OmegaZero follows a minimalist
+evaluation philosophy, with a "light" evaluation, which scores a board position
+based on the following factors:
+- Raw material
 
 - Piece position, using the [Piece Square Tables](https://www.chessprogramming.org/Simplified_Evaluation_Function) defined in `piece_sq_tables.cc`
 
-- Pawn structure. The engine is aware of [backward pawns](), [isolated pawns](),
-[passed pawns](), [phalanxes](), and [defended pawns]().
+- Pawn structure. The engine is aware of [backward pawns](https://www.google.com/search?q=backward+pawns&oq=backward+pawns&aqs=chrome..69i57j0i512j0i22i30j0i390j69i60.1876j1j4&client=ubuntu&sourceid=chrome&ie=UTF-8), [isolated pawns](https://en.wikipedia.org/wiki/Isolated_pawn),
+[passed pawns](https://en.wikipedia.org/wiki/Passed_pawn#:~:text=In%20chess%2C%20a%20passed%20pawn,sometimes%20colloquially%20called%20a%20passer.), [phalanxes](https://www.chessprogramming.org/Duo_Trio_Quart_(Bitboards)), and [defended pawns](https://www.chessprogramming.org/Defended_Pawns_(Bitboards)). It also adds penalties for holes in the king's pawn shield when castled.
 
 - Misc. bonuses/penalties for the following features: connnected rooks, loss of
 [castling rights](https://www.chessprogramming.org/Castling_Rights), [bishop pair](https://www.chessprogramming.org/Bishop_Pair), and [rook behind passed pawn](https://www.chessprogramming.org/Tarrasch_Rule).
+
+We use a [Tapered Eval](https://www.chessprogramming.org/Tapered_Eval) scheme when scoring the position of the king, using
+the formula found [here](https://www.chessprogramming.org/Tapered_Eval#Implementation_example).
 
 ### Performance
 
@@ -175,8 +175,6 @@ The move generator is capable of producing up to ~7 million moves/sec.
 
 #### ELO Approximation
 
-TBD
-
-#### A Sample Game
-
-TBD
+OmegaZero consistently wins against Stockfish through level four, and is
+competitive with Stockfish level five. From this, we can approximate an
+ELO score of ~2000 for the engine.

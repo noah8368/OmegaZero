@@ -37,7 +37,7 @@ constexpr int kTableSize = 1 << 20;
 struct TableEntry {
   Move hash_move;
   U64 board_hash;
-  float eval;
+  int eval;
   int search_depth;
   S8 node_type;
 };
@@ -49,16 +49,16 @@ class TranspositionTable {
   // Loop up the board position in the hash table and set eval to the
   // corresponding evaluation if the position is found. Return a bool to
   // indicate if the position was found.
-  auto Access(const Board* board, int depth, float& eval, S8& node_type) const
+  auto Access(const Board* board, int depth, int& eval, S8& node_type) const
       -> bool;
   // Return if the given board position has been stored as a PV node.
   auto PosIsPvNode(const Board* board) const -> bool;
 
   auto GetHashMove(const Board* board) const -> Move;
 
-  auto Update(const Board* board, int depth, float eval, S8 node_type,
+  auto Update(const Board* board, int depth, int eval, S8 node_type,
               const Move& hash_move) -> void;
-  auto Update(const Board* board, int depth, float eval, S8 node_type) -> void;
+  auto Update(const Board* board, int depth, int eval, S8 node_type) -> void;
   auto Clear() -> void;
 
  private:
@@ -77,8 +77,8 @@ inline TranspositionTable::TranspositionTable() {
   Clear();
 }
 
-inline auto TranspositionTable::Update(const Board* board, int depth,
-                                       float eval, S8 node_type) -> void {
+inline auto TranspositionTable::Update(const Board* board, int depth, int eval,
+                                       S8 node_type) -> void {
   Move throwaway_move;
   Update(board, depth, eval, node_type, throwaway_move);
 }
