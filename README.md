@@ -17,22 +17,31 @@ logo for this project.
 
 #### Prerequisites
 
-The included `Makefile` is designed to run on GNU/Linux machines. The [Boost library](https://www.boost.org/)
-is a requirement, and should be installed locally before compilation.
-On Ubuntu systems, users may use the `apt-get` package manager to
-install Boost like so:
+The included `Makefile` supports both GNU/Linux and macOS. The [Boost library](https://www.boost.org/)
+is a requirement and should be installed locally before compilation. `python3` is
+also required to generate the move masks and magic bitboards used by the engine.
+
+To verify all dependencies are satisfied before building, run:
+```
+make check-deps
+```
+
+On Ubuntu, install Boost via `apt-get`:
 ```
 sudo apt-get install libboost-all-dev
+```
+
+On macOS, install Boost via [Homebrew](https://brew.sh/). If Homebrew isn't installed,
+follow the instructions on their site first, then run:
+```
+brew install boost
 ```
 
 #### Building the Engine
 
 To build the software, simply type `make` in the root directory of the project.
 This will take several minutes as the `magics.cc` file takes quite
-a while to build. To completely clean a build, `make purge` will remove the
-entire build directory. To remove all object files except for the one generated
-by `magics.cc`, you may `make clean`. Doing so will result in much faster
-rebuild times.
+a while to build.
 
 #### User Input
 

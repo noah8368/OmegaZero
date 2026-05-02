@@ -357,6 +357,7 @@ RunPerft:
     cout << GetUciMoveStr(move) << ": " << subtree_node_count << endl;
     total_node_count += subtree_node_count;
   }
+  cout << endl << "Total: " << total_node_count << endl;
 
 GetNextNode:
   if (depth - 1 > 0) {

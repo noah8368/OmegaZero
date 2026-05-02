@@ -124,9 +124,10 @@ auto Engine::GetGameStatus() -> S8 {
     return kDraw;
   }
 
-  // Enforce the Fifty Move Rule.
-  constexpr S8 kHalfmoveClockLimit = 75;
-  if (board_->GetHalfmoveClock() >= 2 * kHalfmoveClockLimit) {
+  // Enforce the Fifty Move Rule (100 half-moves = 50 full moves).
+  // S8 holds up to 127, so 100 is safe; the original 2*75=150 overflowed.
+  constexpr int kHalfmoveClockLimit = 100;
+  if (board_->GetHalfmoveClock() >= kHalfmoveClockLimit) {
     return kDraw;
   }
   return kPlayerToMove;
