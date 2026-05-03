@@ -120,13 +120,11 @@ auto Engine::GetGameStatus() -> S8 {
     }
     return kPlayerInCheck;
   } else if (no_legal_moves) {
-    // Indicate that the game has ended in a draw.
     return kDraw;
   }
 
-  // Enforce the Fifty Move Rule (100 half-moves = 50 full moves).
-  // S8 holds up to 127, so 100 is safe; the original 2*75=150 overflowed.
-  constexpr int kHalfmoveClockLimit = 100;
+  // Enfforce the Fifty Move Rule.
+  constexpr S8 kHalfmoveClockLimit = 100;
   if (board_->GetHalfmoveClock() >= kHalfmoveClockLimit) {
     return kDraw;
   }

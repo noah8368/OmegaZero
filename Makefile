@@ -26,8 +26,14 @@ OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \
           build/main.o build/masks.o build/transposition_table.o \
           build/piece_sq_tables.o
 
+TEST_OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \
+               build/test_harness.o build/masks.o build/transposition_table.o \
+               build/piece_sq_tables.o
+
 all : build $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS) $(OPT_FLAGS) $(LINK_FLAGS)
+test : build $(TEST_OBJECTS)
+	$(CC) -o build/test_harness $(TEST_OBJECTS) $(FLAGS) $(OPT_FLAGS) $(LINK_FLAGS)
 build/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS)
 
