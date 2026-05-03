@@ -277,11 +277,11 @@ void RunSearch(const SearchCase& test_case) {
 
 // ---- Self-play crash detection ----
 
-string FormatMoveHistory(const vector<string>& uci_history) {
+string FormatMoveHistory(const vector<string>& move_history) {
   ostringstream s;
-  for (size_t i = 0; i < uci_history.size(); ++i) {
+  for (size_t i = 0; i < move_history.size(); ++i) {
     if (i % 2 == 0) s << (i / 2 + 1) << ". ";
-    s << uci_history[i] << " ";
+    s << move_history[i] << " ";
   }
   return s.str();
 }
@@ -300,7 +300,7 @@ bool RunSelfPlay(int num_games, float search_time, const string& out_dir) {
 
     Board board(kStartFen);
     Engine engine(&board, 'w', search_time);
-    vector<string> uci_history;
+    vector<string> move_history;
     string error_msg;
 
     for (int half_move = 0; half_move < kMaxMovesPerGame; ++half_move) {
@@ -314,37 +314,37 @@ bool RunSelfPlay(int num_games, float search_time, const string& out_dir) {
           m = engine.GetBestMove();
         } catch (const std::exception& e) {
           error_msg = "GetBestMove threw after " +
-                      to_string(uci_history.size()) + " moves: " + e.what();
+                      to_string(move_history.size()) + " moves: " + e.what();
           break;
         }
       }
 
       if (m.moving_piece == kNA && m.castling_type == kNA) {
         error_msg = "engine returned empty move after " +
-                    to_string(uci_history.size()) + " move(s) played";
+                    to_string(move_history.size()) + " move(s) played";
         break;
       }
 
-      uci_history.push_back(MoveToFide(m, board));
+      move_history.push_back(MoveToFide(m, board));
 
       try {
         board.MakeMove(m);
       } catch (BadMove& e) {
-        error_msg = "MakeMove rejected move " + uci_history.back() +
-                    " after " + to_string(uci_history.size()) +
+        error_msg = "MakeMove rejected move " + move_history.back() +
+                    " after " + to_string(move_history.size()) +
                     " moves: " + e.what();
         break;
       } catch (const std::exception& e) {
         error_msg = "MakeMove threw after " +
-                    to_string(uci_history.size()) + " moves: " + e.what();
+                    to_string(move_history.size()) + " moves: " + e.what();
         break;
       }
     }
 
-    string moves = FormatMoveHistory(uci_history);
+    string moves = FormatMoveHistory(move_history);
 
     if (error_msg.empty()) {
-      cout << " ok (" << uci_history.size() << " half-moves)" << endl;
+      cout << " ok (" << move_history.size() << " half-moves)" << endl;
       cout << "  " << moves << "\n" << endl;
       continue;
     }

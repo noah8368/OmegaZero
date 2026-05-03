@@ -26,18 +26,23 @@ OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \
           build/main.o build/masks.o build/transposition_table.o \
           build/piece_sq_tables.o
 
-TEST_OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \
-               build/test_harness.o build/masks.o build/transposition_table.o \
-               build/piece_sq_tables.o
+DEBUG_OBJECTS = build/debug/board.o build/debug/engine.o build/debug/game.o \
+                build/debug/magics.o build/debug/test_harness.o \
+                build/debug/masks.o build/debug/transposition_table.o \
+                build/debug/piece_sq_tables.o
 
 all : build $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS) $(OPT_FLAGS) $(LINK_FLAGS)
-test : build $(TEST_OBJECTS)
-	$(CC) -o build/test_harness $(TEST_OBJECTS) $(FLAGS) $(OPT_FLAGS) $(LINK_FLAGS)
+debug : build/debug $(DEBUG_OBJECTS)
+	$(CC) -o build/test_harness $(DEBUG_OBJECTS) $(FLAGS) $(DEBUG_FLAGS) $(LINK_FLAGS)
 build/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS)
+build/debug/%.o: src/%.cc
+	$(CC) -c -o $@ $< $(FLAGS) $(DEBUG_FLAGS)
 
 build :
+	mkdir $@
+build/debug :
 	mkdir $@
 
 src/masks.cc :
@@ -66,4 +71,4 @@ check-deps:
 
 .PHONY: clean
 clean:
-	rm -rf build build
+	rm -rf build
