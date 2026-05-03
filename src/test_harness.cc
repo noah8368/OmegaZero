@@ -1,6 +1,7 @@
 /* Noah Himed
  *
- * Automated test harness: perft regression, eval sanity, search sanity.
+ * Automated test harness: perft regression, eval sanity, search sanity,
+ * and self-play crash detection.
  * Build with: make test
  * Run with:   ./build/test_harness
  *
@@ -8,7 +9,9 @@
  */
 
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -22,27 +25,96 @@ namespace omegazero {
 
 using std::cout;
 using std::endl;
+using std::ofstream;
+using std::ostringstream;
 using std::string;
+using std::to_string;
 using std::vector;
 
 int pass_count = 0;
 int fail_count = 0;
 
-string MoveToUci(const Move& m, S8 player) {
-  if (m.castling_type == kQueenSide) return player == kWhite ? "e1c1" : "e8c8";
-  if (m.castling_type == kKingSide)  return player == kWhite ? "e1g1" : "e8g8";
+// Piece enum: kPawn=0, kKnight=1, kBishop=2, kRook=3, kQueen=4, kKing=5
+static const char kPieceLetters[] = {0, 'N', 'B', 'R', 'Q', 'K'};
+
+// Generates a FIDE algebraic notation string for a move. Must be called with
+// the board state BEFORE the move is applied (needed for disambiguation).
+string MoveToFide(const Move& m, const Board& board) {
+  if (m.castling_type == kQueenSide) return "0-0-0";
+  if (m.castling_type == kKingSide)  return "0-0";
+
   string s;
-  s += static_cast<char>('a' + GetFileFromSq(m.start_sq));
-  s += static_cast<char>('1' + GetRankFromSq(m.start_sq));
-  s += static_cast<char>('a' + GetFileFromSq(m.target_sq));
-  s += static_cast<char>('1' + GetRankFromSq(m.target_sq));
+  S8 moving_player = board.GetPlayerToMove();
+  S8 start_file = GetFileFromSq(m.start_sq);
+  S8 start_rank = GetRankFromSq(m.start_sq);
+  S8 target_file = GetFileFromSq(m.target_sq);
+  S8 target_rank = GetRankFromSq(m.target_sq);
+
+  if (m.moving_piece == kPawn) {
+    if (m.captured_piece != kNA || m.is_ep) {
+      s += static_cast<char>('a' + start_file);
+      s += 'x';
+    }
+  } else {
+    s += kPieceLetters[m.moving_piece];
+    // Disambiguate if another piece of the same type can reach the same square.
+    Bitboard candidates = board.GetAttackMap(moving_player, m.target_sq, m.moving_piece)
+                        & board.GetPiecesByType(m.moving_piece, moving_player);
+    if (!OneSqSet(candidates)) {
+      if (OneSqSet(candidates & kRankMasks[start_rank])) {
+        s += static_cast<char>('1' + start_rank);
+      } else if (OneSqSet(candidates & kFileMasks[start_file])) {
+        s += static_cast<char>('a' + start_file);
+      } else {
+        s += static_cast<char>('a' + start_file);
+        s += static_cast<char>('1' + start_rank);
+      }
+    }
+    if (m.captured_piece != kNA) s += 'x';
+  }
+
+  s += static_cast<char>('a' + target_file);
+  s += static_cast<char>('1' + target_rank);
+
   if (m.promoted_to_piece != kNA) {
-    // Piece enum: kPawn=0, kKnight=1, kBishop=2, kRook=3, kQueen=4, kKing=5
-    static const char kPromo[] = {0, 'n', 'b', 'r', 'q', 0};
-    s += kPromo[m.promoted_to_piece];
+    s += kPieceLetters[m.promoted_to_piece];
+  } else if (m.is_ep) {
+    s += "e.p.";
   }
   return s;
 }
+
+string BoardToString(const Board& board) {
+  static const char kPieceChars[] = {'P', 'N', 'B', 'R', 'Q', 'K'};
+  ostringstream s;
+  for (int rank = 7; rank >= 0; --rank) {
+    s << (rank + 1) << " ";
+    for (int file = 0; file < 8; ++file) {
+      S8 sq = GetSqFromRankFile(static_cast<S8>(rank), static_cast<S8>(file));
+      S8 piece = board.GetPieceOnSq(sq);
+      if (piece == kNA) {
+        s << ". ";
+      } else {
+        char c = kPieceChars[piece];
+        if (board.GetPlayerOnSq(sq) == kBlack) c += 'a' - 'A';
+        s << c << " ";
+      }
+    }
+    s << "\n";
+  }
+  s << "  a b c d e f g h\n";
+  s << (board.GetPlayerToMove() == kWhite ? "White" : "Black") << " to move";
+  return s.str();
+}
+
+// Redirects cout to /dev/null for its lifetime. Used to suppress the engine's
+// "SEARCH DEPTH:" diagnostic during self-play so it doesn't drown the output.
+struct SuppressCout {
+  ofstream dev_null_;
+  std::streambuf* saved_;
+  SuppressCout() : dev_null_("/dev/null"), saved_(cout.rdbuf(dev_null_.rdbuf())) {}
+  ~SuppressCout() { cout.rdbuf(saved_); }
+};
 
 // ---- Perft ----
 
@@ -103,9 +175,9 @@ void RunPerft(const PerftCase& test_case) {
     cout << "  Per-move subtrees (depth " << (test_case.depth - 1) << "):" << endl;
     Board board2(test_case.fen);
     Engine engine2(&board2, 'w', 0.5f);
-    S8 player = board2.GetPlayerToMove();
     vector<Move> moves = engine2.GenerateMoves();
     for (Move& m : moves) {
+      string move_str = MoveToFide(m, board2);
       try {
         board2.MakeMove(m);
       } catch (BadMove&) {
@@ -113,7 +185,7 @@ void RunPerft(const PerftCase& test_case) {
       }
       U64 sub = engine2.Perft(test_case.depth - 1);
       board2.UnmakeMove(m);
-      cout << "    " << MoveToUci(m, player) << ": " << sub << endl;
+      cout << "    " << move_str << ": " << sub << endl;
     }
   }
   ++fail_count;
@@ -182,13 +254,16 @@ void RunSearch(const SearchCase& test_case) {
   Board board(test_case.fen);
   Engine engine(&board, 'w', 0.1f);
   Move m;
-  try {
-    m = engine.GetBestMove();
-  } catch (const std::exception& e) {
-    cout << "FAIL [" << test_case.name << "] threw: " << e.what() << "\n"
-         << "  FEN: " << test_case.fen << endl;
-    ++fail_count;
-    return;
+  {
+    SuppressCout suppress;
+    try {
+      m = engine.GetBestMove();
+    } catch (const std::exception& e) {
+      cout << "FAIL [" << test_case.name << "] threw: " << e.what() << "\n"
+           << "  FEN: " << test_case.fen << endl;
+      ++fail_count;
+      return;
+    }
   }
   if (m.moving_piece != kNA || m.castling_type != kNA) {
     cout << "PASS [" << test_case.name << "]" << endl;
@@ -200,10 +275,113 @@ void RunSearch(const SearchCase& test_case) {
   ++fail_count;
 }
 
+// ---- Self-play crash detection ----
+
+string FormatMoveHistory(const vector<string>& uci_history) {
+  ostringstream s;
+  for (size_t i = 0; i < uci_history.size(); ++i) {
+    if (i % 2 == 0) s << (i / 2 + 1) << ". ";
+    s << uci_history[i] << " ";
+  }
+  return s.str();
+}
+
+// Plays num_games games engine-vs-itself from the starting position. Prints
+// each game's move history to cout and appends it to build/self_play_games.txt.
+// Stops on the first error. Returns true if all games completed without error.
+bool RunSelfPlay(int num_games, float search_time, const string& out_dir) {
+  constexpr int kMaxMovesPerGame = 200;
+  const string kStartFen =
+      "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  const string kBugLog = out_dir + "bug_log.txt";
+
+  for (int game = 1; game <= num_games; ++game) {
+    cout << "  Game " << game << "/" << num_games << " ..." << std::flush;
+
+    Board board(kStartFen);
+    Engine engine(&board, 'w', search_time);
+    vector<string> uci_history;
+    string error_msg;
+
+    for (int half_move = 0; half_move < kMaxMovesPerGame; ++half_move) {
+      S8 status = engine.GetGameStatus();
+      if (status == kPlayerCheckmated || status == kDraw) break;
+
+      Move m;
+      {
+        SuppressCout suppress;
+        try {
+          m = engine.GetBestMove();
+        } catch (const std::exception& e) {
+          error_msg = "GetBestMove threw after " +
+                      to_string(uci_history.size()) + " moves: " + e.what();
+          break;
+        }
+      }
+
+      if (m.moving_piece == kNA && m.castling_type == kNA) {
+        error_msg = "engine returned empty move after " +
+                    to_string(uci_history.size()) + " move(s) played";
+        break;
+      }
+
+      uci_history.push_back(MoveToFide(m, board));
+
+      try {
+        board.MakeMove(m);
+      } catch (BadMove& e) {
+        error_msg = "MakeMove rejected move " + uci_history.back() +
+                    " after " + to_string(uci_history.size()) +
+                    " moves: " + e.what();
+        break;
+      } catch (const std::exception& e) {
+        error_msg = "MakeMove threw after " +
+                    to_string(uci_history.size()) + " moves: " + e.what();
+        break;
+      }
+    }
+
+    string moves = FormatMoveHistory(uci_history);
+
+    if (error_msg.empty()) {
+      cout << " ok (" << uci_history.size() << " half-moves)" << endl;
+      cout << "  " << moves << "\n" << endl;
+      continue;
+    }
+
+    cout << " ERROR" << endl;
+    string board_str = BoardToString(board);
+    cout << "  Error: " << error_msg << "\n"
+         << "  " << moves << "\n"
+         << board_str << "\n" << endl;
+
+    ofstream f(kBugLog);
+    if (f) {
+      f << "Game " << game << " ERROR: " << error_msg << "\n"
+        << moves << "\n\n"
+        << board_str << "\n";
+      cout << "Saved to " << kBugLog << endl;
+    } else {
+      cout << "(could not write " << kBugLog << ")" << endl;
+    }
+
+    return false;
+  }
+
+  return true;
+}
+
 }  // namespace omegazero
 
-auto main() -> int {
+auto main(int, char* argv[]) -> int {
   using namespace omegazero;
+
+  // Derive output directory from the executable path so files land next to the
+  // binary regardless of which directory the harness is invoked from.
+  string out_dir(argv[0]);
+  size_t last_slash = out_dir.rfind('/');
+  out_dir = (last_slash != string::npos) ? out_dir.substr(0, last_slash + 1)
+                                         : "./";
 
   cout << "=== Perft ===" << endl;
   for (const auto& test_case : kPerftCases) RunPerft(test_case);
@@ -217,5 +395,9 @@ auto main() -> int {
   int total = pass_count + fail_count;
   cout << "\n" << total << " tests: " << pass_count << " passed, "
        << fail_count << " failed" << endl;
-  return fail_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+
+  cout << "\n=== Self-play (10 games) ===" << endl;
+  bool self_play_ok = RunSelfPlay(10, 0.1f, out_dir);
+
+  return (fail_count > 0 || !self_play_ok) ? EXIT_FAILURE : EXIT_SUCCESS;
 }
