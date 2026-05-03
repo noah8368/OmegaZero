@@ -40,8 +40,6 @@ brew install boost
 #### Building the Engine
 
 To build the software, simply type `make` in the root directory of the project.
-This will take several minutes as the `magics.cc` file takes quite
-a while to build.
 
 #### User Input
 

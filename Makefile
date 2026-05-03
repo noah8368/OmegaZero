@@ -22,9 +22,6 @@ else
   LINK_FLAGS = -lboost_program_options
 endif
 
-DEBUG_OBJECTS = debug_build/board.o debug_build/engine.o debug_build/game.o \
-                debug_build/magics.o debug_build/main.o debug_build/masks.o \
-                debug_build/transposition_table.o debug_build/piece_sq_tables.o
 OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \
           build/main.o build/masks.o build/transposition_table.o \
           build/piece_sq_tables.o
@@ -34,14 +31,7 @@ all : build $(OBJECTS)
 build/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS)
 
-debug : debug_build $(DEBUG_OBJECTS)
-	$(CC) -o debug_build/OmegaZero $(DEBUG_OBJECTS) $(FLAGS) $(DEBUG_FLAGS) $(LINK_FLAGS)
-debug_build/%.o: src/%.cc
-	$(CC) -c -o $@ $< $(FLAGS) $(DEBUG_FLAGS)
-
 build :
-	mkdir $@
-debug_build :
 	mkdir $@
 
 src/masks.cc :
@@ -66,16 +56,8 @@ check-deps:
 	  || { echo "ERROR: boost not found. Install it:"; \
 	       if [ "$(UNAME_S)" = "Darwin" ]; then echo "  brew install boost"; \
 	       else echo "  sudo apt-get install libboost-program-options-dev"; fi; exit 1; }
-	@echo "All dependencies satisfied. Run 'make debug' or 'make all' to build."
-
-.PHONY: purge
-purge:
-	rm -rf build debug_build
+	@echo "All dependencies satisfied. Run 'make' to build."
 
 .PHONY: clean
 clean:
-	rm -f build/board.o build/engine.o build/game.o build/main.o \
-	   build/transposition_table.o build/piece_sq_tables.o build/OmegaZero \
-	   debug_build/board.o debug_build/engine.o debug_build/game.o \
-	   debug_build/main.o debug_build/transposition_table.o \
-	   debug_build/piece_sq_tables.o debug_build/OmegaZero
+	rm -rf build build
