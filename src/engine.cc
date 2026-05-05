@@ -68,6 +68,9 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
 auto Engine::GetBestMove() -> Move {
   transposition_table_.Clear();
   board_->ClearPawnTable();
+  // Save game-level history; OutOfTime can unwind past the per-move restores
+  // in NegamaxSearch, leaving stale hashes behind.
+  queue<U64> saved_pos_history = pos_history_;
   Move best_move;
   Move move;
   board_->SavePos();
@@ -94,6 +97,8 @@ auto Engine::GetBestMove() -> Move {
       (search_depth == kSearchLimit) ? kSearchLimit : search_depth - 1;
   cout << "SEARCH DEPTH: " << search_depth << endl;
   board_->ResetPos();
+  // Discard any hashes stranded by OutOfTime.
+  pos_history_ = saved_pos_history;
   return best_move;
 }
 

@@ -3,3 +3,5 @@ debug_build
 __pycache__
 **/.vscode/**
 games
+# I'm using Claude code to debug the engine.s
+CLAUDE.md

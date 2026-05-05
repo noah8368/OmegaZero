@@ -8,8 +8,11 @@
  * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
  */
 
+#include <chrono>
 #include <cstdlib>
+#include <ctime>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -293,7 +296,6 @@ bool RunSelfPlay(int num_games, float search_time, const string& out_dir) {
   constexpr int kMaxMovesPerGame = 200;
   const string kStartFen =
       "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-  const string kBugLog = out_dir + "bug_log.txt";
 
   for (int game = 1; game <= num_games; ++game) {
     cout << "  Game " << game << "/" << num_games << " ..." << std::flush;
@@ -355,14 +357,27 @@ bool RunSelfPlay(int num_games, float search_time, const string& out_dir) {
          << "  " << moves << "\n"
          << board_str << "\n" << endl;
 
-    ofstream f(kBugLog);
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_t = std::chrono::system_clock::to_time_t(now);
+    std::tm* lt = std::localtime(&now_t);
+    ostringstream ts;
+    ts << std::setfill('0')
+       << (lt->tm_year + 1900) << "-"
+       << std::setw(2) << (lt->tm_mon + 1) << "-"
+       << std::setw(2) << lt->tm_mday << "_"
+       << std::setw(2) << lt->tm_hour << "-"
+       << std::setw(2) << lt->tm_min << "-"
+       << std::setw(2) << lt->tm_sec;
+    string crash_log = out_dir + "crash_log_" + ts.str() + ".txt";
+
+    ofstream f(crash_log);
     if (f) {
       f << "Game " << game << " ERROR: " << error_msg << "\n"
         << moves << "\n\n"
         << board_str << "\n";
-      cout << "Saved to " << kBugLog << endl;
+      cout << "Saved to " << crash_log << endl;
     } else {
-      cout << "(could not write " << kBugLog << ")" << endl;
+      cout << "(could not write " << crash_log << ")" << endl;
     }
 
     return false;
