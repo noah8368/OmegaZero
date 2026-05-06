@@ -10,7 +10,7 @@ FLAGS = -march=native -pedantic -std=c++17 -Wall -Werror -Wextra -Wshadow
 # floating-point behavior. The remaining flags are safe on both platforms.
 OPT_FLAGS = -O3 -fno-signed-zeros -fno-trapping-math -funroll-loops
 
-DEBUG_FLAGS = -O0 -g
+DEBUG_FLAGS = -O0 -g -fsanitize=address -fno-omit-frame-pointer
 
 ifeq ($(UNAME_S), Darwin)
   # Homebrew on Apple Silicon installs to /opt/homebrew.
@@ -42,8 +42,8 @@ build/debug/%.o: src/%.cc
 
 build :
 	mkdir $@
-build/debug :
-	mkdir $@
+build/debug : build
+	mkdir -p $@
 
 src/masks.cc :
 	python3 scripts/generate_masks.py

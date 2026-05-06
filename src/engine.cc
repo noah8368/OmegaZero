@@ -102,27 +102,6 @@ auto Engine::GetBestMove() -> Move {
   board_->ResetPos();
   // Discard any hashes stranded by OutOfTime.
   pos_history_ = saved_pos_history;
-  // DEBUG CLAUDE start
-  if (best_move.moving_piece == kNA && best_move.castling_type == kNA) {
-    S8 status = GetGameStatus();
-    vector<Move> dbg_moves = GenerateMoves();
-    int dbg_legal = 0;
-    for (const Move& m : dbg_moves) {
-      try {
-        board_->MakeMove(m);
-      } catch (BadMove& e) {
-        continue;
-      }
-      board_->UnmakeMove(m);
-      ++dbg_legal;
-    }
-    std::cerr << "DEBUG: empty best_move, f=" << f << " depth=" << search_depth
-         << " status=" << static_cast<int>(status)
-         << " pos_history_size=" << pos_history_.size()
-         << " pseudo_legal=" << dbg_moves.size()
-         << " legal=" << dbg_legal << endl;
-  }
-  // DEBUG CLAUDE end
   assert(best_move.moving_piece != kNA || best_move.castling_type != kNA ||
          GetGameStatus() == kPlayerCheckmated || GetGameStatus() == kDraw);
   return best_move;
@@ -276,18 +255,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     }
   }
 
-  // DEBUG CLAUDE start
-  U64 hash_before_status = board_->GetBoardHash();
-  // DEBUG CLAUDE end
   S8 game_status = GetGameStatus();
-  // DEBUG CLAUDE start
-  U64 hash_after_status = board_->GetBoardHash();
-  if (ply == 0 && hash_before_status != hash_after_status) {
-    std::cerr << "DEBUG: GetGameStatus corrupted board hash at ply 0! "
-              << "before=" << hash_before_status
-              << " after=" << hash_after_status << endl;
-  }
-  // DEBUG CLAUDE end
   if (game_status == kPlayerCheckmated) {
     return kWorstEval;
   }
@@ -332,11 +300,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   int depth_reduction;
   // Iterate through all child nodes of the current position.
   size_t num_moves = move_list.size();
-  // DEBUG CLAUDE start
-  int dbg_legal_in_search = 0;
-  // DEBUG CLAUDE end
   for (size_t move_idx = 0; move_idx < num_moves; ++move_idx) {
-    // cout << "MOVE: " << move_idx << endl;
     move = move_list[move_idx];
     try {
       board_->MakeMove(move);
@@ -344,9 +308,6 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       // Ignore moves that put the player's king in check.
       continue;
     }
-    // DEBUG CLAUDE start
-    ++dbg_legal_in_search;
-    // DEBUG CLAUDE end
 
     AddPosToHistory();
     if (move_idx >= kNumEarlyMoves && !at_pv_node &&
@@ -384,15 +345,6 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       break;
     }
   }
-
-  // DEBUG CLAUDE start
-  if (ply == 0 && dbg_legal_in_search == 0 && game_status == kPlayerToMove) {
-    std::cerr << "DEBUG: ply 0, no legal moves in search loop! "
-              << "num_moves=" << num_moves
-              << " depth=" << depth
-              << " alpha=" << alpha << " beta=" << beta << endl;
-  }
-  // DEBUG CLAUDE end
 
   // Store a searched node in the transposition table.
   if (best_eval <= orig_alpha) {

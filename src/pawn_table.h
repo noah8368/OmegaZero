@@ -25,9 +25,8 @@ using std::vector;
 
 typedef uint64_t U64;
 
-// Store a mask with least significant 19 bits set for computing table indices.
 constexpr int kPawnTableSize = 1 << 20;
-constexpr U64 kPawnHashMask = 0X7FFFF;
+constexpr U64 kPawnHashMask = kPawnTableSize - 1;
 
 class PawnTable {
  public:
@@ -54,10 +53,8 @@ class PawnTable {
 };
 
 inline PawnTable::PawnTable() {
-  entries_.reserve(kPawnTableSize);
-  occupancy_table_.reserve(kPawnTableSize);
-  // Initialize all slots intable_entry the occupancy table to unoccupied.
-  Clear();
+  entries_.resize(kPawnTableSize);
+  occupancy_table_.resize(kPawnTableSize, false);
 }
 
 inline auto PawnTable::Access(U64 pawn_hash, int& pawn_eval) const -> bool {

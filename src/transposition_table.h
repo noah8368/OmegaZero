@@ -31,7 +31,6 @@ enum NodeType : S8 {
   kAllNode,
 };
 
-// Store a mask with least significant 19 bits set for computing table indices.
 constexpr int kTableSize = 1 << 20;
 
 struct TableEntry {
@@ -70,11 +69,9 @@ class TranspositionTable {
 };
 
 inline TranspositionTable::TranspositionTable() {
-  always_replace_entries_.reserve(kTableSize);
-  depth_pref_entries_.reserve(kTableSize);
-  occupancy_table_.reserve(kTableSize);
-  // Initialize all slots intable_entry the occupancy table to unoccupied.
-  Clear();
+  always_replace_entries_.resize(kTableSize);
+  depth_pref_entries_.resize(kTableSize);
+  occupancy_table_.resize(kTableSize, false);
 }
 
 inline auto TranspositionTable::Update(const Board* board, int depth, int eval,

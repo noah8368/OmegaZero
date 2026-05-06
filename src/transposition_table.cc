@@ -12,7 +12,7 @@
 
 namespace omegazero {
 
-constexpr U64 kHashMask = 0X7FFFF;
+constexpr U64 kHashMask = kTableSize - 1;
 
 auto TranspositionTable::Access(const Board* board, int depth, int& eval,
                                 S8& node_type) const -> bool {
