@@ -150,8 +150,6 @@ auto Board::GetPiecesByType(S8 piece_type, S8 player) const -> Bitboard {
     return pieces_[piece_type] & player_pieces_[player];
   }
 
-  cout << (int)piece_type << endl;
-
   throw invalid_argument("player, piece_type in Board::GetPiecesByType");
 }
 
@@ -412,9 +410,7 @@ auto Board::MakeNullMove() -> void {
       (ep_target_sq_ == kNA) ? kNA : GetFileFromSq(ep_target_sq_);
   ep_target_sq_ = kNA;
   if (prev_ep_target_file != kNA) {
-    if (prev_ep_target_file != kNA) {
-      board_hash_ ^= ep_file_rand_nums_[prev_ep_target_file];
-    }
+    board_hash_ ^= ep_file_rand_nums_[prev_ep_target_file];
   }
 
   // Increment the halfmove clock.
@@ -750,7 +746,7 @@ auto Board::EvaluatePawnStructure(Bitboard white_attackspan,
     king_rank = GetRankFromSq(king_sq);
     king_file = GetFileFromSq(king_sq);
     // Check if the king is in its "pawn shelter".
-    if (king_file != kFileD && king_rank != kFileE) {
+    if (king_file != kFileD && king_file != kFileE) {
       if (player == kWhite && (king_rank == kRank1 || king_rank == kRank2)) {
         pawn_shield_dir = 1;
       } else if (player == kBlack &&
@@ -831,17 +827,17 @@ auto Board::InitHash() -> void {
     S8 ep_target_file = GetFileFromSq(ep_target_sq_);
     board_hash_ ^= ep_file_rand_nums_[ep_target_file];
   }
-  S8 piece_type;
   for (S8 piece = kPawn; piece <= kKing; ++piece) {
     for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
       piece_rand_nums_[piece][sq] = rand_num_gen();
-      // Update the hash using the current piece placement.
-      piece_type = piece_layout_[sq];
-      if (piece_type != kNA) {
-        board_hash_ ^= piece_rand_nums_[piece_type][sq];
-        if (piece_type == kPawn) {
-          pawn_hash_ ^= piece_rand_nums_[kPawn][sq];
-        }
+    }
+  }
+  for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
+    S8 piece_type = piece_layout_[sq];
+    if (piece_type != kNA) {
+      board_hash_ ^= piece_rand_nums_[piece_type][sq];
+      if (piece_type == kPawn) {
+        pawn_hash_ ^= piece_rand_nums_[kPawn][sq];
       }
     }
   }
