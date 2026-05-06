@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
-#include <queue>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -31,7 +30,6 @@ using std::end;
 using std::invalid_argument;
 using std::numeric_limits;
 using std::pair;
-using std::queue;
 using std::unordered_map;
 using std::vector;
 using std::chrono::duration;
@@ -50,12 +48,12 @@ constexpr int kSearchLimit = 50;
 
 // Store values used for transposition table move ordering.
 constexpr int kBestEval = INT32_MAX;
-constexpr int kNeutralEval = 0;
+constexpr int kContempt = -25;
+constexpr int kNeutralEval = kContempt;
 // Use -INT32_MAX rather than INT32_MIN to avoid integer overflow when
 // multipying by -1 during the search function.
 constexpr int kWorstEval = -INT32_MAX;
 
-constexpr S8 kSixPlys = 6;
 
 class Engine {
  public:
@@ -126,7 +124,7 @@ class Engine {
 
   pair<Move, Move> killer_moves_[kSearchLimit];
 
-  queue<U64> pos_history_;
+  vector<U64> pos_history_;
 
   S8 user_side_;
 
@@ -139,12 +137,7 @@ class Engine {
 inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
 
 inline auto Engine::AddPosToHistory() -> void {
-  U64 board_hash = board_->GetBoardHash();
-  pos_history_.push(board_hash);
-  // Track the last six positions of the game.
-  while (pos_history_.size() > kSixPlys) {
-    pos_history_.pop();
-  }
+  pos_history_.push_back(board_->GetBoardHash());
 }
 
 // Implement private inline member functions.
@@ -176,10 +169,13 @@ inline auto Engine::IsKillerMove(const Move& move, int ply) const -> bool {
 }
 
 inline auto Engine::RepDetected() const -> bool {
-  // Keep track of the last six plys as an efficient approximation to check for
-  // board repititions.
-  return pos_history_.size() == kSixPlys &&
-         pos_history_.front() == pos_history_.back();
+  if (pos_history_.size() < 5) return false;
+  U64 current = pos_history_.back();
+  // Scan backwards checking every 2nd entry (same side to move).
+  for (int i = static_cast<int>(pos_history_.size()) - 5; i >= 0; i -= 2) {
+    if (pos_history_[i] == current) return true;
+  }
+  return false;
 }
 
 inline auto Engine::ZugzwangUnlikely() const -> bool {
@@ -212,8 +208,7 @@ inline auto Engine::CheckSearchTime() const -> void {
 }
 
 inline auto Engine::ClearHistory() -> void {
-  queue<U64> cleared_history;
-  pos_history_.swap(cleared_history);
+  pos_history_.clear();
 }
 
 inline auto Engine::RecordKillerMove(const Move& move, int ply) -> void {

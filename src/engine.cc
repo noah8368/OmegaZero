@@ -13,7 +13,6 @@
 #include <iostream>
 #include <cmath>
 #include <cstdint>
-#include <queue>
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
@@ -31,7 +30,6 @@ namespace omegazero {
 using std::max;
 using std::min;
 using std::pair;
-using std::queue;
 using std::runtime_error;
 using std::sort;
 using std::unordered_map;
@@ -71,9 +69,9 @@ auto Engine::GetBestMove() -> Move {
   assert(!pos_history_.empty());
   transposition_table_.Clear();
   board_->ClearPawnTable();
-  // Save game-level history; OutOfTime can unwind past the per-move restores
-  // in NegamaxSearch, leaving stale hashes behind.
-  queue<U64> saved_pos_history = pos_history_;
+  // Save game-level history size; OutOfTime can unwind past the per-move
+  // restores in NegamaxSearch, leaving stale hashes behind.
+  size_t saved_history_size = pos_history_.size();
   Move best_move;
   Move move;
   board_->SavePos();
@@ -101,7 +99,7 @@ auto Engine::GetBestMove() -> Move {
   cout << "SEARCH DEPTH: " << search_depth << endl;
   board_->ResetPos();
   // Discard any hashes stranded by OutOfTime.
-  pos_history_ = saved_pos_history;
+  pos_history_.resize(saved_history_size);
   assert(best_move.moving_piece != kNA || best_move.castling_type != kNA ||
          GetGameStatus() == kPlayerCheckmated || GetGameStatus() == kDraw);
   return best_move;
@@ -292,7 +290,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   // Use the Negamax algorithm to traverse the search tree.
   vector<Move> move_list = GenerateMoves();
   move_list = OrderMoves(move_list, ply);
-  queue<U64> saved_pos_history = pos_history_;
+  size_t history_size_before_moves = pos_history_.size();
   Move best_move;
   Move move;
   int best_eval = kWorstEval;
@@ -330,7 +328,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
           -NegamaxSearch(-beta, -alpha, depth - 1, ply + 1, true, check_time);
     }
     board_->UnmakeMove(move);
-    pos_history_.swap(saved_pos_history);
+    pos_history_.resize(history_size_before_moves);
     if (search_eval > best_eval) {
       best_move = move;
       pv_move = best_move;
@@ -387,7 +385,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
   // Generate captures only.
   vector<Move> move_list = GenerateMoves(true);
   move_list = OrderMoves(move_list);
-  queue<U64> saved_pos_rep_table = pos_history_;
+  size_t history_size_before_qmoves = pos_history_.size();
   for (const Move& move : move_list) {
     try {
       board_->MakeMove(move);
@@ -399,7 +397,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
     // table to avoid cache misses.
     stand_pat_eval = -QuiescenceSearch(-beta, -alpha);
     board_->UnmakeMove(move);
-    pos_history_ = saved_pos_rep_table;
+    pos_history_.resize(history_size_before_qmoves);
 
     if (stand_pat_eval >= beta) {
       return beta;
