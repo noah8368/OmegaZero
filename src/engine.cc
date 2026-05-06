@@ -364,26 +364,27 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
     return kNeutralEval;
   }
 
-  // Establish a lower bound for the node evaluation (stand_pat_eval),
-  // and perform a beta cutoff if this value exceeds beta.
-  int stand_pat_eval = board_->Evaluate();
-  if (stand_pat_eval >= beta) {
-    return beta;
-  }
-  alpha = max(stand_pat_eval, alpha);
+  bool in_check = board_->KingInCheck();
 
-  if (!InEndgame()) {
-    // Perfrom delta pruning if not in the endgame.
-    const int kDelta = kPieceVals[kQueen];
-    if (stand_pat_eval < alpha - kDelta) {
-      // If the biggest possible material swing won't increase alpha, don't
-      // bother searching any captures.
-      return alpha;
+  if (!in_check) {
+    // Establish a lower bound for the node evaluation (stand_pat_eval),
+    // and perform a beta cutoff if this value exceeds beta.
+    int stand_pat_eval = board_->Evaluate();
+    if (stand_pat_eval >= beta) {
+      return beta;
+    }
+    alpha = max(stand_pat_eval, alpha);
+
+    if (!InEndgame()) {
+      const int kDelta = kPieceVals[kQueen];
+      if (stand_pat_eval < alpha - kDelta) {
+        return alpha;
+      }
     }
   }
 
-  // Generate captures only.
-  vector<Move> move_list = GenerateMoves(true);
+  // When in check, search all evasions. Otherwise, search captures only.
+  vector<Move> move_list = GenerateMoves(/* captures_only = */ !in_check);
   move_list = OrderMoves(move_list);
   size_t history_size_before_qmoves = pos_history_.size();
   for (const Move& move : move_list) {
@@ -393,16 +394,14 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
       continue;
     }
     AddPosToHistory();
-    // Calculate the evalulation directly rather than using the transposition
-    // table to avoid cache misses.
-    stand_pat_eval = -QuiescenceSearch(-beta, -alpha);
+    int eval = -QuiescenceSearch(-beta, -alpha);
     board_->UnmakeMove(move);
     pos_history_.resize(history_size_before_qmoves);
 
-    if (stand_pat_eval >= beta) {
+    if (eval >= beta) {
       return beta;
     }
-    alpha = max(stand_pat_eval, alpha);
+    alpha = max(eval, alpha);
   }
 
   return alpha;

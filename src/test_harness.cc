@@ -413,8 +413,8 @@ auto main(int, char* argv[]) -> int {
   cout << "\n" << total << " tests: " << pass_count << " passed, "
        << fail_count << " failed" << endl;
 
-  cout << "\n=== Self-play (10 games) ===" << endl;
-  bool self_play_ok = RunSelfPlay(10, 0.1f, out_dir);
+  cout << "\n=== Self-play (5 game, 2s) ===" << endl;
+  bool self_play_ok = RunSelfPlay(5, 2.0f, out_dir);
 
   return (fail_count > 0 || !self_play_ok) ? EXIT_FAILURE : EXIT_SUCCESS;
 }
