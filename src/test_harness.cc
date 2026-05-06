@@ -256,6 +256,7 @@ const SearchCase kSearchCases[] = {
 void RunSearch(const SearchCase& test_case) {
   Board board(test_case.fen);
   Engine engine(&board, 'w', 0.1f);
+  engine.AddPosToHistory();
   Move m;
   {
     SuppressCout suppress;
@@ -310,6 +311,7 @@ bool RunSelfPlay(int num_games, float search_time, const string& out_dir) {
       if (status == kPlayerCheckmated || status == kDraw) break;
 
       Move m;
+      engine.AddPosToHistory();
       {
         SuppressCout suppress;
         try {

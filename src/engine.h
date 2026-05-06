@@ -11,6 +11,7 @@
 #define OMEGAZERO_SRC_ENGINE_H_
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <queue>
 #include <stdexcept>
