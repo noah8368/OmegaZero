@@ -37,6 +37,26 @@ follow the instructions on their site first, then run:
 brew install boost
 ```
 
+#### ELO Testing Dependencies (optional)
+
+To run automated ELO testing, the following additional tools are required:
+
+- [Stockfish](https://stockfishchess.org/) — the opponent engine
+- [cutechess-cli](https://github.com/cutechess/cutechess) — tournament manager
+- [matplotlib](https://matplotlib.org/) — for generating plots (Python)
+
+On macOS:
+```
+brew install stockfish cute-chess
+pip3 install matplotlib
+```
+
+On Ubuntu:
+```
+sudo apt-get install stockfish cutechess
+pip3 install matplotlib
+```
+
 #### Building the Engine
 
 To build the software, simply type `make` in the root directory of the project.
@@ -72,7 +92,43 @@ to avoid ambiguity in a movement command. Some valid example moves are
 
 To resign, a user must enter `q` on their turn.
 
-##### Testing
+##### UCI Mode
+
+OmegaZero supports the [Universal Chess Interface](https://www.chessprogramming.org/UCI) (UCI) protocol for
+integration with chess GUIs and tournament managers. To launch in UCI mode:
+```
+OmegaZero --uci
+```
+
+##### ELO Testing
+
+The `scripts/elo_test.py` script automates ELO estimation by running OmegaZero
+against Stockfish at various strength levels via cutechess-cli. It records
+per-game results to CSV and generates summary tables and plots.
+
+Run matches (default: 20 games each at ELO 1320, 1500, 1700, 1900, 2100):
+```
+python3 scripts/elo_test.py run
+```
+
+Customize the test:
+```
+python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50 --tc 15+0.2
+```
+
+Regenerate plots and summary table from existing results:
+```
+python3 scripts/elo_test.py plot --input build/elo_results
+```
+
+Results are saved to `build/elo_results/` by default:
+- `games.csv` — per-game results with running ELO estimates
+- `summary.csv` — win/draw/loss totals and ELO estimate per opponent level
+- `elo_convergence.png` — ELO estimate over games played (one line per level)
+- `wdl_by_level.png` — win/draw/loss bar chart by opponent strength
+- `elo_by_level.png` — ELO estimate by opponent strength with average line
+
+##### Perft Testing
 
 To print out the [Perft](https://www.chessprogramming.org/Perft) results for engine, invoke the program as follows:
 ```

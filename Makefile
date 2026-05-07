@@ -24,7 +24,7 @@ endif
 
 OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \
           build/main.o build/masks.o build/transposition_table.o \
-          build/piece_sq_tables.o
+          build/piece_sq_tables.o build/uci.o
 
 DEBUG_OBJECTS = build/debug/board.o build/debug/engine.o build/debug/game.o \
                 build/debug/magics.o build/debug/test_harness.o \

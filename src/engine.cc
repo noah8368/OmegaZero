@@ -98,7 +98,7 @@ auto Engine::GetBestMove() -> Move {
 
   search_depth =
       (search_depth == kSearchLimit) ? kSearchLimit : search_depth - 1;
-  cout << "SEARCH DEPTH: " << search_depth << endl;
+  std::cerr << "SEARCH DEPTH: " << search_depth << endl;
   board_->ResetPos();
   // Discard any hashes stranded by OutOfTime.
   pos_history_.resize(saved_history_size);

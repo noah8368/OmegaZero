@@ -79,6 +79,8 @@ class Engine {
   // Adds a board repitition to keep enforce move repitition rules and return
   // the number of times the current board state has been encountered.
   auto AddPosToHistory() -> void;
+  auto ClearHistory() -> void;
+  auto SetSearchTime(float t) -> void;
 
  private:
   auto InEndgame() const -> bool;
@@ -113,7 +115,6 @@ class Engine {
                         S8 enemy_player, S8 moving_player, S8 moving_piece,
                         S8 start_sq) const -> void;
   auto CheckSearchTime() const -> void;
-  auto ClearHistory() -> void;
   auto RecordKillerMove(const Move& move, int ply) -> void;
 
   Board* board_;
@@ -138,6 +139,14 @@ inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
 
 inline auto Engine::AddPosToHistory() -> void {
   pos_history_.push_back(board_->GetBoardHash());
+}
+
+inline auto Engine::ClearHistory() -> void { pos_history_.clear(); }
+
+inline auto Engine::SetSearchTime(float t) -> void {
+  constexpr float kMinSearchTime = 0.1f;
+  if (t < kMinSearchTime) t = kMinSearchTime;
+  search_time_ = t;
 }
 
 // Implement private inline member functions.
@@ -205,10 +214,6 @@ inline auto Engine::CheckSearchTime() const -> void {
   if (time_since_search_started >= search_time_) {
     throw OutOfTime();
   }
-}
-
-inline auto Engine::ClearHistory() -> void {
-  pos_history_.clear();
 }
 
 inline auto Engine::RecordKillerMove(const Move& move, int ply) -> void {

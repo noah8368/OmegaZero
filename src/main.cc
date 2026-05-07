@@ -13,6 +13,7 @@
 
 #include "game.h"
 #include "move.h"
+#include "uci.h"
 
 using std::cout;
 using std::endl;
@@ -50,7 +51,8 @@ auto main(int argc, char* argv[]) -> int {
                      prog_opt::value<string>(&opening_book_path),
                      "Opening book file path")(
       "save,s", prog_opt::value<string>(&game_record_file),
-      "File to save the move history to after a game is finished.");
+      "File to save the move history to after a game is finished.")(
+      "uci,u", "Run in UCI protocol mode");
   prog_opt::variables_map var_map;
   try {
     prog_opt::store(prog_opt::parse_command_line(argc, argv, desc), var_map);
@@ -58,6 +60,12 @@ auto main(int argc, char* argv[]) -> int {
   } catch (prog_opt::error& e) {
     cout << "ERROR: Parsing fault: " << e.what() << endl;
     return EINVAL;
+  }
+
+  if (var_map.count("uci")) {
+    omegazero::UciHandler uci;
+    uci.Run();
+    return 0;
   }
 
   try {
