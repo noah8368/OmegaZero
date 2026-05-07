@@ -417,7 +417,8 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
   return alpha;
 }
 
-auto Engine::OrderMoves(vector<Move> move_list, int ply) const -> vector<Move> {
+auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
+    -> vector<Move> {
   Move hash_move = transposition_table_.GetHashMove(board_);
 
   vector<pair<Move, int>> ordered_capture_pairs;
@@ -465,7 +466,7 @@ auto Engine::OrderMoves(vector<Move> move_list, int ply) const -> vector<Move> {
   return ordered_moves;
 }
 
-auto Engine::OrderMoves(vector<Move> move_list) const -> vector<Move> {
+auto Engine::OrderMoves(const vector<Move>& move_list) const -> vector<Move> {
   vector<pair<Move, int>> ordered_capture_pairs;
   vector<Move> late_moves;
   for (const Move& move : move_list) {

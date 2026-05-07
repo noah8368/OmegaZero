@@ -25,6 +25,9 @@ using std::string;
 using std::to_string;
 using std::unordered_map;
 
+constexpr S8 kNumMoveRepForOptionalDraw = 3;
+constexpr S8 kMaxMoveRep = 5;
+
 auto GetPieceLetter(S8 piece) -> char;
 
 auto GetPlayerStr(S8 player) -> string;

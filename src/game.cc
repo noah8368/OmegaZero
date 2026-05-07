@@ -7,13 +7,10 @@
 
 #include "game.h"
 
-#include <cstdint>
 #include <ctime>
 #include <fstream>
 #include <iostream>
-#include <iterator>
 #include <random>
-#include <stack>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -133,7 +130,6 @@ auto Game::MakeEngineMove() -> Move {
   Move engine_move;
 
   // Check the status of the game.
-  constexpr S8 kMaxMoveRep = 5;
   S8 game_status = engine_.GetGameStatus();
   S8 player_to_move = board_.GetPlayerToMove();
   if (game_status == kPlayerInCheck) {
@@ -166,7 +162,6 @@ auto Game::MakeOtherEngineMove(const Move& move) -> void {
   engine_.AddPosToHistory();
 
   // Check the status of the game.
-  constexpr S8 kMaxMoveRep = 5;
   S8 game_status = engine_.GetGameStatus();
   S8 player_to_move = board_.GetPlayerToMove();
   if (game_status == kPlayerInCheck) {
@@ -241,8 +236,6 @@ void Game::Play() {
   engine_.AddPosToHistory();
 
   // Check the status of the game.
-  constexpr S8 kNumMoveRepForOptionalDraw = 3;
-  constexpr S8 kMaxMoveRep = 5;
   S8 game_status = engine_.GetGameStatus();
   S8 player_to_move = board_.GetPlayerToMove();
   S8 user_side = engine_.GetUserSide();
@@ -280,26 +273,25 @@ void Game::Play() {
   if (player_to_move == user_side) {
     // Allow the user to take their turn.
     string player_name = GetPlayerStr(player_to_move);
-    cout << "\n\n" << player_name << " to move" << endl;
     Move user_move;
-    string err_msg;
-  GetMove:
-    cout << "Enter move: ";
-    getline(cin, move_str);
+    cout << "\n\n" << player_name << " to move" << endl;
+    for (;;) {
+      cout << "Enter move: ";
+      getline(cin, move_str);
 
-    // Check if the player has resigned.
-    if (move_str == "q") {
-      game_active_ = false;
-      winner_ = GetOtherPlayer(player_to_move);
-      RecordFinalScore();
-      return;
-    }
-    try {
-      user_move = ParseMoveCmd(move_str);
-      board_.MakeMove(user_move);
-    } catch (BadMove& e) {
-      cout << "ERROR: Bad Move: " << e.what() << endl;
-      goto GetMove;
+      if (move_str == "q") {
+        game_active_ = false;
+        winner_ = GetOtherPlayer(player_to_move);
+        RecordFinalScore();
+        return;
+      }
+      try {
+        user_move = ParseMoveCmd(move_str);
+        board_.MakeMove(user_move);
+        break;
+      } catch (BadMove& e) {
+        cout << "ERROR: Bad Move: " << e.what() << endl;
+      }
     }
   } else {
     // Allow the engine to take its turn.
@@ -335,47 +327,46 @@ auto Game::Test(int depth) -> void {
   string user_cmd;
   U64 subtree_node_count;
   U64 total_node_count = 0;
-RunPerft:
-  DisplayBoard();
-  cout << endl;
-  // Generate a list of pseudo-legal moves.
-  vector<Move> move_list = engine_.GenerateMoves();
-  for (const Move& move : move_list) {
-    try {
-      board_.MakeMove(move);
-    } catch (BadMove& e) {
-      // Ignore moves that put the player's king in check.
-      continue;
+  for (;;) {
+    DisplayBoard();
+    cout << endl;
+    // Generate a list of pseudo-legal moves.
+    vector<Move> move_list = engine_.GenerateMoves();
+    for (const Move& move : move_list) {
+      try {
+        board_.MakeMove(move);
+      } catch (BadMove& e) {
+        continue;
+      }
+      subtree_node_count = engine_.Perft(depth - 1);
+      board_.UnmakeMove(move);
+      cout << GetUciMoveStr(move) << ": " << subtree_node_count << endl;
+      total_node_count += subtree_node_count;
     }
-    subtree_node_count = engine_.Perft(depth - 1);
-    board_.UnmakeMove(move);
-    cout << GetUciMoveStr(move) << ": " << subtree_node_count << endl;
-    total_node_count += subtree_node_count;
-  }
-  cout << endl << "Total: " << total_node_count << endl;
+    cout << endl << "Total: " << total_node_count << endl;
 
-GetNextNode:
-  if (depth - 1 > 0) {
-    cout << endl << "Enter command: ";
-    getline(cin, user_cmd);
+    if (depth - 1 <= 0) {
+      cout << "Maximum depth has been reached. Rerun the program to re-walk tree."
+           << endl;
+      break;
+    }
 
-    // Check if the user would like to exit the program.
-    if (user_cmd != "q") {
+    bool got_valid_move = false;
+    while (!got_valid_move) {
+      cout << endl << "Enter command: ";
+      getline(cin, user_cmd);
+
+      if (user_cmd == "q") return;
       try {
         user_move = ParseMoveCmd(user_cmd);
         board_.MakeMove(user_move);
+        got_valid_move = true;
       } catch (BadMove& e) {
         cout << "ERROR: Bad Move: " << e.what() << endl;
-        goto GetNextNode;
       }
-      // Decrease the depth by one to preserve the search space.
-      --depth;
-      cout << endl;
-      goto RunPerft;
     }
-  } else {
-    cout << "Maximum depth has been reached. Rerun the program to re-walk tree."
-         << endl;
+    --depth;
+    cout << endl;
   }
 }
 

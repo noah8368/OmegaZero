@@ -103,8 +103,8 @@ class Engine {
   // Attempts to predict which moves are likely to be better, and order those
   // towards the front of the move_list to increase the number of moves that
   // can be pruned during alpha-beta pruning.
-  auto OrderMoves(vector<Move> move_list, int ply) const -> vector<Move>;
-  auto OrderMoves(vector<Move> move_list) const -> vector<Move>;
+  auto OrderMoves(const vector<Move>& move_list, int ply) const -> vector<Move>;
+  auto OrderMoves(const vector<Move>& move_list) const -> vector<Move>;
 
   auto AddCastlingMoves(vector<Move>& move_list) const -> void;
   auto AddEpMoves(vector<Move>& move_list, S8 moving_player,
@@ -172,8 +172,8 @@ inline auto Engine::RepDetected() const -> bool {
   if (pos_history_.size() < 5) return false;
   U64 current = pos_history_.back();
   // Scan backwards checking every 2nd entry (same side to move).
-  for (int i = static_cast<int>(pos_history_.size()) - 5; i >= 0; i -= 2) {
-    if (pos_history_[i] == current) return true;
+  for (int pos_idx = static_cast<int>(pos_history_.size()) - 5; pos_idx >= 0; pos_idx -= 2) {
+    if (pos_history_[pos_idx] == current) return true;
   }
   return false;
 }
