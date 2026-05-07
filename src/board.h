@@ -9,6 +9,7 @@
 #ifndef OMEGAZERO_SRC_BOARD_H_
 #define OMEGAZERO_SRC_BOARD_H_
 
+#include <cassert>
 #include <cstdint>
 #include <stack>
 #include <stdexcept>
@@ -406,6 +407,7 @@ inline auto Board::operator==(const Board& rhs) const -> bool {
 
 inline auto Board::KingInCheck() const -> bool {
   Bitboard king_board = pieces_[kKing] & player_pieces_[player_to_move_];
+  assert(king_board != 0);
   S8 king_sq = GetSqOfFirstPiece(king_board);
   return static_cast<bool>(GetAttackersToSq(king_sq, player_to_move_));
 }

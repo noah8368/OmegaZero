@@ -59,19 +59,14 @@ auto GetPieceType(char piece_ch) -> S8 {
   switch (piece_ch) {
     case 'N':
       return kKnight;
-      break;
     case 'B':
       return kBishop;
-      break;
     case 'R':
       return kRook;
-      break;
     case 'Q':
       return kQueen;
-      break;
     case 'K':
       return kKing;
-      break;
     default:
       return kPawn;
   }

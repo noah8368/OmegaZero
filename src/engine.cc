@@ -44,6 +44,7 @@ constexpr int kVictimSortVals[kNumPieceTypes] = {10, 20, 30, 40, 50, 60};
 // Implement public member functions.
 
 Engine::Engine(Board* board, S8 player_side, float search_time) {
+  assert(board != nullptr);
   board_ = board;
 
   constexpr float kMinSearchTime = 0.1f;
@@ -131,7 +132,7 @@ auto Engine::GetGameStatus() -> S8 {
     return kDraw;
   }
 
-  // Enfforce the Fifty Move Rule.
+  // Enforce the Fifty Move Rule.
   constexpr S8 kHalfmoveClockLimit = 100;
   if (board_->GetHalfmoveClock() >= kHalfmoveClockLimit) {
     return kDraw;
@@ -184,6 +185,7 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
     // Generate attack maps for each piece.
     start_sq = GetSqOfFirstPiece(moving_pieces);
     moving_piece = board_->GetPieceOnSq(start_sq);
+    assert(moving_piece >= kPawn && moving_piece <= kKing);
     Bitboard attack_map =
         board_->GetAttackMap(moving_player, start_sq, moving_piece);
     // Remove all invalid squares in the attack map.
@@ -199,6 +201,7 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
 // Implement private member functions.
 
 auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
+  assert(d >= 1);
   // Perform the MTD(f) algorithm, where f is the first guess for best value,
   // d is the depth to loop for, and g is the current guess.
   int g = f;
@@ -224,6 +227,8 @@ auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
 auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
                            int ply, bool null_move_allowed, bool check_time)
     -> int {
+  assert(ply >= 0 && ply < kSearchLimit);
+  assert(alpha < beta);
   if (check_time) {
     CheckSearchTime();
   }
@@ -357,6 +362,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
 }
 
 auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
+  assert(alpha < beta);
   S8 game_status = GetGameStatus();
   if (game_status == kPlayerCheckmated) {
     return kWorstEval;

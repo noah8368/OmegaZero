@@ -212,6 +212,7 @@ inline auto Engine::ClearHistory() -> void {
 }
 
 inline auto Engine::RecordKillerMove(const Move& move, int ply) -> void {
+  assert(ply >= 0 && ply < kSearchLimit);
   if (move != killer_moves_[ply].first) {
     killer_moves_[ply].second = killer_moves_[ply].first;
     killer_moves_[ply].first = move;

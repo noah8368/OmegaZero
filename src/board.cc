@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <boost/multiprecision/cpp_int.hpp>
+#include <cassert>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
@@ -336,6 +337,7 @@ auto Board::SavePos() -> void {
 }
 
 auto Board::MakeMove(const Move& move) -> void {
+  assert(move.moving_piece != kNA || move.castling_type != kNA);
   if (move.castling_type == kNA) {
     MakeNonCastlingMove(move);
   } else if (move.castling_type == kQueenSide) {
@@ -423,6 +425,8 @@ auto Board::MakeNullMove() -> void {
 // Assume the passed move has been made use MakeMove(). Calling UnmakeMove()
 // on a move that wasn't already made will result in undefined behavior.
 auto Board::UnmakeMove(const Move& move) -> void {
+  assert(!halfmove_clock_history_.empty());
+  assert(!ep_target_sq_history_.empty());
   // Revert back to the previous player.
   SwitchPlayer();
 
@@ -579,7 +583,7 @@ auto Board::EvaluatePiecePositions(Bitboard& white_attackspan,
   constexpr int kPhaseNorm = 256;
   phase = (phase * kPhaseNorm + (kTotalPhase / 2)) / kTotalPhase;
 
-  int material_bonus = 0.0;
+  int material_bonus = 0;
   S8 piece_type;
   S8 mirror_sq;
   for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
@@ -661,7 +665,7 @@ auto Board::EvaluatePawnStructure(Bitboard white_attackspan,
   Bitboard pawns_with_east_neighbor;
   Bitboard neighor_files;
   Bitboard king_board;
-  int pawn_eval = 0.0;
+  int pawn_eval = 0;
   S8 player_side;
   S8 pawn_sq;
   S8 passer_rank;
@@ -1055,6 +1059,8 @@ auto Board::MovePiece(S8 piece, S8 start_sq, S8 target_sq, S8 promoted_to_piece)
     throw invalid_argument("promoted_to_piece in Board::MovePiece()");
   }
 
+  assert(piece_layout_[start_sq] == piece);
+  assert(player_layout_[start_sq] == player_to_move_);
   // Remove the selected piece from its start position on the board.
   piece_layout_[start_sq] = kNA;
   player_layout_[start_sq] = kNA;
