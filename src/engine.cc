@@ -70,6 +70,7 @@ auto Engine::GetBestMove() -> Move {
   assert(!pos_history_.empty());
   transposition_table_.Clear();
   board_->ClearPawnTable();
+  for (auto& km : killer_moves_) km = {};
   // Save game-level history size; OutOfTime can unwind past the per-move
   // restores in NegamaxSearch, leaving stale hashes behind.
   size_t saved_history_size = pos_history_.size();
@@ -386,6 +387,8 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
     alpha = max(stand_pat_eval, alpha);
 
     if (!InEndgame()) {
+      // If the position is extremely poor, assume it won't improve enough to
+      // exceed alpha and perform a delta prune.
       const int kDelta = kPieceVals[kQueen];
       if (stand_pat_eval < alpha - kDelta) {
         return alpha;
