@@ -36,8 +36,8 @@ struct Move {
   // is made by either player.
   S8 new_ep_target_sq = kNA;
   S8 promoted_to_piece = kNA;
-  S8 start_sq;
-  S8 target_sq;
+  S8 start_sq = kNA;
+  S8 target_sq = kNA;
 };
 
 }  // namespace omegazero

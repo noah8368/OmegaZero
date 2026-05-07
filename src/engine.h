@@ -98,7 +98,7 @@ class Engine {
                      bool null_move_allowed, bool check_time) -> int;
   // Search until a "quiescent" position is reached (no capturing moves can be
   // made) to mitigate the horizon effect.
-  auto QuiescenceSearch(int alpha, int beta) -> int;
+  auto QuiescenceSearch(int alpha, int beta, int qs_depth = 20) -> int;
 
   // Attempts to predict which moves are likely to be better, and order those
   // towards the front of the move_list to increase the number of moves that

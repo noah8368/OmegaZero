@@ -356,7 +356,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   return best_eval;
 }
 
-auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
+auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
   S8 game_status = GetGameStatus();
   if (game_status == kPlayerCheckmated) {
     return kWorstEval;
@@ -365,6 +365,10 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
   }
 
   bool in_check = board_->KingInCheck();
+
+  if (qs_depth <= 0) {
+    return board_->Evaluate();
+  }
 
   if (!in_check) {
     // Establish a lower bound for the node evaluation (stand_pat_eval),
@@ -394,7 +398,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta) -> int {
       continue;
     }
     AddPosToHistory();
-    int eval = -QuiescenceSearch(-beta, -alpha);
+    int eval = -QuiescenceSearch(-beta, -alpha, qs_depth - 1);
     board_->UnmakeMove(move);
     pos_history_.resize(history_size_before_qmoves);
 
@@ -456,8 +460,6 @@ auto Engine::OrderMoves(vector<Move> move_list, int ply) const -> vector<Move> {
 }
 
 auto Engine::OrderMoves(vector<Move> move_list) const -> vector<Move> {
-  Move best_move;
-
   vector<pair<Move, int>> ordered_capture_pairs;
   vector<Move> late_moves;
   for (const Move& move : move_list) {
@@ -506,33 +508,33 @@ auto Engine::AddCastlingMoves(vector<Move>& move_list) const -> void {
 
 auto Engine::AddEpMoves(vector<Move>& move_list, S8 enemy_player,
                         S8 moving_player) const -> void {
+  S8 ep_target_sq = board_->GetEpTargetSq();
+  if (ep_target_sq == kNA) return;
+
   // Capture only diagonal squares to En Passent target sq in the direction of
   // movement.
   Bitboard potential_ep_pawns;
-  S8 ep_target_sq = board_->GetEpTargetSq();
   if (enemy_player == kWhite) {
     potential_ep_pawns = kNonSliderAttackMaps[kWhitePawnCapture][ep_target_sq];
   } else {
     potential_ep_pawns = kNonSliderAttackMaps[kBlackPawnCapture][ep_target_sq];
   }
 
-  if (ep_target_sq != kNA) {
-    // Get the squares pawns can move from onto the en passent target square.
-    // Note that because the target square is set, a single pawn push onto the
-    // target square won't be possible, so this case can be safely ignored.
-    Bitboard attack_map =
-        potential_ep_pawns & board_->GetPiecesByType(kPawn, moving_player);
-    if (attack_map) {
-      Move ep;
-      ep.is_ep = true;
-      ep.moving_piece = kPawn;
-      ep.target_sq = ep_target_sq;
-      while (attack_map) {
-        ep.start_sq = GetSqOfFirstPiece(attack_map);
-        ep.captured_piece = kPawn;
-        move_list.push_back(ep);
-        RemoveFirstPiece(attack_map);
-      }
+  // Get the squares pawns can move from onto the en passent target square.
+  // Note that because the target square is set, a single pawn push onto the
+  // target square won't be possible, so this case can be safely ignored.
+  Bitboard attack_map =
+      potential_ep_pawns & board_->GetPiecesByType(kPawn, moving_player);
+  if (attack_map) {
+    Move ep;
+    ep.is_ep = true;
+    ep.moving_piece = kPawn;
+    ep.target_sq = ep_target_sq;
+    while (attack_map) {
+      ep.start_sq = GetSqOfFirstPiece(attack_map);
+      ep.captured_piece = kPawn;
+      move_list.push_back(ep);
+      RemoveFirstPiece(attack_map);
     }
   }
 }
