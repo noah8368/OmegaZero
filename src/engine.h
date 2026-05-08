@@ -81,7 +81,8 @@ class Engine {
   auto AddPosToHistory() -> void;
   auto ClearHistory() -> void;
   auto SetSearchTime(float t) -> void;
-#ifdef BENCHMARK
+
+  #ifdef BENCHMARK
   auto GetTotalNodes() const -> uint64_t {
     return total_nodes_ + nodes_since_time_check_;
   }
@@ -129,6 +130,7 @@ class Engine {
   high_resolution_clock::time_point search_start_;
 
   int nodes_since_time_check_;
+
 #ifdef BENCHMARK
   uint64_t total_nodes_;
 #endif
@@ -217,10 +219,14 @@ inline auto Engine::NegamaxSearch(int alpha, int beta, int depth, int ply,
 }
 
 inline auto Engine::CheckSearchTime() -> void {
-  if (++nodes_since_time_check_ < 4096) return;
+  if (++nodes_since_time_check_ < 4096) {
+    return;
+}
+
 #ifdef BENCHMARK
   total_nodes_ += 4096;
 #endif
+
   nodes_since_time_check_ = 0;
   float time_since_search_started =
       duration_cast<duration<float>>(high_resolution_clock::now() -

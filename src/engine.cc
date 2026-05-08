@@ -68,7 +68,6 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
 
 auto Engine::GetBestMove() -> Move {
   assert(!pos_history_.empty());
-  transposition_table_.Clear();
   board_->ClearPawnTable();
   for (auto& km : killer_moves_) km = {};
   // Save game-level history size; OutOfTime can unwind past the per-move
@@ -117,13 +116,13 @@ auto Engine::GetBestMove() -> Move {
     }
   }
 
-  search_depth =
-      (search_depth == kSearchLimit) ? kSearchLimit : search_depth - 1;
   // Report search depth, node count, and nodes/sec for performance profiling.
   // total_nodes_ accumulates in batches of 4096 via CheckSearchTime();
   // nodes_since_time_check_ holds the remainder that hasn't hit the threshold.
 #ifdef BENCHMARK
   {
+    search_depth =
+      (search_depth == kSearchLimit) ? kSearchLimit : search_depth - 1;
     uint64_t nodes = total_nodes_ + nodes_since_time_check_;
     float elapsed = duration_cast<duration<float>>(
         high_resolution_clock::now() - search_start_).count();
@@ -132,6 +131,7 @@ auto Engine::GetBestMove() -> Move {
               << "  NODES: " << nodes << "  NPS: " << nps << endl;
   }
 #endif
+
   board_->ResetPos();
   // Discard any hashes stranded by OutOfTime.
   pos_history_.resize(saved_history_size);
@@ -343,7 +343,6 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       // Ignore moves that put the player's king in check.
       continue;
     }
-
     AddPosToHistory();
     if (move_idx >= kNumEarlyMoves && !at_pv_node &&
         move.captured_piece == kNA && move.promoted_to_piece == kNA &&
