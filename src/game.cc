@@ -475,7 +475,7 @@ auto Game::GetUciMoveStr(const Move& move) -> string {
     if (move.promoted_to_piece != kNA) {
       switch (move.promoted_to_piece) {
         case kKnight:
-          move_str += 'k';
+          move_str += 'n';
           break;
         case kBishop:
           move_str += 'b';
