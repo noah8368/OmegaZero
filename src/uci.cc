@@ -145,7 +145,8 @@ auto UciHandler::ComputeThinkTime(int wtime, int btime, int winc, int binc,
   constexpr float kMinTime = 0.1f;
 
   if (movetime > 0) {
-    return std::max(kMinTime, static_cast<float>(movetime - 50) / 1000.0f);
+    constexpr float kMoveTimeMarginMs = 50.0f;
+    return std::max(0.01f, static_cast<float>(movetime - kMoveTimeMarginMs) / 1000.0f);
   }
 
   S8 side = board_->GetPlayerToMove();

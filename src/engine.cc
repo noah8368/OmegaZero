@@ -78,13 +78,31 @@ auto Engine::GetBestMove() -> Move {
   Move move;
   board_->SavePos();
   constexpr int kRootNodePly = 0;
-  // Initialize the first guess for the MTD(f) algorithm, f, with a search to
-  // a depth of one.
-  int f = MtdfSearch(0, 1, kRootNodePly, best_move);
 
-  // Perform an MTD(f) search inside an iterative deepening framework.
+  // WARNING: this fallback runs before the search timer starts, eating into
+  // the move time budget. The cost is subtracted from search_time_ below.
+  auto fallback_start = high_resolution_clock::now();
+  vector<Move> fallback_moves = GenerateMoves();
+  for (const Move& m : fallback_moves) {
+    try {
+      board_->MakeMove(m);
+      best_move = m;
+      board_->UnmakeMove(m);
+      break;
+    } catch (BadMove&) {
+      continue;
+    }
+  }
+  auto fallback_end = high_resolution_clock::now();
+  float fallback_secs =
+      std::chrono::duration<float>(fallback_end - fallback_start).count();
+  search_time_ = std::max(0.01f, search_time_ - fallback_secs);
+
   search_start_ = high_resolution_clock::now();
-  int search_depth = 2;
+  nodes_since_time_check_ = 0;
+  // Set the first evaluation guess as an even game.
+  int f = 0;
+  int search_depth = 1;
   for (; search_depth <= kSearchLimit; ++search_depth) {
     try {
       f = MtdfSearch(f, search_depth, kRootNodePly, move);
@@ -215,7 +233,7 @@ auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
     } else {
       beta = g;
     }
-    g = NegamaxSearch(best_move, beta - 1, beta, d, ply, true, d != 1);
+    g = NegamaxSearch(best_move, beta - 1, beta, d, ply, true);
     if (g < beta) {
       upper_bound = g;
     } else {
@@ -226,13 +244,11 @@ auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
 }
 
 auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
-                           int ply, bool null_move_allowed, bool check_time)
+                           int ply, bool null_move_allowed)
     -> int {
   assert(ply >= 0 && ply < kSearchLimit);
   assert(alpha < beta);
-  if (check_time) {
-    CheckSearchTime();
-  }
+  CheckSearchTime();
 
   int orig_alpha = alpha;
   int transposition_table_stored_eval;
@@ -281,7 +297,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       ZugzwangUnlikely() && !board_->KingInCheck()) {
     board_->MakeNullMove();
     int null_move_eval = -NegamaxSearch(-beta, -alpha, depth - R - 1, ply + 1,
-                                        false, check_time);
+                                        false);
     board_->UnmakeNullMove();
     if (null_move_eval >= beta) {
       // Perform a null-move prune.
@@ -322,16 +338,16 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
           static_cast<int>(sqrt(static_cast<double>(depth - 1)) +
                            sqrt(static_cast<double>(move_idx - 1)));
       search_eval = -NegamaxSearch(-beta, -alpha, depth - depth_reduction - 1,
-                                   ply + 1, true, check_time);
+                                   ply + 1, true);
       if (search_eval > alpha) {
         // Perform a re-search at full depth.
         search_eval =
-            -NegamaxSearch(-beta, -alpha, depth - 1, ply + 1, true, check_time);
+            -NegamaxSearch(-beta, -alpha, depth - 1, ply + 1, true);
       }
     } else {
       // Search at full depth.
       search_eval =
-          -NegamaxSearch(-beta, -alpha, depth - 1, ply + 1, true, check_time);
+          -NegamaxSearch(-beta, -alpha, depth - 1, ply + 1, true);
     }
     board_->UnmakeMove(move);
     pos_history_.resize(history_size_before_moves);

@@ -95,9 +95,9 @@ class Engine {
   // algorithm.
   auto MtdfSearch(int f, int d, int ply, Move& best_move) -> int;
   auto NegamaxSearch(int alpha, int beta, int depth, int ply,
-                     bool null_move_allowed, bool check_time) -> int;
+                     bool null_move_allowed) -> int;
   auto NegamaxSearch(Move& pv_move, int alpha, int beta, int depth, int ply,
-                     bool null_move_allowed, bool check_time) -> int;
+                     bool null_move_allowed) -> int;
   // Search until a "quiescent" position is reached (no capturing moves can be
   // made) to mitigate the horizon effect.
   auto QuiescenceSearch(int alpha, int beta, int qs_depth = 20) -> int;
@@ -114,7 +114,7 @@ class Engine {
   auto AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
                         S8 enemy_player, S8 moving_player, S8 moving_piece,
                         S8 start_sq) const -> void;
-  auto CheckSearchTime() const -> void;
+  auto CheckSearchTime() -> void;
   auto RecordKillerMove(const Move& move, int ply) -> void;
 
   Board* board_;
@@ -122,6 +122,8 @@ class Engine {
   float search_time_;
 
   high_resolution_clock::time_point search_start_;
+
+  int nodes_since_time_check_;
 
   pair<Move, Move> killer_moves_[kSearchLimit];
 
@@ -144,7 +146,7 @@ inline auto Engine::AddPosToHistory() -> void {
 inline auto Engine::ClearHistory() -> void { pos_history_.clear(); }
 
 inline auto Engine::SetSearchTime(float t) -> void {
-  constexpr float kMinSearchTime = 0.1f;
+  constexpr float kMinSearchTime = 0.01f;
   if (t < kMinSearchTime) t = kMinSearchTime;
   search_time_ = t;
 }
@@ -199,14 +201,16 @@ inline auto Engine::ZugzwangUnlikely() const -> bool {
 }
 
 inline auto Engine::NegamaxSearch(int alpha, int beta, int depth, int ply,
-                                  bool null_move_allowed, bool check_time)
+                                  bool null_move_allowed)
     -> int {
   Move throwaway_move;
   return NegamaxSearch(throwaway_move, alpha, beta, depth, ply,
-                       null_move_allowed, check_time);
+                       null_move_allowed);
 }
 
-inline auto Engine::CheckSearchTime() const -> void {
+inline auto Engine::CheckSearchTime() -> void {
+  if (++nodes_since_time_check_ < 4096) return;
+  nodes_since_time_check_ = 0;
   float time_since_search_started =
       duration_cast<duration<float>>(high_resolution_clock::now() -
                                      search_start_)
