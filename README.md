@@ -4,6 +4,29 @@
 
 ![OmegaZero Logo](./figs/logo.png "OmegaZero -Brandon Hsu")
 
+### Table of Contents
+
+- [Project Summary](#project-summary)
+- [Usage](#usage)
+  - [Prerequisites](#prerequisites)
+  - [ELO Testing Dependencies](#elo-testing-dependencies)
+  - [Building](#building)
+  - [Playing a Game](#playing-a-game)
+  - [UCI Mode](#uci-mode)
+  - [ELO Testing](#elo-testing)
+  - [Perft Testing](#perft-testing)
+  - [Test Harness](#test-harness)
+  - [Benchmarking](#benchmarking)
+  - [Generating Move Tables](#generating-move-tables)
+- [Implementation](#implementation)
+  - [Board Representation](#board-representation)
+  - [Move Generation](#move-generation)
+  - [Transposition Table](#transposition-table)
+  - [Search](#search)
+  - [Opening Book](#opening-book)
+  - [Evaluation](#evaluation)
+- [Performance](#performance)
+
 ### Project Summary
 
 OmegaZero is a chess engine built from scratch which allows a user to play 
@@ -66,13 +89,17 @@ sudo apt-get install stockfish cutechess qtbase5-dev cmake
 pip3 install matplotlib
 ```
 
-#### Building the Engine
+#### Building
 
-To build the software, simply type `make` in the root directory of the project.
+```
+make              # Optimized engine binary → build/OmegaZero
+make debug        # Debug test harness (ASan, -O0) → build/test_harness
+make bench        # NPS benchmark harness (-O3) → build/bench_harness
+make clean        # Remove all build artifacts
+make check-deps   # Verify g++, python3, and Boost are installed
+```
 
-#### User Input
-
-##### Playing a Game
+#### Playing a Game
 
 To begin a game, a user invokes the program as follows:
 ```
@@ -101,7 +128,7 @@ to avoid ambiguity in a movement command. Some valid example moves are
 
 To resign, a user must enter `q` on their turn.
 
-##### UCI Mode
+#### UCI Mode
 
 OmegaZero supports the [Universal Chess Interface](https://www.chessprogramming.org/UCI) (UCI) protocol for
 integration with chess GUIs and tournament managers. To launch in UCI mode:
@@ -109,7 +136,7 @@ integration with chess GUIs and tournament managers. To launch in UCI mode:
 OmegaZero --uci
 ```
 
-##### ELO Testing
+#### ELO Testing
 
 The `scripts/elo_test.py` script automates ELO estimation by running OmegaZero
 against Stockfish at various strength levels via cutechess-cli. It records
@@ -137,7 +164,7 @@ Results are saved to `elo_results/` by default:
 - `wdl_by_level.png` — win/draw/loss bar chart by opponent strength
 - `elo_by_level.png` — ELO estimate by opponent strength with average line
 
-##### Perft Testing
+#### Perft Testing
 
 To print out the [Perft](https://www.chessprogramming.org/Perft) results for engine, invoke the program as follows:
 ```
@@ -155,6 +182,45 @@ previously outlined to walk the search tree, or `q` to exit the program.
 
 The positions on [this page](https://www.chessprogramming.org/Perft_Results) were used to confirm the correctness of the move
 generator.
+
+#### Test Harness
+
+The debug test harness runs perft regression, eval sanity, search sanity,
+and self-play crash detection:
+```
+make debug
+./build/test_harness
+```
+
+#### Benchmarking
+
+The bench harness measures search speed (nodes per second) across four
+positions (opening, midgame, complex midgame, endgame) at 5s each:
+```
+make bench
+./build/bench_harness
+```
+
+#### Generating Move Tables
+
+The engine relies on two precomputed source files for move generation.
+These are checked into the repo and only need to be regenerated if the
+underlying scripts change:
+
+- `scripts/generate_masks.py` — generates `src/masks.cc`, which contains
+  precomputed attack bitboards for non-sliding pieces (knights, kings, pawns)
+  at every square.
+- `scripts/mine_magics.py` — generates `src/magics.cc`, which contains
+  [magic numbers](https://www.chessprogramming.org/Magic_Bitboards) for
+  sliding piece (bishop, rook) move generation.
+
+To regenerate:
+```
+python3 scripts/generate_masks.py
+python3 scripts/mine_magics.py
+```
+
+`make` will automatically regenerate these files if they are missing.
 
 ### Implementation
 
@@ -241,16 +307,12 @@ the formula found [here](https://www.chessprogramming.org/Tapered_Eval#Implement
 
 ### Performance
 
-#### Move Generation
-
-The move generator is capable of producing up to ~7 million moves/sec.
-
-#### ELO Estimation
-
 ELO is estimated by running OmegaZero against Stockfish at various `UCI_Elo`
-levels using cutechess-cli (20 games per level, 5s/move). See
-[ELO Testing](#elo-testing) for instructions on running these tests.
+levels using cutechess-cli (20 games per level, 5s/move). NPS (nodes per
+second) is measured by the bench harness, averaging across four positions
+(opening, midgame, complex midgame, endgame) at 5s/position. See
+[ELO Testing](#elo-testing) and [Benchmarking](#benchmarking) for details.
 
-| Version | vs SF-1320 | vs SF-1700 | vs SF-2100 | Estimated ELO |
-|---------|-----------|-----------|-----------|---------------|
-| v1      | 90%       | 55%       | 30%       | ~1730         |
+| Version | vs SF-1320 | vs SF-1700 | vs SF-2100 | Estimated ELO | Avg NPS |
+|---------|-----------|-----------|-----------|---------------|---------|
+| v1      | 90%       | 55%       | 30%       | ~1730         | ~197k   |

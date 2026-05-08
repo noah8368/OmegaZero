@@ -388,18 +388,55 @@ bool RunSelfPlay(int num_games, float search_time, const string& out_dir) {
   return true;
 }
 
-}  // namespace omegazero
 
-auto main(int, char* argv[]) -> int {
-  using namespace omegazero;
+#ifdef BENCHMARK
+// ---- NPS Benchmark ----
+// Searches a set of positions for a fixed duration and reports average NPS.
 
-  // Derive output directory from the executable path so files land next to the
-  // binary regardless of which directory the harness is invoked from.
-  string out_dir(argv[0]);
-  size_t last_slash = out_dir.rfind('/');
-  out_dir = (last_slash != string::npos) ? out_dir.substr(0, last_slash + 1)
-                                         : "./";
+struct BenchPos {
+  const char* name;
+  const char* fen;
+};
 
+const BenchPos kBenchPositions[] = {
+  {"opening",  "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"},
+  {"midgame",  "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4"},
+  {"kiwipete", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"},
+  {"endgame",  "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"},
+};
+
+void RunNpsBench(float search_time) {
+  uint64_t total_nodes = 0;
+  double total_elapsed = 0;
+
+  for (const auto& pos : kBenchPositions) {
+    Board board(pos.fen);
+    Engine engine(&board, 'w', search_time);
+    engine.AddPosToHistory();
+
+    auto start = std::chrono::high_resolution_clock::now();
+    engine.GetBestMove();
+    auto end = std::chrono::high_resolution_clock::now();
+
+    double elapsed = std::chrono::duration<double>(end - start).count();
+    uint64_t nodes = engine.GetTotalNodes();
+    uint64_t nps = elapsed > 0 ? static_cast<uint64_t>(nodes / elapsed) : 0;
+
+    cout << "  " << pos.name << ": " << nodes << " nodes in "
+         << std::fixed << std::setprecision(2) << elapsed << "s"
+         << " (" << nps << " NPS)" << endl;
+
+    total_nodes += nodes;
+    total_elapsed += elapsed;
+  }
+
+  uint64_t avg_nps = total_elapsed > 0
+      ? static_cast<uint64_t>(total_nodes / total_elapsed) : 0;
+  cout << "  Average: " << avg_nps << " NPS" << endl;
+}
+#endif
+
+int debug(const string& out_dir) {
   cout << "=== Perft ===" << endl;
   for (const auto& test_case : kPerftCases) RunPerft(test_case);
 
@@ -417,4 +454,31 @@ auto main(int, char* argv[]) -> int {
   bool self_play_ok = RunSelfPlay(1, 0.1f, out_dir);
 
   return (fail_count > 0 || !self_play_ok) ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
+#ifdef BENCHMARK
+int benchmark() {
+  cout << "=== NPS Benchmark (5s/position) ===" << endl;
+  RunNpsBench(5.0f);
+  return EXIT_SUCCESS;
+}
+#endif
+
+}  // namespace omegazero
+
+auto main(int, char* argv[]) -> int {
+  using namespace omegazero;
+
+  // Derive output directory from the executable path so files land next to the
+  // binary regardless of which directory the harness is invoked from.
+  string out_dir(argv[0]);
+  size_t last_slash = out_dir.rfind('/');
+  out_dir = (last_slash != string::npos) ? out_dir.substr(0, last_slash + 1)
+                                         : "./";
+
+#ifdef BENCHMARK
+  return benchmark();
+#else
+  return debug(out_dir);
+#endif
 }

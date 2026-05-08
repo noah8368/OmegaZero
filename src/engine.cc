@@ -100,6 +100,9 @@ auto Engine::GetBestMove() -> Move {
 
   search_start_ = high_resolution_clock::now();
   nodes_since_time_check_ = 0;
+#ifdef BENCHMARK
+  total_nodes_ = 0;
+#endif
   // Set the first evaluation guess as an even game.
   int f = 0;
   int search_depth = 1;
@@ -116,7 +119,19 @@ auto Engine::GetBestMove() -> Move {
 
   search_depth =
       (search_depth == kSearchLimit) ? kSearchLimit : search_depth - 1;
-  std::cerr << "SEARCH DEPTH: " << search_depth << endl;
+  // Report search depth, node count, and nodes/sec for performance profiling.
+  // total_nodes_ accumulates in batches of 4096 via CheckSearchTime();
+  // nodes_since_time_check_ holds the remainder that hasn't hit the threshold.
+#ifdef BENCHMARK
+  {
+    uint64_t nodes = total_nodes_ + nodes_since_time_check_;
+    float elapsed = duration_cast<duration<float>>(
+        high_resolution_clock::now() - search_start_).count();
+    uint64_t nps = elapsed > 0 ? static_cast<uint64_t>(nodes / elapsed) : 0;
+    std::cerr << "SEARCH DEPTH: " << search_depth
+              << "  NODES: " << nodes << "  NPS: " << nps << endl;
+  }
+#endif
   board_->ResetPos();
   // Discard any hashes stranded by OutOfTime.
   pos_history_.resize(saved_history_size);

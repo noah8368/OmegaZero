@@ -10,7 +10,7 @@ FLAGS = -march=native -pedantic -std=c++17 -Wall -Werror -Wextra -Wshadow
 # floating-point behavior. The remaining flags are safe on both platforms.
 OPT_FLAGS = -O3 -fno-signed-zeros -fno-trapping-math -funroll-loops
 
-DEBUG_FLAGS = -O0 -g -fsanitize=address -fno-omit-frame-pointer
+DEBUG_FLAGS = -O0 -g -fsanitize=address -fno-omit-frame-pointer -DDEBUG
 
 ifeq ($(UNAME_S), Darwin)
   # Homebrew on Apple Silicon installs to /opt/homebrew.
@@ -22,27 +22,40 @@ else
   LINK_FLAGS = -lboost_program_options
 endif
 
-OBJECTS = build/board.o build/engine.o build/game.o build/magics.o \
-          build/main.o build/masks.o build/transposition_table.o \
-          build/piece_sq_tables.o build/uci.o
+OBJECTS = build/play/board.o build/play/engine.o build/play/game.o build/play/magics.o \
+          build/play/main.o build/play/masks.o build/play/transposition_table.o \
+          build/play/piece_sq_tables.o build/play/uci.o
 
 DEBUG_OBJECTS = build/debug/board.o build/debug/engine.o build/debug/game.o \
                 build/debug/magics.o build/debug/test_harness.o \
                 build/debug/masks.o build/debug/transposition_table.o \
                 build/debug/piece_sq_tables.o
 
-all : build $(OBJECTS)
+BENCH_OBJECTS = build/bench/board.o build/bench/engine.o build/bench/game.o \
+                build/bench/magics.o build/bench/test_harness.o \
+                build/bench/masks.o build/bench/transposition_table.o \
+                build/bench/piece_sq_tables.o
+
+all : build/play $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS) $(OPT_FLAGS) $(LINK_FLAGS)
 debug : build/debug $(DEBUG_OBJECTS)
 	$(CC) -o build/test_harness $(DEBUG_OBJECTS) $(FLAGS) $(DEBUG_FLAGS) $(LINK_FLAGS)
-build/%.o: src/%.cc
+bench : build/bench $(BENCH_OBJECTS)
+	$(CC) -o build/bench_harness $(BENCH_OBJECTS) $(FLAGS) $(OPT_FLAGS) -DBENCHMARK $(LINK_FLAGS)
+build/play/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS)
 build/debug/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(DEBUG_FLAGS)
+build/bench/%.o: src/%.cc
+	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS) -DBENCHMARK
 
 build :
 	mkdir $@
+build/play : build
+	mkdir -p $@
 build/debug : build
+	mkdir -p $@
+build/bench : build
 	mkdir -p $@
 
 src/masks.cc :
