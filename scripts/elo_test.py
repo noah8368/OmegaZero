@@ -79,7 +79,7 @@ def run_matches(args):
             "-engine", f"name=SF-{opp_elo}", f"cmd={sf}", "proto=uci",
                 f"option.UCI_LimitStrength=true",
                 f"option.UCI_Elo={opp_elo}",
-            "-each", f"st={args.st}",
+            "-each", f"st={args.st}", "timemargin=500",
             "-rounds", str(args.games),
             "-pgnout", str(out / f"games_{opp_elo}.pgn"),
             "-recover",
