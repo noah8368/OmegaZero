@@ -37,23 +37,32 @@ follow the instructions on their site first, then run:
 brew install boost
 ```
 
-#### ELO Testing Dependencies (optional)
+#### ELO Testing Dependencies
 
 To run automated ELO testing, the following additional tools are required:
 
-- [Stockfish](https://stockfishchess.org/) — the opponent engine
-- [cutechess-cli](https://github.com/cutechess/cutechess) — tournament manager
-- [matplotlib](https://matplotlib.org/) — for generating plots (Python)
+- [Stockfish](https://stockfishchess.org/) — opponent engine
+- [Cute Chess](https://github.com/cutechess/cutechess) (`cutechess-cli`) — tournament manager
+- [matplotlib](https://matplotlib.org/) — plot generation (Python)
 
-On macOS:
+On MacOS, install cutechess from source:
+
 ```
-brew install stockfish cute-chess
-pip3 install matplotlib
+bash
+brew install stockfish qt cmake
+pip3 install matplotlib --break-system-packages
+
+cd ~/path/to/OmegaZero
+git clone https://github.com/cutechess/cutechess.git
+cd cutechess
+mkdir build && cd build
+cmake ..
+make -j8
 ```
 
-On Ubuntu:
+On Ubuntu, install with `apt-get`:
 ```
-sudo apt-get install stockfish cutechess
+sudo apt-get install stockfish cutechess qtbase5-dev cmake
 pip3 install matplotlib
 ```
 
@@ -106,22 +115,22 @@ The `scripts/elo_test.py` script automates ELO estimation by running OmegaZero
 against Stockfish at various strength levels via cutechess-cli. It records
 per-game results to CSV and generates summary tables and plots.
 
-Run matches (default: 20 games each at ELO 1320, 1500, 1700, 1900, 2100):
+Run matches (default: 20 games each at ELO 1320, 1500, 1700, 1900, 2100, 0.1s/move):
 ```
 python3 scripts/elo_test.py run
 ```
 
 Customize the test:
 ```
-python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50 --tc 15+0.2
+python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50 --st 0.5
 ```
 
 Regenerate plots and summary table from existing results:
 ```
-python3 scripts/elo_test.py plot --input build/elo_results
+python3 scripts/elo_test.py plot --input elo_results
 ```
 
-Results are saved to `build/elo_results/` by default:
+Results are saved to `elo_results/` by default:
 - `games.csv` — per-game results with running ELO estimates
 - `summary.csv` — win/draw/loss totals and ELO estimate per opponent level
 - `elo_convergence.png` — ELO estimate over games played (one line per level)

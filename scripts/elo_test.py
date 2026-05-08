@@ -10,9 +10,9 @@ Usage:
     python3 scripts/elo_test.py plot [--input DIR]
 
 Examples:
-    python3 scripts/elo_test.py run --games 20 --tc 10+0.1
+    python3 scripts/elo_test.py run --games 20 --st 0.5
     python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50
-    python3 scripts/elo_test.py plot --input build/elo_results
+    python3 scripts/elo_test.py plot --input elo_results
 """
 
 import argparse
@@ -40,12 +40,23 @@ def run_matches(args):
     if not Path(sf).exists() and not shutil.which(sf):
         sys.exit(f"Stockfish not found: {sf}\nInstall: brew install stockfish")
 
-    if not shutil.which("cutechess-cli"):
-        sys.exit(
-            "cutechess-cli not found.\n"
-            "Install: brew install cute-chess\n"
-            "Or see: https://github.com/cutechess/cutechess"
-        )
+    script_dir = Path(__file__).resolve().parent
+    project_root = script_dir.parent
+    cutechess = args.cutechess
+    if cutechess is None:
+        local_build = project_root / "cutechess" / "build" / "cutechess-cli"
+        if local_build.exists():
+            cutechess = str(local_build)
+        elif shutil.which("cutechess-cli"):
+            cutechess = "cutechess-cli"
+        else:
+            sys.exit(
+                "cutechess-cli not found.\n"
+                "Looked in: cutechess/build/cutechess-cli and PATH.\n"
+                "Use --cutechess to specify the path."
+            )
+    elif not Path(cutechess).exists() and not shutil.which(cutechess):
+        sys.exit(f"cutechess-cli not found: {cutechess}")
 
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
@@ -56,19 +67,19 @@ def run_matches(args):
     global_game = 0
 
     for opp_elo in levels:
-        print(f"\n{'=' * 60}")
+        print(f"\n{'=' * 60}", flush=True)
         print(f"  Stockfish UCI_Elo {opp_elo}  |  "
-              f"{args.games} games  |  tc={args.tc}")
-        print(f"{'=' * 60}")
+              f"{args.games} games  |  {args.st}s/move", flush=True)
+        print(f"{'=' * 60}", flush=True)
 
         cmd = [
-            "cutechess-cli",
+            cutechess,
             "-engine", "name=OmegaZero", f"cmd={engine}",
                 "arg=--uci", "proto=uci",
             "-engine", f"name=SF-{opp_elo}", f"cmd={sf}", "proto=uci",
                 f"option.UCI_LimitStrength=true",
                 f"option.UCI_Elo={opp_elo}",
-            "-each", f"tc={args.tc}",
+            "-each", f"st={args.st}",
             "-rounds", str(args.games),
             "-pgnout", str(out / f"games_{opp_elo}.pgn"),
             "-recover",
@@ -127,13 +138,10 @@ def run_matches(args):
             tag = "Win " if score == 1.0 else ("Draw" if score == 0.5 else "Loss")
             print(f"  {total:3d}/{args.games}  {tag}  "
                   f"W:{wins} D:{draws} L:{losses}  "
-                  f"ELO est: {est:.0f}")
+                  f"ELO est: {est:.0f}", flush=True)
 
         proc.wait()
-        stderr = proc.stderr.read()
-        if stderr.strip():
-            err_path = out / f"errors_{opp_elo}.log"
-            err_path.write_text(stderr)
+        proc.stderr.read()
 
         all_games.extend(level_games)
 
@@ -323,6 +331,10 @@ def main():
         help="Path or command for Stockfish (default: stockfish)",
     )
     run_p.add_argument(
+        "--cutechess", default=None,
+        help="Path to cutechess-cli (default: auto-detect from cutechess/build/ or PATH)",
+    )
+    run_p.add_argument(
         "--elo-levels", default="1320,1500,1700,1900,2100",
         help="Comma-separated opponent ELO levels (default: 1320,1500,1700,1900,2100)",
     )
@@ -331,18 +343,18 @@ def main():
         help="Games per level (default: 20)",
     )
     run_p.add_argument(
-        "--tc", default="10+0.1",
-        help="Time control, e.g. 10+0.1 (default: 10+0.1)",
+        "--st", default="0.1",
+        help="Fixed time per move in seconds (default: 0.1)",
     )
     run_p.add_argument(
-        "--output", default="build/elo_results",
-        help="Output directory (default: build/elo_results)",
+        "--output", default="elo_results",
+        help="Output directory (default: elo_results)",
     )
 
     plot_p = sub.add_parser("plot", help="Generate plots from existing results")
     plot_p.add_argument(
-        "--input", default="build/elo_results",
-        help="Directory with CSV results (default: build/elo_results)",
+        "--input", default="elo_results",
+        help="Directory with CSV results (default: elo_results)",
     )
 
     args = parser.parse_args()
