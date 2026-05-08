@@ -344,9 +344,10 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     }
     ++legal_moves;
     AddPosToHistory();
+    bool gives_check = board_->KingInCheck();
     if (legal_moves > kNumEarlyMoves && !at_pv_node &&
         move.captured_piece == kNA && move.promoted_to_piece == kNA &&
-        !board_->KingInCheck() && depth >= kMinReductionDepth) {
+        !gives_check && depth >= kMinReductionDepth) {
       // Perform Late Move Reduction.
       depth_reduction =
           static_cast<int>(sqrt(static_cast<double>(depth - 1)) +
@@ -359,9 +360,10 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
             -NegamaxSearch(-beta, -alpha, depth - 1, ply + 1, true);
       }
     } else {
-      // Search at full depth.
+      // Search at full depth, extending the depth by one if the move gives check.
+      S8 check_ext = gives_check ? 1 : 0;
       search_eval =
-          -NegamaxSearch(-beta, -alpha, depth - 1, ply + 1, true);
+          -NegamaxSearch(-beta, -alpha, depth - 1 + check_ext, ply + 1, true);
     }
     board_->UnmakeMove(move);
     pos_history_.resize(history_size_before_moves);

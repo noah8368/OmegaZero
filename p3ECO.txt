@@ -69,12 +69,6 @@
 ;
 
 
-A00    Anderssen's Opening
-1.a3 1/2
-
-A00    Ware Opening: Meadow Hay 
-1.a4 1/2
-
 A00    Polish Opening: Sokolsky/Orang-utan 
 1.b4 1/2
 
@@ -93,9 +87,6 @@ A00    Sokolsky: ...e5 ...Bxb4 ; *pwo add
 A00    Polish: Tuebingen Variation
 1.b4 Nh6 1/2
 
-A00    Saragossa Opening
-1.c3 1/2
-
 A00    Mieses Opening
 1.d3 1/2
 
@@ -104,9 +95,6 @@ A00    Van't Kruijs Opening
 
 A00    Amsterdam Attack
 1.e3 e5 2.c4 d6 3.Nc3 Nc6 4.b3 Nf6 1/2
-
-A00    Gedult's Opening
-1.f3 1/2
 
 A00    Benko's Opening
 1.g3 1/2
@@ -132,21 +120,6 @@ A00    Benko's Opening: Reversed Alekhine
 A00    Lasker Simul Special
 1.g3 h5 1/2
 
-A00    Grob's Attack
-1.g4 1/2
-
-A00    Grob: Spike Attack
-1.g4 d5 2.Bg2 c6 3.g5 1/2
-
-A00    Clemenz Opening ;Mead's-Basman's-de Klerk's 
-1.h3 1/2
-
-A00    Kadas Opening ; Desprez *pwo, was: Anti-Borg Desprez Opening
-1.h4 1/2
-
-A00    Durkin's Attack
-1.Na3 1/2
-
 A00    Dunst Opening ;Sleipner-Heinrichsen 
 1.Nc3 1/2
 
@@ -155,9 +128,6 @@ A00    Novosibirsk Opening
 
 A00    Dunst Opening ;Sleipner-Heinrichsen 
 1.Nc3 e5 1/2
-
-A00    Amar Opening ; Paris 
-1.Nh3 1/2
 
 A01    Nimzovich-Larsen Attack
 1.b3 1/2
@@ -931,9 +901,6 @@ A39/10 English: Symmetrical: Modern Line 4...g6 ; *pwo 3/01 add, nat
 A40    Queen's Pawn Game
 1.d4 1/2
 
-A40    Polish Defense
-1.d4 b5 1/2
-
 A40    Queen's Pawn: English Defense
 1.d4 b6 1/2
 
@@ -970,11 +937,6 @@ A40    Modern Defense ; including King's Indian, English *pwo 3/01 catchall
 A40    Beefeater Defense
 1.d4 g6 2.c4 Bg7 3.Nc3 c5 4.d5 Bxc3 5.bxc3 f5 1/2
 
-A40    Queen's Pawn: Lundin Kevitz-Mikenas Defense
-1.d4 Nc6 1/2
-
-A40    Queen's Pawn-King's Pawn Game ; subr fm B00, nat *pwo
-1.d4 Nc6 2.e4 e5 3.d5 Nce7 4.c4 Ng6 5.Be3 Nf6 6.Nc3 Bb4 7.f3 0-0 8.Bd3
 1/2
 
 A40    English-Queen's Pawn ; subr fm A10, nat *pwo
@@ -1597,42 +1559,6 @@ A99    Dutch: Ilyin-Genevsky with b3
 
 B00    King's Pawn Opening
 1.e4 1/2
-
-B00    St.George Defense ;Baker 
-1.e4 a6 1/2
-
-B00    Owen Defense
-1.e4 b6 1/2
-
-B00/01 Bishops Defense ; *pwo 3/01 add, nat ..e6>Bb7		
-1.e4 b6 2.d4 e6 3.Bd3 Bb7 4.Nf3 c5 5.c3 cxd4 1/2
-
-B00    Guatemala Defense
-1.e4 b6 2.d4 Ba6 1/2
-
-B00    Fried Fox Defense
-1.e4 f6 2.d4 Kf7 1/2
-
-B00    Carr's Defense
-1.e4 h6 1/2
-
-B00    KP: Nimzovich Defense
-1.e4 Nc6 1/2
-
-B00    KP: Nimzovich Defense
-1.e4 Nc6 2.d4 1/2
-
-B00    KP: Nimzovich Defense: Marshall Gambit
-1.e4 Nc6 2.d4 d5 3.exd5 Qxd5 4.Nc3 1/2
-
-B00    KP: Nimzovich Defense: Bogolyubov Variation
-1.e4 Nc6 2.d4 d5 3.Nc3 1/2
-
-B00    KP: Nimzovich Defense
-1.e4 Nc6 2.Nf3 1/2
-
-B00/10 KP: Nimzovich: 3...d6 Miles ; *pwo 4/01 add, eco footnote 58
-1.e4 Nc6 2.Nf3 d6 3.d4 Nf6 4.Nc3 Bg4 5.Be3 e6 6.Be2 Be7 7.0-0 0-0 1/2
 
 B01    Scandinavian Defense ;centre counter
 1.e4 d5 1/2
@@ -7709,18 +7635,8 @@ E99/07 King's Indian: Orthodox: Aronin-Taimanov without 11.Nf6 ; *pwo 3/01 add n
 ; superceded by longer Lines. Some might be found in Gambit collections and
 ; on-Line Games.
 
-A00 Amar Gambit
-1.Nh3 d5 2.g3 e5 3.f4 Bxh3 4.Bxh3 exf4 1/2
 A00 Battambang Opening
 1.Nc3 e5 2.a3 1/2
-A00 Crab Opening
-1.a4 e5 2.h4 1/2
-A00 Grob: Fritz Gambit
-1.g4 d5 2.Bg2 Bxg4 3.c4 1/2
-A00 Grob: Romford Counter-Gambit
-1.g4 d5 2.Bg2 Bxg4 3.c4 d4 1/2
-A00 Hammerschlag Fried fox/Pork chop Opening
-1.f3 e5 2.Kf2 1/2
 A00 Mieses Opening
 1.d3 e5 1/2
 A00 Valencia Opening
@@ -7836,24 +7752,6 @@ A95 Dutch: Stonewall: Chekhover Variation ; seldom played-pwo
 A97 Dutch: Ilyin-Genevsky: Winter Variation ; seldom played-pwo
 1.d4 f5 2.c4 Nf6 3.g3 e6 4.Bg2 Be7 5.Nf3 0-0 6.0-0 d6 7.Nc3 Qe8 8.Re1 1/2
 
-B00 Barnes Defense
-1.e4 f6 1/2
-B00 Corn stalk Defense
-1.e4 a5 1/2
-B00 Fred
-1.e4 f5 1/2
-B00 Hippopotamus Defense
-1.e4 Nh6 2.d4 g6 3.c4 f6 1/2
-B00 KP: Colorado counter
-1.e4 Nc6 2.Nf3 f5 1/2
-B00 KP: Neo-Mongoloid Defense
-1.e4 Nc6 2.d4 f6 1/2
-B00 KP: Nimzovich Defense: Wheeler Gambit
-1.e4 Nc6 2.b4 Nxb4 3.c3 Nc6 4.d4 1/2
-B00 Lemming Defense
-1.e4 Na6 1/2
-B00 Reversed Grob: Borg/Basman Defense/macho Grob
-1.e4 g5 1/2
 B01 Scandinavian: Richter Variation
 1.e4 d5 2.exd5 Nf6 3.d4 g6 1/2
 B01 Scandinavian: Anderssen Counter-Attack: Orthodox Attack
