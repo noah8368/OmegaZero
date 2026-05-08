@@ -380,6 +380,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
 
 auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
   assert(alpha < beta);
+  CheckSearchTime();
   S8 game_status = GetGameStatus();
   if (game_status == kPlayerCheckmated) {
     return kWorstEval;
