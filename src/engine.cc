@@ -290,11 +290,9 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     }
   }
 
-  S8 game_status = GetGameStatus();
-  if (game_status == kPlayerCheckmated) {
-    return kWorstEval;
-  }
-  if (game_status == kDraw || (ply > 0 && RepDetected())) {
+  constexpr S8 kHalfmoveClockLimit = 100;
+  if (board_->GetHalfmoveClock() >= kHalfmoveClockLimit ||
+      (ply > 0 && RepDetected())) {
     return kNeutralEval;
   }
   if (depth <= 0) {
@@ -333,6 +331,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   int best_eval = kWorstEval;
   int search_eval;
   int depth_reduction;
+  int legal_moves = 0;
   // Iterate through all child nodes of the current position.
   size_t num_moves = move_list.size();
   for (size_t move_idx = 0; move_idx < num_moves; ++move_idx) {
@@ -343,14 +342,15 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       // Ignore moves that put the player's king in check.
       continue;
     }
+    ++legal_moves;
     AddPosToHistory();
-    if (move_idx >= kNumEarlyMoves && !at_pv_node &&
+    if (legal_moves > kNumEarlyMoves && !at_pv_node &&
         move.captured_piece == kNA && move.promoted_to_piece == kNA &&
         !board_->KingInCheck() && depth >= kMinReductionDepth) {
       // Perform Late Move Reduction.
       depth_reduction =
           static_cast<int>(sqrt(static_cast<double>(depth - 1)) +
-                           sqrt(static_cast<double>(move_idx - 1)));
+                           sqrt(static_cast<double>(legal_moves - 1)));
       search_eval = -NegamaxSearch(-beta, -alpha, depth - depth_reduction - 1,
                                    ply + 1, true);
       if (search_eval > alpha) {
@@ -380,6 +380,10 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     }
   }
 
+  if (legal_moves == 0) {
+    return board_->KingInCheck() ? kWorstEval : kNeutralEval;
+  }
+
   // Store a searched node in the transposition table.
   if (best_eval <= orig_alpha) {
     transposition_table_.Update(board_, depth, best_eval, kAllNode);
@@ -395,10 +399,9 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
 auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
   assert(alpha < beta);
   CheckSearchTime();
-  S8 game_status = GetGameStatus();
-  if (game_status == kPlayerCheckmated) {
-    return kWorstEval;
-  } else if (game_status == kDraw || RepDetected()) {
+
+  constexpr S8 kHalfmoveClockLimit = 100;
+  if (board_->GetHalfmoveClock() >= kHalfmoveClockLimit || RepDetected()) {
     return kNeutralEval;
   }
 
@@ -431,12 +434,14 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
   vector<Move> move_list = GenerateMoves(/* captures_only = */ !in_check);
   move_list = OrderMoves(move_list);
   size_t history_size_before_qmoves = pos_history_.size();
+  int legal_moves = 0;
   for (const Move& move : move_list) {
     try {
       board_->MakeMove(move);
     } catch (BadMove& e) {
       continue;
     }
+    ++legal_moves;
     AddPosToHistory();
     int eval = -QuiescenceSearch(-beta, -alpha, qs_depth - 1);
     board_->UnmakeMove(move);
@@ -446,6 +451,10 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
       return beta;
     }
     alpha = max(eval, alpha);
+  }
+
+  if (in_check && legal_moves == 0) {
+    return kWorstEval;
   }
 
   return alpha;
