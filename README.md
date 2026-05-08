@@ -245,8 +245,12 @@ the formula found [here](https://www.chessprogramming.org/Tapered_Eval#Implement
 
 The move generator is capable of producing up to ~7 million moves/sec.
 
-#### ELO Approximation
+#### ELO Estimation
 
-OmegaZero consistently wins against Stockfish through level four, and is
-competitive with Stockfish level five. From this, we can approximate an
-ELO score of ~2000 for the engine.
+ELO is estimated by running OmegaZero against Stockfish at various `UCI_Elo`
+levels using cutechess-cli (20 games per level, 5s/move). See
+[ELO Testing](#elo-testing) for instructions on running these tests.
+
+| Version | vs SF-1320 | vs SF-1700 | vs SF-2100 | Estimated ELO |
+|---------|-----------|-----------|-----------|---------------|
+| v1      | 90%       | 55%       | 30%       | ~1730         |
