@@ -654,7 +654,7 @@ auto Board::EvaluatePawnStructure(Bitboard white_attackspan,
   constexpr int kNeighborBonus = 1;
   constexpr int kDefenderBonus = 2;
   constexpr int kRookBehindPassedPawnBonus = 12;
-  constexpr int kPassedPawnBonus[kNumRanks] = {3, 8, 13, 18, 23, 28, 33, 0};
+  constexpr int kPassedPawnBonus[kNumRanks] = {5, 10, 20, 40, 70, 120, 200, 0};
   constexpr int kKingPawnShieldHolePenalty = 4;
 
   Bitboard backward_pawns;
@@ -685,9 +685,12 @@ auto Board::EvaluatePawnStructure(Bitboard white_attackspan,
         if (MultipleSetSq(pawns_on_file)) {
           // Add a penalty for doubled pawns.
           pawn_eval -= (player_side * kDoubledPawnPenalty);
-        } else {
-          // Determine if a lone pawn on a file is a passer.
-          pawn_sq = GetSqOfFirstPiece(pawns_on_file);
+        }
+
+        // Check each pawn on this file for passer / isolated status.
+        Bitboard file_pawns = pawns_on_file;
+        while (file_pawns) {
+          pawn_sq = GetSqOfFirstPiece(file_pawns);
           if (!static_cast<bool>(
                   kPawnFrontSpanMasks[player][pawn_sq] &
                   GetPiecesByType(kPawn, GetOtherPlayer(player)))) {
@@ -696,11 +699,21 @@ auto Board::EvaluatePawnStructure(Bitboard white_attackspan,
             pawn_eval += (player_side * kPassedPawnBonus[passer_rank]);
 
             // Add a bonus for rooks behind passed pawns.
-            if (static_cast<bool>(GetPiecesByType(kRook, player) &
-                                  kFileMasks[file])) {
-              pawn_eval += (player_side * kRookBehindPassedPawnBonus);
+            Bitboard rooks_on_file = GetPiecesByType(kRook, player) &
+                                     kFileMasks[file];
+            while (rooks_on_file) {
+              S8 rook_sq = GetSqOfFirstPiece(rooks_on_file);
+              S8 rook_rank = GetRankFromSq(rook_sq);
+              bool rook_behind = (player == kWhite)
+                                     ? rook_rank < passer_rank
+                                     : rook_rank > passer_rank;
+              if (rook_behind) {
+                pawn_eval += (player_side * kRookBehindPassedPawnBonus);
+                break;
+              }
+              RemoveFirstPiece(rooks_on_file);
             }
-          } else {
+          } else if (!MultipleSetSq(pawns_on_file)) {
             // Compute neighbor file bitmask.
             neighor_files = 0X0;
             if (file != kFileA) {
@@ -715,6 +728,7 @@ auto Board::EvaluatePawnStructure(Bitboard white_attackspan,
               pawn_eval -= (player_side * kIsolatedPawnPenalty);
             }
           }
+          RemoveFirstPiece(file_pawns);
         }
       }
     }
