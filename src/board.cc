@@ -231,6 +231,7 @@ auto Board::Evaluate() -> int {
   constexpr int kBishopPairBonus = 12;
   constexpr int kConnectedRookBonus = 25;
   constexpr int kCastlingRightsLossPenalty = 6;
+  constexpr int kMobilityWeight[kNumPieceTypes] = {0, 4, 3, 2, 1, 0};
   S8 player_side;
   S8 first_sq;
   Bitboard bishops;
@@ -260,6 +261,24 @@ auto Board::Evaluate() -> int {
       }
       if (!castling_rights_[player][kKingSide]) {
         board_score -= (player_side * kCastlingRightsLossPenalty);
+      }
+    }
+
+    // Evaluate mobility: count pseudo-legal squares for each non-pawn, non-king
+    // piece. For knights and bishops, exclude squares attacked by enemy pawns.
+    Bitboard friendly_pieces = GetPiecesByType(kNA, player);
+    Bitboard enemy_pawn_attacks = (player == kWhite) ? black_pawn_attack_map
+                                                     : white_pawn_attack_map;
+    for (S8 piece = kKnight; piece <= kQueen; ++piece) {
+      Bitboard pieces = GetPiecesByType(piece, player);
+      while (pieces) {
+        S8 sq = GetSqOfFirstPiece(pieces);
+        Bitboard moves = GetAttackMap(player, sq, piece) & ~friendly_pieces;
+        if (piece == kKnight || piece == kBishop) {
+          moves &= ~enemy_pawn_attacks;
+        }
+        board_score += player_side * GetNumSetSq(moves) * kMobilityWeight[piece];
+        RemoveFirstPiece(pieces);
       }
     }
   }
