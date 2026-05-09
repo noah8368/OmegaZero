@@ -98,11 +98,12 @@ Game::Game(const string& init_pos, const string& opening_book_path,
     while (getline(opening_book_f, f_line)) {
       if (f_line.rfind("1.", 0) != string::npos) {
         for (;;) {
-          // Remove the newline character at the end of the line.
-          f_line.pop_back();
+          if (!f_line.empty() && f_line.back() == '\r') {
+            f_line.pop_back();
+          }
           opening_line += f_line;
-          // Check if the last three characters of the line are "1/2".
-          if (opening_line.substr(opening_line.length() - 3) == "1/2") {
+          if (opening_line.length() >= 3 &&
+              opening_line.substr(opening_line.length() - 3) == "1/2") {
             // Add the current opening to the opening book.
             opening_book_.push_back(opening_line);
             opening_line.clear();
