@@ -281,6 +281,45 @@ auto Board::Evaluate() -> int {
         RemoveFirstPiece(pieces);
       }
     }
+
+    // King safety: penalize when enemy pieces attack squares around our king.
+    constexpr int kKingSafetyPieceWeight[kNumPieceTypes] = {0, 20, 20, 40, 80, 0};
+    constexpr int kAttackWeight[] = {0, 0, 50, 75, 88, 94, 97, 99};
+    constexpr int kMaxAttackers = 7;
+
+    S8 enemy = GetOtherPlayer(player);
+    Bitboard king_board = GetPiecesByType(kKing, player);
+    S8 king_sq = GetSqOfFirstPiece(king_board);
+    Bitboard king_zone = kNonSliderAttackMaps[kKingAttack][king_sq] |
+                         (static_cast<Bitboard>(1) << king_sq);
+    // Extend the zone forward by one rank toward the enemy.
+    if (player == kWhite) {
+      king_zone |= (king_zone << 8) & ~kRankMasks[kRank1];
+    } else {
+      king_zone |= (king_zone >> 8) & ~kRankMasks[kRank8];
+    }
+
+    int attacking_pieces_count = 0;
+    int value_of_attacks = 0;
+    for (S8 piece = kKnight; piece <= kQueen; ++piece) {
+      Bitboard enemy_pieces = GetPiecesByType(piece, enemy);
+      while (enemy_pieces) {
+        S8 sq = GetSqOfFirstPiece(enemy_pieces);
+        Bitboard attack = GetAttackMap(enemy, sq, piece) & king_zone;
+        if (attack) {
+          ++attacking_pieces_count;
+          value_of_attacks +=
+              GetNumSetSq(attack) * kKingSafetyPieceWeight[piece];
+        }
+        RemoveFirstPiece(enemy_pieces);
+      }
+    }
+    if (attacking_pieces_count > kMaxAttackers) {
+      attacking_pieces_count = kMaxAttackers;
+    }
+    board_score -=
+        player_side * value_of_attacks * kAttackWeight[attacking_pieces_count] /
+        100;
   }
 
   S8 moving_side = (player_to_move_ == kWhite) ? 1 : -1;
