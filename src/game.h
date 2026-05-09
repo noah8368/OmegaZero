@@ -49,7 +49,7 @@ class Game {
   auto MakeOtherEngineMove(const Move& move) -> void;
   auto OutputWinner() const -> void;
   auto Play() -> void;
-  auto Save(string game_record_file) -> void;
+  auto SavePgn(const string& opponent_name) -> void;
   // Output the results of Perft in readable format.
   auto Test(int depth) -> void;
 

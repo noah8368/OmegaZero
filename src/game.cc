@@ -308,15 +308,41 @@ void Game::Play() {
   UpdateMoveHistory(move_str);
 }
 
-auto Game::Save(string game_record_file) -> void {
-  // Initialize the opening book with the opening book text file.
-  ofstream game_record_f(game_record_file);
-  if (game_record_f.is_open()) {
-    game_record_f << move_history_ << "\n";
-    game_record_f.close();
-  } else {
-    throw invalid_argument("Game record file can't be created");
+auto Game::SavePgn(const string& opponent_name) -> void {
+  time_t now = time(nullptr);
+  tm* lt = localtime(&now);
+  char date_str[11];
+  strftime(date_str, sizeof(date_str), "%Y.%m.%d", lt);
+  char time_str[9];
+  strftime(time_str, sizeof(time_str), "%H:%M:%S", lt);
+  char datetime_str[20];
+  strftime(datetime_str, sizeof(datetime_str), "%Y-%m-%d_%H%M%S", lt);
+
+  S8 user_side = engine_.GetUserSide();
+  string white = (user_side == kWhite) ? opponent_name : "OmegaZero";
+  string black = (user_side == kBlack) ? opponent_name : "OmegaZero";
+
+  string result;
+  if (winner_ == kWhite) result = "1-0";
+  else if (winner_ == kBlack) result = "0-1";
+  else result = "1/2-1/2";
+
+  string filename = opponent_name + "_v_OmegaZero_" + datetime_str + ".pgn";
+  ofstream f(filename);
+  if (!f.is_open()) {
+    throw invalid_argument("PGN file can't be created");
   }
+
+  f << "[Event \"" << opponent_name << " v OmegaZero " << date_str << " " << time_str << "\"]\n";
+  f << "[Site \"?\"]\n";
+  f << "[Date \"" << date_str << "\"]\n";
+  f << "[White \"" << white << "\"]\n";
+  f << "[Black \"" << black << "\"]\n";
+  f << "[Result \"" << result << "\"]\n\n";
+  f << move_history_ << "\n";
+  f.close();
+
+  cout << "PGN saved to " << filename << endl;
 }
 
 auto Game::Test(int depth) -> void {

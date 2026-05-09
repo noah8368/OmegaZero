@@ -33,26 +33,27 @@ auto main(int argc, char* argv[]) -> int {
   namespace prog_opt = boost::program_options;
   prog_opt::options_description desc("Options");
   string init_pos;
-  string game_record_file;
+  string pgn_opponent;
   float search_time;
   int depth;
   char player_side;
-  desc.add_options()(
-      "initial-position,i",
+  desc.add_options()
+      ("initial-position,i",
       prog_opt::value<string>(&init_pos)->default_value(
           "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
-      "FEN formatted string specifying the initial game position")(
-      "depth,d", prog_opt::value<int>(&depth),
-      "Depth to run Perft testing function to")(
-      "player-side,p", prog_opt::value<char>(&player_side)->default_value('w'),
-      "Side user will play")(
-      "time,t", prog_opt::value<float>(&search_time)->default_value(5),
-      "Search time")("opening-book-path,o",
-                     prog_opt::value<string>(&opening_book_path),
-                     "Opening book file path")(
-      "save,s", prog_opt::value<string>(&game_record_file),
-      "File to save the move history to after a game is finished.")(
-      "uci,u", "Run in UCI protocol mode");
+      "FEN formatted string specifying the initial game position")
+      ("depth,d", prog_opt::value<int>(&depth),
+      "Depth to run Perft testing function to")
+      ("player-side,p", prog_opt::value<char>(&player_side)->default_value('w'),
+      "Side user will play")
+      ("time,t", prog_opt::value<float>(&search_time)->default_value(5),
+      "Search time")
+      ("opening-book-path,o",
+      prog_opt::value<string>(&opening_book_path),
+      "Opening book file path")
+      ("pgn", prog_opt::value<string>(&pgn_opponent),
+      "Save game as PGN file, using the given opponent name")
+      ("uci,u", "Run in UCI protocol mode");
   prog_opt::variables_map var_map;
   try {
     prog_opt::store(prog_opt::parse_command_line(argc, argv, desc), var_map);
@@ -83,8 +84,8 @@ auto main(int argc, char* argv[]) -> int {
       }
       game.OutputWinner();
 
-      if (var_map.count("save")) {
-        game.Save(game_record_file);
+      if (var_map.count("pgn")) {
+        game.SavePgn(pgn_opponent);
       }
     }
   } catch (invalid_argument& e) {
