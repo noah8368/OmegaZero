@@ -53,7 +53,7 @@ auto GetPieceLetter(S8 piece) -> char {
 }
 
 auto GetPieceType(char piece_ch) -> S8 {
-  switch (piece_ch) {
+  switch (toupper(piece_ch)) {
     case 'N':
       return kKnight;
     case 'B':
@@ -391,13 +391,16 @@ auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
     throw BadMove("invalid kingside castling request");
   }
 
+  string cmd = user_cmd;
+  for (char& ch : cmd) ch = tolower(ch);
+
   bool capture_indicated = false;
   S8 start_rank = kNA;
   S8 start_file = kNA;
   S8 target_rank;
   S8 target_file;
   // Collect info from a move command formatted in FIDE algebraic notation.
-  InterpAlgNotation(user_cmd, move, start_rank, start_file, target_rank,
+  InterpAlgNotation(cmd, move, start_rank, start_file, target_rank,
                     target_file, capture_indicated);
   // Check a few requirements for the move's pseudo-legality.
   CheckMove(move, start_rank, start_file, target_rank, target_file,
@@ -779,6 +782,9 @@ auto Game::InterpAlgNotation(const string& user_cmd, Move& move, S8& start_rank,
       throw BadMove("bad command formatting");
   }
 
+  if (!RankOnBoard(target_rank) || !FileOnBoard(target_file)) {
+    throw BadMove("bad command formatting");
+  }
   move.target_sq = GetSqFromRankFile(target_rank, target_file);
 }
 
