@@ -317,12 +317,56 @@ the formula found [here](https://www.chessprogramming.org/Tapered_Eval#Implement
 
 ### Performance
 
-ELO is estimated by running OmegaZero against Stockfish at various `UCI_Elo`
-levels using cutechess-cli (20 games per level, 5s/move). NPS (nodes per
-second) is measured by the bench harness, averaging across four positions
-(opening, midgame, complex midgame, endgame) at 5s/position. See
-[ELO Testing](#elo-testing) and [Benchmarking](#benchmarking) for details.
+#### Nodes Per Second (NPS) Comparison
 
-| Version | vs SF-1320 | vs SF-1700 | vs SF-2100 | Estimated ELO | Avg NPS |
-|---------|-----------|-----------|-----------|---------------|---------|
-| v1      | 90%       | 55%       | 30%       | ~1730         | ~197k   |
+NPS (nodes per second) is measured by the bench harness, averaging across four positions
+(opening, midgame, complex midgame, endgame) at 5s/position. See
+[Benchmarking](#benchmarking) for details.
+
+| Version | Avg NPS |
+|---------|---------|
+| v1      | 197k   |
+| v2      | 507k   |
+| v3      | TBD    |
+
+#### Stockfish ELO Comparison
+
+ELO was estimated by running OmegaZero against Stockfish at various `UCI_Elo`
+levels using cutechess-cli (20 games per level, 5s/move). See
+[ELO Testing](#elo-testing) for details.
+
+##### v1 Results
+
+| Stockfish ELO | Win Rate | ELO Estimate | 
+|---|---|---|
+| 1320 | 90% | 1701.7 |
+| 1700 | 55% | 1734.9 |
+| 2100 | 30% | 1952.8 |
+
+##### v2 Results
+
+| Stockfish ELO | Win Rate | ELO Estimate | 
+|---|---|---|
+| 1320 | 90% | 1701.7 |
+| 1700 | 55% | 1734.9 |
+| 2100 | 30% | 1952.8 |
+
+##### v3 Resultss
+
+| Stockfish ELO | Win Rate | ELO Estimate | 
+|---|---|---|
+| 1320 | 90% | 1701.7 |
+| 1700 | 55% | 1734.9 |
+| 2100 | 30% | 1952.8 |
+
+#### Example Games
+
+**OmegaZero (Black) vs ~300 ELO Human PLayer — 0-1, 34 moves.** OmegaZero won cleanly. White played a passive 1.e3 and quickly lost material (3.Ng5?? Qxg5, 7.g4?? Bxg4). After queens came off by move 10, OmegaZero ground out a dominant endgame with coordinated knights and rooks, mating with Rd1#.
+
+`1.e3 e5 2.Nf3 e4 3.Ng5 Qxg5 4.Rg1 Nc6 5.d4 d5 6.Nc3 Nf6 7.g4 Bxg4 8.Qd2 Qh4 9.Rxg4 Qxg4 10.Qe2 Qxe2 11.Kxe2 Bd6 12.f4 exf3+ 13.Kxf3 Bxh2 14.Bh3 O-O 15.Bd7 Nxd7 16.Nxd5 Rad8 17.Ne7 Nxe7 18.Bd2 Ne5+ 19.Kg2 Nc4 20.Rh1 Nxd2 21.Rxh2 Nc4 22.b3 Nxe3+ 23.Kg3 Nf1+ 24.Kg2 Nxh2 25.Kxh2 Rxd4 26.c3 Rd2+ 27.Kg1 Rxa2 28.c4 Nf5 29.Kf1 Ne3+ 30.Kg1 Nxc4 31.b4 Rb2 32.Kh1 Ne5 33.Kg1 Rd8 34.Kf1 Rd1# 0-1`
+
+**~1900 ELO<sup>1</sup> Human Player vs OmegaZero (Black) — 1-0, 31 moves.** White punished OmegaZero's material greed in a Queen's Gambit Accepted. The engine grabbed two center pawns with its queen (5...Qxd4), spending 5 of its first 15 moves on queen maneuvers. Despite winning the exchange, OmegaZero fell behind in development and left its king in the center. White's knights broke through with Nxe6/Nxg7+ and finished with Qd5#. Textbook example of the engine's material-over-development weakness.
+
+`1.d4 d5 2.c4 e6 3.g3 dxc4 4.Bg2 Ne7 5.Nd2 Qxd4 6.Ngf3 Qc5 7.O-O Nd5 8.Qc2 c3 9.Ne4 cxb2 10.Qxb2 Qb6 11.Qc2 Nb4 12.Qa4+ Bd7 13.Qd1 Nxa2 14.Rxa2 Qb1 15.Qc2 Qxa2 16.Qxa2 f5 17.Neg5 Nc6 18.Nxe6 Bd6 19.Nxg7+ Kd8 20.Bg5+ Kc8 21.Rb1 Nb4 22.Qc4 Bxg3 23.Qxb4 Bc6 24.hxg3 Bxf3 25.Bxf3 b6 26.Nxf5 h5 27.Bxa8 h4 28.Qe4 Rd8 29.Ne7+ Kd7 30.Bc6+ Kd6 31.Qd5# 1-0`
+
+<sup>1</sup> Chess.com rating

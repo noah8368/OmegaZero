@@ -8,6 +8,7 @@
 #include "game.h"
 
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -327,7 +328,8 @@ auto Game::SavePgn(const string& opponent_name) -> void {
   else if (winner_ == kBlack) result = "0-1";
   else result = "1/2-1/2";
 
-  string filename = opponent_name + "_v_OmegaZero_" + datetime_str + ".pgn";
+  std::filesystem::create_directory("games");
+  string filename = "games/" + opponent_name + "_v_OmegaZero_" + datetime_str + ".pgn";
   ofstream f(filename);
   if (!f.is_open()) {
     throw invalid_argument("PGN file can't be created");
@@ -339,7 +341,25 @@ auto Game::SavePgn(const string& opponent_name) -> void {
   f << "[White \"" << white << "\"]\n";
   f << "[Black \"" << black << "\"]\n";
   f << "[Result \"" << result << "\"]\n\n";
-  f << move_history_ << "\n";
+  f << move_history_ << "\n\n";
+
+  f << "{ Final position:\n";
+  for (S8 rank = kRank8; rank >= kRank1; --rank) {
+    f << "  " << static_cast<int>(rank + 1) << " ";
+    for (S8 file = kFileA; file <= kFileH; ++file) {
+      S8 sq = GetSqFromRankFile(rank, file);
+      S8 piece = board_.GetPieceOnSq(sq);
+      S8 player = board_.GetPlayerOnSq(sq);
+      if (player == kNA && piece == kNA) {
+        f << ". ";
+      } else {
+        f << piece_symbols_[player][piece] << " ";
+      }
+    }
+    f << "\n";
+  }
+  f << "  A B C D E F G H }\n";
+
   f.close();
 
   cout << "PGN saved to " << filename << endl;

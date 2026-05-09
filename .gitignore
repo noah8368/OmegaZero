@@ -4,6 +4,6 @@ __pycache__
 **/.vscode/**
 games
 cutechess
-elo_results*
+elo_results
 *.pgn
 .DS_Store
