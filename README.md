@@ -26,6 +26,13 @@
   - [Opening Book](#opening-book)
   - [Evaluation](#evaluation)
 - [Performance](#performance)
+  - [NPS Comparison](#nodes-per-second-nps-comparison)
+  - [Stockfish ELO Comparison](#stockfish-elo-comparison)
+    - [v1 Results](#v1-results)
+    - [v2 Results](#v2-results)
+    - [v3 Results](#v3-results)
+  - [Example Games](#example-games)
+  - [Strengths and Weaknesses](#strengths-and-weaknesses)
 
 ### Project Summary
 
@@ -70,8 +77,7 @@ To run automated ELO testing, the following additional tools are required:
 
 On MacOS, install cutechess from source:
 
-```
-bash
+```bash
 brew install stockfish qt cmake
 pip3 install matplotlib --break-system-packages
 
@@ -105,7 +111,7 @@ To begin a game, a user invokes the program as follows:
 ```
 OmegaZero -p [SIDE] -t [TIME]
 ```
-where `[SIDE]` is the side the user would like to player. This may be `w` for
+where `[SIDE]` is the side the user would like to play. This may be `w` for
 White, `b` for Black, or `r` for a random selection. `[TIME]` is the amount of time (in seconds) to give the engine during play. This defaults to `5s`.
 
 To start from a custom position, add `-i` with a [FEN](https://www.chessprogramming.org/Forsyth-Edwards_Notation) string. Use `w` or `b` in the FEN to set which side moves first:
@@ -122,7 +128,7 @@ to avoid ambiguity in a movement command. Some valid example moves are
  - Move queen to e4: `Qe4`
  - Move pawn to d8 and promote to queen: `d8Q`
  - Pawn takes piece on d6: `exd6`
- - Night takes piece on e4: `Nxe4`
+ - Knight takes piece on e4: `Nxe4`
  - Rook on rank 1 moves to a3: `R1a3`
  - Rook on d file moves to f8: `Rdf8`
  - Pawn takes a piece on d8 and promotes to queen: `exd8Q`
@@ -251,7 +257,7 @@ unmade if they are found to do this.
 
 A custom hash table was used to implement the [Transposition Table](https://www.chessprogramming.org/Transposition_Table).
 The [Zobrist Hashing](https://www.chessprogramming.org/Zobrist_Hashing) 
-algorithm was used to hash board states. This technique an expected collision
+algorithm was used to hash board states. This technique has an expected collision
 rate of one in 2^32 ≈ 4.29 billion. Relatively little can be done
 to mitigate this risk, and as such is a known and unavoidable bug with this
 implementation. The Transposition Table is [two-tiered](https://www.chessprogramming.org/Transposition_Table#Two-tier_System), using the
@@ -263,13 +269,13 @@ The [MTD(f)](https://www.chessprogramming.org/MTD(f)) search algorithm is used w
 framework. This routine calls an implementation of the [Negamax](https://www.chessprogramming.org/Negamax) algorithm
 with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta), [Null Move Pruning](https://www.chessprogramming.org/Null_Move_Pruning), and [Late Move Reduction](https://www.chessprogramming.org/Late_Move_Reductions). A depth reduction value [R](https://www.chessprogramming.org/Depth_Reduction_R)
 of 3 is used when depth is greater than 6, and 2 otherwise in Null Move Pruning.
-For Late Move Reductions are computed using the formula
+Late Move Reductions are computed using the formula
 ```
 int(sqrt(double(depth-1)) + sqrt(double(move_idx-1)))
 ```
 taken from [Fruit](https://www.chessprogramming.org/Fruit). Reduction is only done on non-PV (Principle Variation) nodes. A
 Transposition Table is used to cache seen positions, allowing the engine to
-store each [node's type](https://www.chessprogramming.org/Node_Types) is and prevent costly re-evaluation of a node. This
+store each [node's type](https://www.chessprogramming.org/Node_Types) and prevent costly re-evaluation of a node. This
 is especially important for storing the [Principle Variation](https://www.chessprogramming.org/Principal_Variation) during Iterative
 Deepening.
 
@@ -327,7 +333,7 @@ NPS (nodes per second) is measured by the bench harness, averaging across four p
 |---------|---------|
 | v1      | 197k   |
 | v2      | 507k   |
-| v3      | TBD    |
+| v3      | 498k   |
 
 #### Stockfish ELO Comparison
 
@@ -347,17 +353,17 @@ levels using cutechess-cli (20 games per level, 5s/move). See
 
 | Stockfish ELO | Win Rate | ELO Estimate | 
 |---|---|---|
-| 1320 | 90% | 1701.7 |
-| 1700 | 55% | 1734.9 |
-| 2100 | 30% | 1952.8 |
+| 1320 | 100% | 2519.8 |
+| 1700 | 50% | 1700 |
+| 2100 | 35% | 1992.5 |
 
-##### v3 Resultss
+##### v3 Results
 
 | Stockfish ELO | Win Rate | ELO Estimate | 
 |---|---|---|
-| 1320 | 90% | 1701.7 |
-| 1700 | 55% | 1734.9 |
-| 2100 | 30% | 1952.8 |
+| 1320 | 97.5% | 1956.4 |
+| 1700 | 75% | 1890.8 |
+| 2100 | 35% | 1992.5 |
 
 #### Example Games
 
@@ -365,8 +371,31 @@ levels using cutechess-cli (20 games per level, 5s/move). See
 
 `1.e3 e5 2.Nf3 e4 3.Ng5 Qxg5 4.Rg1 Nc6 5.d4 d5 6.Nc3 Nf6 7.g4 Bxg4 8.Qd2 Qh4 9.Rxg4 Qxg4 10.Qe2 Qxe2 11.Kxe2 Bd6 12.f4 exf3+ 13.Kxf3 Bxh2 14.Bh3 O-O 15.Bd7 Nxd7 16.Nxd5 Rad8 17.Ne7 Nxe7 18.Bd2 Ne5+ 19.Kg2 Nc4 20.Rh1 Nxd2 21.Rxh2 Nc4 22.b3 Nxe3+ 23.Kg3 Nf1+ 24.Kg2 Nxh2 25.Kxh2 Rxd4 26.c3 Rd2+ 27.Kg1 Rxa2 28.c4 Nf5 29.Kf1 Ne3+ 30.Kg1 Nxc4 31.b4 Rb2 32.Kh1 Ne5 33.Kg1 Rd8 34.Kf1 Rd1# 0-1`
 
+Final Position
+
+![Final Position 300 ELO Player](./figs/final_position_300_ELO_player.png "Final Position for 300 ELO Player")
+
 **~1900 ELO<sup>1</sup> Human Player vs OmegaZero (Black) — 1-0, 31 moves.** White punished OmegaZero's material greed in a Queen's Gambit Accepted. The engine grabbed two center pawns with its queen (5...Qxd4), spending 5 of its first 15 moves on queen maneuvers. Despite winning the exchange, OmegaZero fell behind in development and left its king in the center. White's knights broke through with Nxe6/Nxg7+ and finished with Qd5#. Textbook example of the engine's material-over-development weakness.
 
 `1.d4 d5 2.c4 e6 3.g3 dxc4 4.Bg2 Ne7 5.Nd2 Qxd4 6.Ngf3 Qc5 7.O-O Nd5 8.Qc2 c3 9.Ne4 cxb2 10.Qxb2 Qb6 11.Qc2 Nb4 12.Qa4+ Bd7 13.Qd1 Nxa2 14.Rxa2 Qb1 15.Qc2 Qxa2 16.Qxa2 f5 17.Neg5 Nc6 18.Nxe6 Bd6 19.Nxg7+ Kd8 20.Bg5+ Kc8 21.Rb1 Nb4 22.Qc4 Bxg3 23.Qxb4 Bc6 24.hxg3 Bxf3 25.Bxf3 b6 26.Nxf5 h5 27.Bxa8 h4 28.Qe4 Rd8 29.Ne7+ Kd7 30.Bc6+ Kd6 31.Qd5# 1-0`
 
+Final Position
+
+![Final Position 1900 ELO Player](./figs/final_position_1900_ELO_player.png "Final Position for 1900 ELO Player")
+
 <sup>1</sup> Chess.com rating
+
+#### Strengths and Weaknesses
+
+**Strengths:**
+- Solid tactical play in positions where its search depth is sufficient — finds forks, pins, and mating combinations
+- Strong endgame conversion when ahead in material (pawn promotions, rook coordination)
+- Effective use of passed pawns, especially with rook support
+- Reliable against weaker opponents: 90%+ win rate vs Stockfish at 1320 ELO
+
+**Weaknesses:**
+- Material greed — will grab pawns at the cost of development and king safety, especially with early queen sorties
+- Horizon effect — the #1 failure mode at all levels, leading to queen blunders where the engine can't see recaptures just beyond its search depth
+- Weak opening repertoire as Black — defaults to 1...Nc6 (Nimzowitsch Defense) in nearly every game, leading to passive positions and a large white/black win rate asymmetry
+- No draw handling — zero draws in 60 automated games; the engine can't hold drawn endgames and has no resignation logic
+- Limited search depth — reaches only depth 8 at 2s/move, leaving room for deeper pruning and move ordering improvements
