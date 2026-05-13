@@ -367,13 +367,21 @@ levels using cutechess-cli (20 games per level, 5s/move). See
 
 #### Example Games
 
-**OmegaZero (Black) vs ~300 ELO Human PLayer — 0-1, 34 moves.** OmegaZero won cleanly. White played a passive 1.e3 and quickly lost material (3.Ng5?? Qxg5, 7.g4?? Bxg4). After queens came off by move 10, OmegaZero ground out a dominant endgame with coordinated knights and rooks, mating with Rd1#.
+**~1000 ELO Human Player (White) vs OmegaZero (Black) — 0-1, 32 moves.** English Opening, Symmetrical. OmegaZero struck in the center with ...d5, winning a piece after 13...Nxd2 14.Qxd2 Qxd5. After 18...Qxa2 the engine was up heavy material and coordinated queen and knight to deliver mate with 32...Qxb2#.
 
-`1.e3 e5 2.Nf3 e4 3.Ng5 Qxg5 4.Rg1 Nc6 5.d4 d5 6.Nc3 Nf6 7.g4 Bxg4 8.Qd2 Qh4 9.Rxg4 Qxg4 10.Qe2 Qxe2 11.Kxe2 Bd6 12.f4 exf3+ 13.Kxf3 Bxh2 14.Bh3 O-O 15.Bd7 Nxd7 16.Nxd5 Rad8 17.Ne7 Nxe7 18.Bd2 Ne5+ 19.Kg2 Nc4 20.Rh1 Nxd2 21.Rxh2 Nc4 22.b3 Nxe3+ 23.Kg3 Nf1+ 24.Kg2 Nxh2 25.Kxh2 Rxd4 26.c3 Rd2+ 27.Kg1 Rxa2 28.c4 Nf5 29.Kf1 Ne3+ 30.Kg1 Nxc4 31.b4 Rb2 32.Kh1 Ne5 33.Kg1 Rd8 34.Kf1 Rd1# 0-1`
+`1.c4 c5 2.Nc3 Nc6 3.d4 cxd4 4.Nd5 e6 5.Nf4 Bb4+ 6.Bd2 Bxd2+ 7.Qxd2 Nf6 8.Nf3 Ne4 9.Qd3 Qa5+ 10.Nd2 d5 11.cxd5 exd5 12.g3 Bg4 13.Nxd5 Nxd2 14.Qxd2 Qxd5 15.Rg1 0-0-0 16.h3 Bxe2 17.Bxe2 Rhe8 18.0-0-0 Qxa2 19.Bg4+ Kb8 20.Qf4+ Ne5 21.Rxd4 Rxd4 22.Qxd4 Qa1+ 23.Kc2 Qxg1 24.Qd6+ Ka8 25.Bd1 Qxf2+ 26.Qd2 Rc8+ 27.Kb3 Qxd2 28.Ka2 Qxd1 29.g4 Qa4+ 30.Kb1 Qc2+ 31.Ka2 Nd3 32.h4 Qxb2# 0-1`
 
 Final Position
 
-![Final Position 300 ELO Player](./figs/final_position_300_ELO_player.png "Final Position for 300 ELO Player")
+![Final Position 1000 ELO Player](./figs/final_position_1000_ELO_player.png "Final Position for 1000 ELO Player")
+
+**1643 ELO Human Player (White) vs OmegaZero (Black) — 0-1, 63 moves.** Scandinavian Defense. OmegaZero grabbed the g2 pawn with 5...Qxg2 and traded queens immediately. Down a pawn with no compensation, White slowly crumbled over a long endgame. OmegaZero converted with a centralized knight and advancing passed pawns. White resigned.
+
+`1.e4 d5 2.exd5 Nf6 3.Bc4 Nxd5 4.Bxd5 Qxd5 5.Nc3 Qxg2 6.Qf3 Qxf3 7.Nxf3 Na6 8.a3 Bg4 9.Ne5 Bf5 10.d3 f6 11.Nc4 e5 12.Be3 Nc5 13.b4 Ne6 14.O-O-O Bg4 15.Rd2 c5 16.b5 O-O-O 17.Ne4 Be7 18.Ng3 Nd4 19.h3 Be6 20.Nb2 Nxb5 21.a4 Nd4 22.Ne4 f5 23.Nc3 Nf3 24.Re2 e4 25.dxe4 fxe4 26.Nxe4 Bxh3 27.Rxh3 Ng1 28.Re1 Nxh3 29.Nxc5 Bxc5 30.Bxc5 b6 31.Be3 Rhf8 32.Nd3 Rxd3 33.cxd3 Nxf2 34.Kd2 Rf7 35.Re2 Ng4 36.Bd4 Kb7 37.Rg2 Rf4 38.Bxg7 Rxa4 39.Kc3 Ne3 40.Re2 Nd5+ 41.Kb3 Rb4+ 42.Ka3 Rb5 43.d4 Ra5+ 44.Kb3 Ra1 45.Kc4 Rg1 46.Be5 Rg2 47.Re4 Kc6 48.Bh8 Rc2+ 49.Kd3 Rc3+ 50.Kd2 Rh3 51.Re6+ Kb5 52.Rd6 Rh2+ 53.Kd3 Rh5 54.Rd7 Nb4+ 55.Kc3 Rh3+ 56.Kd2 Nc6 57.d5 Rh2+ 58.Kc3 Nb4 59.d6 Nc6 60.Rc7 Rh4 61.d7 Rh3+ 62.Kd2 Rh5 63.Rc8 Rd5+ 0-1`
+
+Final Position
+
+![Final Position 1643 ELO Player](./figs/final_position_1643_ELO_player.gif "Final Position for 1643 ELO Player")
 
 **~1900 ELO<sup>1</sup> Human Player vs OmegaZero (Black) — 1-0, 31 moves.** White punished OmegaZero's material greed in a Queen's Gambit Accepted. The engine grabbed two center pawns with its queen (5...Qxd4), spending 5 of its first 15 moves on queen maneuvers. Despite winning the exchange, OmegaZero fell behind in development and left its king in the center. White's knights broke through with Nxe6/Nxg7+ and finished with Qd5#. Textbook example of the engine's material-over-development weakness.
 
