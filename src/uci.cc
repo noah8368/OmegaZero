@@ -141,30 +141,32 @@ auto UciHandler::HandleGo(const string& line) -> void {
 }
 
 auto UciHandler::ComputeThinkTime(int wtime, int btime, int winc, int binc,
-                                   int movetime, int movestogo) const -> float {
-  constexpr float kMinTime = 0.1f;
+                                  int movetime, int movestogo) const -> float {
+  // All intermediate values in ms; result converted to seconds at the end.
+  constexpr float kMinMs = 100.0f;
+  constexpr float kMaxMs = 5000.0f;
+  constexpr float kMoveTimeMargin = 50.0f;
 
   if (movetime > 0) {
-    constexpr float kMoveTimeMarginMs = 50.0f;
-    return std::max(0.01f, static_cast<float>(movetime - kMoveTimeMarginMs) / 1000.0f);
+    float alloc = static_cast<float>(movetime) - kMoveTimeMargin;
+    return std::clamp(alloc, kMinMs, kMaxMs) / 1000.0f;
   }
 
   S8 side = board_->GetPlayerToMove();
-  int time_ms = (side == kWhite) ? wtime : btime;
-  int inc_ms = (side == kWhite) ? winc : binc;
+  float time_ms = static_cast<float>((side == kWhite) ? wtime : btime);
+  float inc_ms = static_cast<float>((side == kWhite) ? winc : binc);
 
-  if (time_ms <= 0) return kMinTime;
+  if (time_ms <= 0) return kMinMs / 1000.0f;
 
   if (movestogo > 0) {
-    float alloc_ms = static_cast<float>(time_ms) / (movestogo + 1)
-                     + inc_ms * 0.8f;
-    return std::max(kMinTime, alloc_ms / 1000.0f);
+    float alloc = time_ms / (movestogo + 1) + inc_ms * 0.8f;
+    return std::clamp(alloc, kMinMs, kMaxMs) / 1000.0f;
   }
 
-  float alloc_ms = static_cast<float>(time_ms) / 30.0f + inc_ms * 0.8f;
-  float max_ms = static_cast<float>(time_ms) * 0.5f;
-  alloc_ms = std::min(alloc_ms, max_ms);
-  return std::max(kMinTime, alloc_ms / 1000.0f);
+  // Quadratic rolloff for low time, linear for high time.
+  float alloc = std::min(time_ms * time_ms / 1800000.0f, time_ms / 30.0f)
+                + inc_ms * 0.8f;
+  return std::clamp(alloc, kMinMs, kMaxMs) / 1000.0f;
 }
 
 auto UciHandler::MoveToUciStr(const Move& move) const -> string {
