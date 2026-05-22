@@ -182,6 +182,10 @@ class Board {
   // relative to the side being evaluated and symmetric, as required by the
   // Negamax Algorithm.
   auto Evaluate() -> int;
+  // Examine the consequence of a series of exchanges on a single square after a
+  // given move, and calculate the likely evaluation change (material) to be
+  // lost or gained. SEE stands for Static Exchange Evaluation.
+  auto GetSee(S8 sq, S8 attacked_player) -> int;
 
   auto GetEpTargetSq() const -> S8;
   auto GetHalfmoveClock() const -> S8;

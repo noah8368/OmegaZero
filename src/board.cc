@@ -30,6 +30,7 @@ using std::end;
 using std::endl;
 using std::invalid_argument;
 using std::string;
+using std::max;
 
 typedef boost::multiprecision::uint128_t U128;
 
@@ -324,6 +325,76 @@ auto Board::Evaluate() -> int {
 
   S8 moving_side = (player_to_move_ == kWhite) ? 1 : -1;
   return board_score * moving_side;
+}
+
+auto Board::GetSee(S8 sq, S8 attacked_player) -> int {
+  if (!SqOnBoard(sq)) {
+    throw invalid_argument("sq in Board::GetAttackersToSq()");
+  }
+  if (attacked_player != kWhite && attacked_player != kBlack) {
+    throw invalid_argument("attacked_player in Board::GetAttackersToSq()");
+  }
+
+  int see_val = 0;
+
+  // Find the lowest-value attacker to square.
+  S8 attacking_player = GetOtherPlayer(attacked_player);
+  Bitboard lowest_value_attacker_map = 0X0;
+  S8 lowest_value_attacker_type = kPawn;
+  for (; lowest_value_attacker_type <= kKing; ++lowest_value_attacker_type) {
+    if (lowest_value_attacker_type == kPawn) {
+      // Capture only diagonal squares to sq in the direction of movement.
+      Bitboard potential_pawn_attacks;
+      if (attacked_player == kWhite) {
+        potential_pawn_attacks = kNonSliderAttackMaps[kWhitePawnCapture][sq];
+      } else {
+        potential_pawn_attacks = kNonSliderAttackMaps[kBlackPawnCapture][sq];
+      }
+      
+      lowest_value_attacker_map = (
+        potential_pawn_attacks & GetPiecesByType(kPawn, attacking_player)
+      );
+    } else {
+      lowest_value_attacker_map = (
+        GetAttackMap(attacking_player, sq, lowest_value_attacker_type) &
+        GetPiecesByType(lowest_value_attacker_type, attacking_player)
+      );
+    }
+
+    if (lowest_value_attacker_map != 0X0) {
+      break;
+    } else if (lowest_value_attacker_type == kKing) {
+      // Return 0 to indicate that no material will be lost or gained by the
+      // exchange if there are no attackers to the square.
+      return see_val;
+    }
+  }
+
+  Move capture;
+  capture.moving_piece = lowest_value_attacker_type;
+  int piece_see_val = 0;
+  while (lowest_value_attacker_map != 0X0) {
+    capture.start_sq = GetSqOfFirstPiece(lowest_value_attacker_map);
+    capture.target_sq = sq;
+    capture.moving_piece = GetPieceOnSq(capture.start_sq);
+    capture.captured_piece = GetPieceOnSq(sq);
+    MakeMove(capture);
+    if (KingInCheck()) {
+      // Undo the move if the piece was pinned.
+      UnmakeMove(capture);
+      RemoveFirstPiece(lowest_value_attacker_map);
+      continue;
+    }
+    
+    piece_see_val = max(
+      0, kPieceVals[capture.captured_piece] - Board::GetSee(sq, attacking_player)
+    );
+    UnmakeMove(capture);
+    RemoveFirstPiece(lowest_value_attacker_map);
+    see_val = max(see_val, piece_see_val);
+  }
+
+  return see_val;
 }
 
 auto Board::ResetPos() -> void {

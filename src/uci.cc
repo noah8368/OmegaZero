@@ -23,6 +23,8 @@ namespace omegazero {
 
 using std::string;
 using std::vector;
+using std::min;
+using std::clamp;
 
 UciHandler::UciHandler() {
   board_ = std::make_unique<Board>(kStartFen);
@@ -149,7 +151,7 @@ auto UciHandler::ComputeThinkTime(int wtime, int btime, int winc, int binc,
 
   if (movetime > 0) {
     float alloc = static_cast<float>(movetime) - kMoveTimeMargin;
-    return std::clamp(alloc, kMinMs, kMaxMs) / 1000.0f;
+    return clamp(alloc, kMinMs, kMaxMs) / 1000.0f;
   }
 
   S8 side = board_->GetPlayerToMove();
@@ -160,13 +162,13 @@ auto UciHandler::ComputeThinkTime(int wtime, int btime, int winc, int binc,
 
   if (movestogo > 0) {
     float alloc = time_ms / (movestogo + 1) + inc_ms * 0.8f;
-    return std::clamp(alloc, kMinMs, kMaxMs) / 1000.0f;
+    return clamp(alloc, kMinMs, kMaxMs) / 1000.0f;
   }
 
   // Quadratic rolloff for low time, linear for high time.
-  float alloc = std::min(time_ms * time_ms / 1800000.0f, time_ms / 30.0f)
+  float alloc = min(time_ms * time_ms / 1800000.0f, time_ms / 30.0f)
                 + inc_ms * 0.8f;
-  return std::clamp(alloc, kMinMs, kMaxMs) / 1000.0f;
+  return clamp(alloc, kMinMs, kMaxMs) / 1000.0f;
 }
 
 auto UciHandler::MoveToUciStr(const Move& move) const -> string {
