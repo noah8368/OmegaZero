@@ -36,100 +36,6 @@ using std::array;
 
 typedef boost::multiprecision::uint128_t U128;
 
-auto GetLeastValuableAttacker(array<Bitboard, kNumPieceTypes>& pieces,
-                              array<Bitboard, kNumPlayers>& player_pieces,
-                              const Player& attacking_player,
-                              const S8& attacked_sq,
-                              Piece& attacking_piece) -> Bitboard {
-  // Check for attackers in increasing order of piece value, starting with
-  // pawns and ending with kings.
-  Bitboard lowest_value_attacker_map;
-  for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
-    switch (piece_type) {
-      case kPawn: {
-        Bitboard pawn_captures;
-        if (attacking_player == kWhite) {
-          lowest_value_attacker_map = kNonSliderAttackMaps[kBlackPawnCapture][attacked_sq];
-        } else {
-          lowest_value_attacker_map = kNonSliderAttackMaps[kWhitePawnCapture][attacked_sq];
-        }
-        break;
-      }
-      case kKnight:
-        lowest_value_attacker_map = kNonSliderAttackMaps[kKnightAttack][attacked_sq];
-        break;
-      // Use the magic bitboard method to get possible moves for bishops and
-      // rooks. The Boost library's 128 bit unsigned int data type "U128"
-      // is used here to avoid integer overflow.
-      case kBishop: {
-        Bitboard all_pieces = player_pieces[kWhite] | player_pieces[kBlack];
-        Bitboard blockers = kSliderPieceMaps[kBishopMoves][attacked_sq] & all_pieces;
-        if (blockers == 0X0) {
-          lowest_value_attacker_map = kUnblockedSliderAttackMaps[kBishopMoves][attacked_sq];
-        } else {
-          U128 magic = kMagics[kBishopMoves][attacked_sq];
-          U128 index = (blockers * magic) >> (kNumSq - kBishopMagicLengths[attacked_sq]);
-          U64 index_U64 = static_cast<U64>(index);
-          lowest_value_attacker_map = kMagicIndexToAttackMap.at(index_U64);
-        }
-        break;
-      }
-      case kRook: {
-        Bitboard all_pieces = player_pieces[kWhite] | player_pieces[kBlack];
-        Bitboard blockers = kSliderPieceMaps[kRookMoves][attacked_sq] & all_pieces;
-        if (blockers == 0X0) {
-          lowest_value_attacker_map = kUnblockedSliderAttackMaps[kRookMoves][attacked_sq];
-        } else {
-          U128 magic = kMagics[kRookMoves][attacked_sq];
-          U128 index = (blockers * magic) >> (kNumSq - kRookMagicLengths[attacked_sq]);
-          U64 index_U64 = static_cast<U64>(index);
-          lowest_value_attacker_map = kMagicIndexToAttackMap.at(index_U64);
-        }
-        break;
-      }
-      // Combine the attack maps of a rook and bishop to get a queen's attack.
-      case kQueen: {
-        Bitboard all_pieces = player_pieces[kWhite] | player_pieces[kBlack];
-        Bitboard blockers = kSliderPieceMaps[kBishopMoves][attacked_sq] & all_pieces;
-        if (blockers == 0X0) {
-          lowest_value_attacker_map = kUnblockedSliderAttackMaps[kBishopMoves][attacked_sq];
-        } else {
-          U128 magic = kMagics[kBishopMoves][attacked_sq];
-          U128 index = (blockers * magic) >> (kNumSq - kBishopMagicLengths[attacked_sq]);
-          U64 index_U64 = static_cast<U64>(index);
-          lowest_value_attacker_map = kMagicIndexToAttackMap.at(index_U64);
-        }
-        
-        blockers = kSliderPieceMaps[kRookMoves][attacked_sq] & all_pieces;
-        if (blockers == 0X0) {
-          lowest_value_attacker_map |= kUnblockedSliderAttackMaps[kRookMoves][attacked_sq];
-        } else {
-          U128 magic = kMagics[kRookMoves][attacked_sq];
-          U128 index = (blockers * magic) >> (kNumSq - kRookMagicLengths[attacked_sq]);
-          U64 index_U64 = static_cast<U64>(index);
-          lowest_value_attacker_map |= kMagicIndexToAttackMap.at(index_U64);
-        }
-
-        break;
-      }
-      case kKing:
-        lowest_value_attacker_map = kNonSliderAttackMaps[kKingAttack][attacked_sq];
-        break;
-    }
-
-    lowest_value_attacker_map &= (pieces[piece_type] & player_pieces[attacking_player]);
-    if (lowest_value_attacker_map != 0X0) {
-      attacking_piece = static_cast<Piece>(piece_type);
-      // Return a bitboard with only one set bit corresponding to a least
-      // valuable attacker.
-      return lowest_value_attacker_map & -lowest_value_attacker_map;
-    }
-  }
-
-  // Return an empty bitboard to indicate that there are no attackers.
-  return 0X0;
-}
-
 Board::Board(const string& init_pos) {
   for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
     pieces_[piece_type] = 0ULL;
@@ -414,9 +320,8 @@ auto Board::Evaluate() -> int {
     if (attacking_pieces_count > kMaxAttackers) {
       attacking_pieces_count = kMaxAttackers;
     }
-    board_score -=
-        player_side * value_of_attacks * kAttackWeight[attacking_pieces_count] /
-        100;
+    board_score -= (player_side * value_of_attacks
+                    * kAttackWeight[attacking_pieces_count] / 100);
   }
 
   S8 moving_side = (player_to_move_ == kWhite) ? 1 : -1;
@@ -424,33 +329,38 @@ auto Board::Evaluate() -> int {
 }
 
 auto Board::GetSee(const Move& capture) const -> int {
-  int see_val = 0;
+  // Keep track of the potential material gain at different depths. There are 
+  // at most 32 moves in a sequence of captures.
+  int gain[32];
+  S8 capture_depth = 0;
+  Bitboard blocker_candidates = (pieces_[kPawn] | pieces_[kKnight] | 
+    pieces_[kBishop] | pieces_[kRook] | pieces_[kQueen]);
+  Bitboard attacking_piece = 1ULL << capture.start_sq;
+  Bitboard all_pieces = player_pieces_[kWhite] | player_pieces_[kBlack];
+  Bitboard attackers = (GetAttackersToSq(capture.target_sq, kWhite)
+                        | GetAttackersToSq(capture.target_sq, kBlack));
 
-  // Move capture;
-  // capture.moving_piece = lowest_value_attacker_type;
-  // int piece_see_val = 0;
-  // while (lowest_value_attacker_map != 0X0) {
-  //   capture.start_sq = GetSqOfFirstPiece(lowest_value_attacker_map);
-  //   capture.target_sq = sq;
-  //   capture.moving_piece = GetPieceOnSq(capture.start_sq);
-  //   capture.captured_piece = GetPieceOnSq(sq);
-  //   MakeMove(capture);
-  //   if (KingInCheck()) {
-  //     // Undo the move if the piece was pinned.
-  //     UnmakeMove(capture);
-  //     RemoveFirstPiece(lowest_value_attacker_map);
-  //     continue;
-  //   }
-    
-  //   piece_see_val = max(
-  //     0, kPieceVals[capture.captured_piece] - Board::GetSee(sq, attacking_player)
-  //   );
-  //   UnmakeMove(capture);
-  //   RemoveFirstPiece(lowest_value_attacker_map);
-  //   see_val = max(see_val, piece_see_val);
-  // }
+  gain[0] = kPieceVals[capture.captured_piece];
+  S8 moving_piece = capture.moving_piece;
+  S8 attacking_player;
+  while (attacking_piece != 0X0) {
+    ++capture_depth;
+    gain[capture_depth] = kPieceVals[moving_piece] - gain[capture_depth - 1];
+    attackers ^= attacking_piece;
+    all_pieces ^= attacking_piece;
+    if ((attacking_piece & blocker_candidates) != 0X0) {
+      attackers |= UpdateSliderAttackers(capture.target_sq, all_pieces);
+    }
+    attacking_player = ((capture_depth & 1) ? GetOtherPlayer(player_to_move_)
+                                              : player_to_move_);
+    attacking_piece = GetLeastValuableAttacker(attackers, attacking_player, 
+                                               moving_piece);
+  }
 
-  return see_val;
+  while (--capture_depth > 0) {
+    gain[capture_depth - 1] = -max(-gain[capture_depth - 1], gain[capture_depth]);
+  }
+  return gain[0];
 }
 
 auto Board::ResetPos() -> void {
@@ -738,6 +648,61 @@ auto Board::GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard {
           GetPiecesByType(kQueen, attacking_player)) |
          (GetAttackMap(attacked_player, sq, kKing) &
           GetPiecesByType(kKing, attacking_player));
+}
+
+auto Board::GetLeastValuableAttacker(const Bitboard& attackers,
+                                     const S8& attacking_player,
+                                     S8& attacking_piece) const -> Bitboard {
+  // Check for attackers in increasing order of piece value, starting with
+  // pawns and ending with kings.
+  Bitboard least_valuable_attacker;
+  for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
+    least_valuable_attacker = (attackers & pieces_[piece_type]
+                               & player_pieces_[attacking_player]);
+    if (least_valuable_attacker != 0X0) {
+      attacking_piece = static_cast<Piece>(piece_type);
+      // Return a bitboard with only one set bit corresponding to a least
+      // valuable attacker.
+      return least_valuable_attacker & -least_valuable_attacker;
+    }
+  }
+
+  // Return an empty bitboard to indicate that there are no attackers.
+  return 0X0;
+}
+
+auto Board::UpdateSliderAttackers(const S8& target_sq,
+                                  const Bitboard& all_pieces) const -> Bitboard {
+      // Use the magic bitboard method to reveal new sliding attackers that
+      // could have been previously blocked by the moving piece. The Boost
+      // library's 128 bit unsigned int data type "U128" is used here to avoid
+      // integer overflow.
+      Bitboard blockers = (kSliderPieceMaps[kBishopMoves][target_sq]
+                           & all_pieces);
+      Bitboard bishop_attack_map;
+      if (blockers == 0X0) {
+        bishop_attack_map = kUnblockedSliderAttackMaps[kBishopMoves][target_sq];
+      } else {
+        U128 magic = kMagics[kBishopMoves][target_sq];
+        U128 index = (blockers * magic) >> (kNumSq - kBishopMagicLengths[target_sq]);
+        U64 index_U64 = static_cast<U64>(index);
+        bishop_attack_map = kMagicIndexToAttackMap.at(index_U64);
+      }
+
+      blockers = kSliderPieceMaps[kRookMoves][target_sq] & all_pieces;
+      Bitboard rook_attack_map;
+      if (blockers == 0X0) {
+        rook_attack_map = kUnblockedSliderAttackMaps[kRookMoves][target_sq];
+      } else {
+        U128 magic = kMagics[kRookMoves][target_sq];
+        U128 index = (blockers * magic) >> (kNumSq - kRookMagicLengths[target_sq]);
+        U64 index_U64 = static_cast<U64>(index);
+        rook_attack_map = kMagicIndexToAttackMap.at(index_U64);
+      }
+      
+      return (bishop_attack_map & pieces_[kBishop])
+              | (rook_attack_map & pieces_[kRook])
+              | ((bishop_attack_map | rook_attack_map) & pieces_[kQueen]);
 }
 
 auto Board::EvaluatePiecePositions(Bitboard& white_attackspan,

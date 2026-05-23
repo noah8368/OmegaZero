@@ -153,18 +153,13 @@ auto OneSqSet(Bitboard board) -> bool;
 auto RankOnBoard(S8 rank) -> bool;
 auto FileOnBoard(S8 file) -> bool;
 auto SqOnBoard(S8 sq) -> bool;
+auto GetOtherPlayer(const S8& player) -> S8;
 
-auto GetOtherPlayer(S8 player) -> S8;
 auto GetNumSetSq(Bitboard board) -> S8;
 auto GetFileFromSq(S8 sq) -> S8;
 auto GetRankFromSq(S8 sq) -> S8;
 auto GetSqFromRankFile(S8 rank, S8 file) -> S8;
 auto GetSqOfFirstPiece(Bitboard board) -> S8;
-auto GetLeastValuableAttacker(array<Bitboard, kNumPieceTypes>& pieces,
-                              array<Bitboard, kNumPlayers>& player_pieces,
-                              const Player& attacking_player,
-                              const S8& attacked_sq,
-                              Piece& attacking_piece) -> Bitboard;
 
 // Clear the least significant bit set of the passed in bitboard.
 auto RemoveFirstSq(Bitboard& board) -> void;
@@ -188,6 +183,7 @@ class Board {
   // relative to the side being evaluated and symmetric, as required by the
   // Negamax Algorithm.
   auto Evaluate() -> int;
+
   // Examine the consequence of a series of exchanges on a single square after a
   // given move, and calculate the likely evaluation change (material) to be
   // lost or gained. SEE stands for Static Exchange Evaluation.
@@ -225,6 +221,13 @@ class Board {
 
  private:
   auto GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard;
+  
+  // Helper functions for GetSee().
+  auto GetLeastValuableAttacker(const Bitboard& attackers,
+                                const S8& attacking_player,
+                                S8& attacking_piece) const -> Bitboard;
+  auto UpdateSliderAttackers(const S8& target_sq,
+                             const Bitboard& all_pieces) const -> Bitboard;
 
   // Weighs material balance and positional bonuses and computes the white and
   // black pawn cummulative front attackspans for evaluating pawn structure.
@@ -340,15 +343,8 @@ inline auto FileOnBoard(S8 file) -> bool {
 
 inline auto SqOnBoard(S8 sq) -> bool { return sq >= kSqA1 && sq <= kSqH8; }
 
-inline auto GetOtherPlayer(S8 player) -> S8 {
-  if (player == kWhite) {
-    return kBlack;
-  }
-  if (player == kBlack) {
-    return kWhite;
-  }
-
-  throw invalid_argument("player in GetOtherPlayer()");
+inline auto GetOtherPlayer(const S8& player) -> S8 {
+  return player ^ 1;
 }
 
 inline auto GetNumSetSq(Bitboard board) -> S8 {
