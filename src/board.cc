@@ -8,6 +8,7 @@
 #include "board.h"
 
 #include <algorithm>
+#include <array>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <cassert>
 #include <cctype>
@@ -31,8 +32,103 @@ using std::endl;
 using std::invalid_argument;
 using std::string;
 using std::max;
+using std::array;
 
 typedef boost::multiprecision::uint128_t U128;
+
+auto GetLeastValuableAttacker(array<Bitboard, kNumPieceTypes>& pieces,
+                              array<Bitboard, kNumPlayers>& player_pieces,
+                              const Player& attacking_player,
+                              const S8& attacked_sq,
+                              Piece& attacking_piece) -> Bitboard {
+  // Check for attackers in increasing order of piece value, starting with
+  // pawns and ending with kings.
+  Bitboard lowest_value_attacker_map;
+  for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
+    switch (piece_type) {
+      case kPawn: {
+        Bitboard pawn_captures;
+        if (attacking_player == kWhite) {
+          lowest_value_attacker_map = kNonSliderAttackMaps[kBlackPawnCapture][attacked_sq];
+        } else {
+          lowest_value_attacker_map = kNonSliderAttackMaps[kWhitePawnCapture][attacked_sq];
+        }
+        break;
+      }
+      case kKnight:
+        lowest_value_attacker_map = kNonSliderAttackMaps[kKnightAttack][attacked_sq];
+        break;
+      // Use the magic bitboard method to get possible moves for bishops and
+      // rooks. The Boost library's 128 bit unsigned int data type "U128"
+      // is used here to avoid integer overflow.
+      case kBishop: {
+        Bitboard all_pieces = player_pieces[kWhite] | player_pieces[kBlack];
+        Bitboard blockers = kSliderPieceMaps[kBishopMoves][attacked_sq] & all_pieces;
+        if (blockers == 0X0) {
+          lowest_value_attacker_map = kUnblockedSliderAttackMaps[kBishopMoves][attacked_sq];
+        } else {
+          U128 magic = kMagics[kBishopMoves][attacked_sq];
+          U128 index = (blockers * magic) >> (kNumSq - kBishopMagicLengths[attacked_sq]);
+          U64 index_U64 = static_cast<U64>(index);
+          lowest_value_attacker_map = kMagicIndexToAttackMap.at(index_U64);
+        }
+        break;
+      }
+      case kRook: {
+        Bitboard all_pieces = player_pieces[kWhite] | player_pieces[kBlack];
+        Bitboard blockers = kSliderPieceMaps[kRookMoves][attacked_sq] & all_pieces;
+        if (blockers == 0X0) {
+          lowest_value_attacker_map = kUnblockedSliderAttackMaps[kRookMoves][attacked_sq];
+        } else {
+          U128 magic = kMagics[kRookMoves][attacked_sq];
+          U128 index = (blockers * magic) >> (kNumSq - kRookMagicLengths[attacked_sq]);
+          U64 index_U64 = static_cast<U64>(index);
+          lowest_value_attacker_map = kMagicIndexToAttackMap.at(index_U64);
+        }
+        break;
+      }
+      // Combine the attack maps of a rook and bishop to get a queen's attack.
+      case kQueen: {
+        Bitboard all_pieces = player_pieces[kWhite] | player_pieces[kBlack];
+        Bitboard blockers = kSliderPieceMaps[kBishopMoves][attacked_sq] & all_pieces;
+        if (blockers == 0X0) {
+          lowest_value_attacker_map = kUnblockedSliderAttackMaps[kBishopMoves][attacked_sq];
+        } else {
+          U128 magic = kMagics[kBishopMoves][attacked_sq];
+          U128 index = (blockers * magic) >> (kNumSq - kBishopMagicLengths[attacked_sq]);
+          U64 index_U64 = static_cast<U64>(index);
+          lowest_value_attacker_map = kMagicIndexToAttackMap.at(index_U64);
+        }
+        
+        blockers = kSliderPieceMaps[kRookMoves][attacked_sq] & all_pieces;
+        if (blockers == 0X0) {
+          lowest_value_attacker_map |= kUnblockedSliderAttackMaps[kRookMoves][attacked_sq];
+        } else {
+          U128 magic = kMagics[kRookMoves][attacked_sq];
+          U128 index = (blockers * magic) >> (kNumSq - kRookMagicLengths[attacked_sq]);
+          U64 index_U64 = static_cast<U64>(index);
+          lowest_value_attacker_map |= kMagicIndexToAttackMap.at(index_U64);
+        }
+
+        break;
+      }
+      case kKing:
+        lowest_value_attacker_map = kNonSliderAttackMaps[kKingAttack][attacked_sq];
+        break;
+    }
+
+    lowest_value_attacker_map &= (pieces[piece_type] & player_pieces[attacking_player]);
+    if (lowest_value_attacker_map != 0X0) {
+      attacking_piece = static_cast<Piece>(piece_type);
+      // Return a bitboard with only one set bit corresponding to a least
+      // valuable attacker.
+      return lowest_value_attacker_map & -lowest_value_attacker_map;
+    }
+  }
+
+  // Return an empty bitboard to indicate that there are no attackers.
+  return 0X0;
+}
 
 Board::Board(const string& init_pos) {
   for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
@@ -327,72 +423,32 @@ auto Board::Evaluate() -> int {
   return board_score * moving_side;
 }
 
-auto Board::GetSee(S8 sq, S8 attacked_player) -> int {
-  if (!SqOnBoard(sq)) {
-    throw invalid_argument("sq in Board::GetAttackersToSq()");
-  }
-  if (attacked_player != kWhite && attacked_player != kBlack) {
-    throw invalid_argument("attacked_player in Board::GetAttackersToSq()");
-  }
-
+auto Board::GetSee(const Move& capture) const -> int {
   int see_val = 0;
 
-  // Find the lowest-value attacker to square.
-  S8 attacking_player = GetOtherPlayer(attacked_player);
-  Bitboard lowest_value_attacker_map = 0X0;
-  S8 lowest_value_attacker_type = kPawn;
-  for (; lowest_value_attacker_type <= kKing; ++lowest_value_attacker_type) {
-    if (lowest_value_attacker_type == kPawn) {
-      // Capture only diagonal squares to sq in the direction of movement.
-      Bitboard potential_pawn_attacks;
-      if (attacked_player == kWhite) {
-        potential_pawn_attacks = kNonSliderAttackMaps[kWhitePawnCapture][sq];
-      } else {
-        potential_pawn_attacks = kNonSliderAttackMaps[kBlackPawnCapture][sq];
-      }
-      
-      lowest_value_attacker_map = (
-        potential_pawn_attacks & GetPiecesByType(kPawn, attacking_player)
-      );
-    } else {
-      lowest_value_attacker_map = (
-        GetAttackMap(attacking_player, sq, lowest_value_attacker_type) &
-        GetPiecesByType(lowest_value_attacker_type, attacking_player)
-      );
-    }
-
-    if (lowest_value_attacker_map != 0X0) {
-      break;
-    } else if (lowest_value_attacker_type == kKing) {
-      // Return 0 to indicate that no material will be lost or gained by the
-      // exchange if there are no attackers to the square.
-      return see_val;
-    }
-  }
-
-  Move capture;
-  capture.moving_piece = lowest_value_attacker_type;
-  int piece_see_val = 0;
-  while (lowest_value_attacker_map != 0X0) {
-    capture.start_sq = GetSqOfFirstPiece(lowest_value_attacker_map);
-    capture.target_sq = sq;
-    capture.moving_piece = GetPieceOnSq(capture.start_sq);
-    capture.captured_piece = GetPieceOnSq(sq);
-    MakeMove(capture);
-    if (KingInCheck()) {
-      // Undo the move if the piece was pinned.
-      UnmakeMove(capture);
-      RemoveFirstPiece(lowest_value_attacker_map);
-      continue;
-    }
+  // Move capture;
+  // capture.moving_piece = lowest_value_attacker_type;
+  // int piece_see_val = 0;
+  // while (lowest_value_attacker_map != 0X0) {
+  //   capture.start_sq = GetSqOfFirstPiece(lowest_value_attacker_map);
+  //   capture.target_sq = sq;
+  //   capture.moving_piece = GetPieceOnSq(capture.start_sq);
+  //   capture.captured_piece = GetPieceOnSq(sq);
+  //   MakeMove(capture);
+  //   if (KingInCheck()) {
+  //     // Undo the move if the piece was pinned.
+  //     UnmakeMove(capture);
+  //     RemoveFirstPiece(lowest_value_attacker_map);
+  //     continue;
+  //   }
     
-    piece_see_val = max(
-      0, kPieceVals[capture.captured_piece] - Board::GetSee(sq, attacking_player)
-    );
-    UnmakeMove(capture);
-    RemoveFirstPiece(lowest_value_attacker_map);
-    see_val = max(see_val, piece_see_val);
-  }
+  //   piece_see_val = max(
+  //     0, kPieceVals[capture.captured_piece] - Board::GetSee(sq, attacking_player)
+  //   );
+  //   UnmakeMove(capture);
+  //   RemoveFirstPiece(lowest_value_attacker_map);
+  //   see_val = max(see_val, piece_see_val);
+  // }
 
   return see_val;
 }

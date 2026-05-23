@@ -23,6 +23,7 @@ namespace omegazero {
 
 using std::invalid_argument;
 using std::stack;
+using std::array;
 
 typedef uint64_t Bitboard;
 typedef uint64_t U64;
@@ -159,6 +160,11 @@ auto GetFileFromSq(S8 sq) -> S8;
 auto GetRankFromSq(S8 sq) -> S8;
 auto GetSqFromRankFile(S8 rank, S8 file) -> S8;
 auto GetSqOfFirstPiece(Bitboard board) -> S8;
+auto GetLeastValuableAttacker(array<Bitboard, kNumPieceTypes>& pieces,
+                              array<Bitboard, kNumPlayers>& player_pieces,
+                              const Player& attacking_player,
+                              const S8& attacked_sq,
+                              Piece& attacking_piece) -> Bitboard;
 
 // Clear the least significant bit set of the passed in bitboard.
 auto RemoveFirstSq(Bitboard& board) -> void;
@@ -185,7 +191,7 @@ class Board {
   // Examine the consequence of a series of exchanges on a single square after a
   // given move, and calculate the likely evaluation change (material) to be
   // lost or gained. SEE stands for Static Exchange Evaluation.
-  auto GetSee(S8 sq, S8 attacked_player) -> int;
+  auto GetSee(const Move& capture) const -> int;
 
   auto GetEpTargetSq() const -> S8;
   auto GetHalfmoveClock() const -> S8;
