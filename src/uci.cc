@@ -9,7 +9,9 @@
 #include "uci.h"
 
 #include <algorithm>
+#include <fstream>
 #include <iostream>
+#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -17,6 +19,7 @@
 
 #include "board.h"
 #include "engine.h"
+#include "game.h"
 #include "move.h"
 
 namespace omegazero {
@@ -26,9 +29,10 @@ using std::vector;
 using std::min;
 using std::clamp;
 
-UciHandler::UciHandler() {
+UciHandler::UciHandler() : turn_num_(1), on_opening_(true) {
   board_ = std::make_unique<Board>(kStartFen);
   engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
+  LoadOpeningBook("p3ECO.txt");
 }
 
 auto UciHandler::Run() -> void {
@@ -65,6 +69,10 @@ auto UciHandler::HandleIsReady() -> void {
 auto UciHandler::HandleUciNewGame() -> void {
   board_ = std::make_unique<Board>(kStartFen);
   engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
+  fide_move_history_.clear();
+  turn_num_ = 1;
+  on_opening_ = true;
+  LoadOpeningBook("p3ECO.txt");
 }
 
 auto UciHandler::HandlePosition(const string& line) -> void {
@@ -106,11 +114,29 @@ auto UciHandler::SetPosition(const string& fen,
                              const vector<string>& moves) -> void {
   board_ = std::make_unique<Board>(fen);
   engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
+  fide_move_history_.clear();
+  turn_num_ = 1;
+  on_opening_ = true;
 
   for (const string& uci_move : moves) {
     engine_->AddPosToHistory();
     Move move = ParseUciMove(uci_move);
+    string fide_str = MoveToFideStr(move);
     board_->MakeMove(move);
+
+    S8 moved_player = GetOtherPlayer(board_->GetPlayerToMove());
+    if (moved_player == kWhite) {
+      fide_move_history_ += std::to_string(turn_num_) + "." + fide_str;
+    } else {
+      fide_move_history_ += fide_str;
+      ++turn_num_;
+    }
+
+    if (board_->KingInCheck()) {
+      fide_move_history_ += "+ ";
+    } else {
+      fide_move_history_ += " ";
+    }
   }
   engine_->AddPosToHistory();
 }
@@ -128,6 +154,12 @@ auto UciHandler::HandleGo(const string& line) -> void {
     else if (token == "binc") iss >> binc;
     else if (token == "movetime") iss >> movetime;
     else if (token == "movestogo") iss >> movestogo;
+  }
+
+  Move book_move;
+  if (on_opening_ && GetBookMove(book_move)) {
+    std::cout << "bestmove " << MoveToUciStr(book_move) << std::endl;
+    return;
   }
 
   float think_time = ComputeThinkTime(wtime, btime, winc, binc,
@@ -244,6 +276,124 @@ auto UciHandler::ParseUciMove(const string& uci_move) const -> Move {
 
   throw std::invalid_argument("UCI move not found in legal moves: " +
                               uci_move);
+}
+
+auto UciHandler::MoveToFideStr(const Move& move) const -> string {
+  string move_str;
+  if (move.castling_type == kNA) {
+    S8 start_file = GetFileFromSq(move.start_sq);
+    S8 target_file = GetFileFromSq(move.target_sq);
+    S8 target_rank = GetRankFromSq(move.target_sq);
+    if (move.moving_piece == kPawn && move.captured_piece != kNA) {
+      move_str += static_cast<char>(start_file + 'a');
+      move_str += 'x';
+    } else if (move.moving_piece != kPawn) {
+      move_str += GetPieceLetter(move.moving_piece);
+
+      S8 moving_player = board_->GetPlayerToMove();
+      Bitboard start_sqs =
+          board_->GetAttackMap(moving_player, move.target_sq, move.moving_piece);
+      start_sqs &= board_->GetPiecesByType(move.moving_piece, moving_player);
+      if (!OneSqSet(start_sqs)) {
+        S8 start_rank = GetRankFromSq(move.start_sq);
+        if (OneSqSet(start_sqs & kRankMasks[start_rank])) {
+          move_str += static_cast<char>(start_rank + '1');
+        } else if (OneSqSet(start_sqs & kFileMasks[start_file])) {
+          move_str += static_cast<char>(start_file + 'a');
+        } else {
+          move_str += static_cast<char>(start_file + 'a');
+          move_str += static_cast<char>(start_rank + '1');
+        }
+      }
+
+      if (move.captured_piece != kNA) {
+        move_str += 'x';
+      }
+    }
+
+    move_str += static_cast<char>(target_file + 'a');
+    move_str += static_cast<char>(target_rank + '1');
+
+    if (move.promoted_to_piece != kNA) {
+      move_str += GetPieceLetter(move.promoted_to_piece);
+    } else if (move.is_ep) {
+      move_str += "e.p.";
+    }
+  } else if (move.castling_type == kQueenSide) {
+    move_str = "0-0-0";
+  } else if (move.castling_type == kKingSide) {
+    move_str = "0-0";
+  }
+  return move_str;
+}
+
+auto UciHandler::LoadOpeningBook(const string& path) -> void {
+  opening_book_.clear();
+  std::ifstream f(path);
+  if (!f.is_open()) return;
+
+  string f_line;
+  string opening_line;
+  while (std::getline(f, f_line)) {
+    if (f_line.rfind("1.", 0) != string::npos) {
+      for (;;) {
+        if (!f_line.empty() && f_line.back() == '\r') {
+          f_line.pop_back();
+        }
+        opening_line += f_line;
+        if (opening_line.length() >= 3 &&
+            opening_line.substr(opening_line.length() - 3) == "1/2") {
+          opening_book_.push_back(opening_line);
+          opening_line.clear();
+          break;
+        }
+        std::getline(f, f_line);
+      }
+    }
+  }
+}
+
+auto UciHandler::GetBookMove(Move& book_move) -> bool {
+  int last_idx = static_cast<int>(opening_book_.size()) - 1;
+  for (int i = last_idx; i >= 0; --i) {
+    const string& line = opening_book_[i];
+    if (line.rfind(fide_move_history_, 0) == string::npos ||
+        line.substr(fide_move_history_.size(), 3) == "1/2") {
+      opening_book_.erase(opening_book_.begin() + i);
+    }
+  }
+
+  int num_lines = static_cast<int>(opening_book_.size());
+  if (num_lines == 0) {
+    on_opening_ = false;
+    return false;
+  }
+
+  std::random_device dev;
+  std::mt19937 rng(dev());
+  std::uniform_int_distribution<int> dist(0, num_lines - 1);
+  const string& chosen_line = opening_book_[dist(rng)];
+
+  size_t move_start_idx;
+  if (board_->GetPlayerToMove() == kWhite) {
+    move_start_idx = chosen_line.find(".", fide_move_history_.size()) + 1;
+  } else {
+    move_start_idx = fide_move_history_.size();
+  }
+  size_t move_end_idx = chosen_line.find(" ", move_start_idx);
+  string fide_move_str = chosen_line.substr(move_start_idx,
+                                            move_end_idx - move_start_idx);
+
+  vector<Move> moves = engine_->GenerateMoves();
+  for (const Move& m : moves) {
+    if (MoveToFideStr(m) == fide_move_str) {
+      book_move = m;
+      return true;
+    }
+  }
+
+  on_opening_ = false;
+  return false;
 }
 
 }  // namespace omegazero
