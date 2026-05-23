@@ -286,7 +286,7 @@ taken from [Fruit](https://www.chessprogramming.org/Fruit). Reduction is only do
 Transposition Table is used to cache seen positions, allowing the engine to
 store each [node's type](https://www.chessprogramming.org/Node_Types) and prevent costly re-evaluation of a node. This
 is especially important for storing the [Principle Variation](https://www.chessprogramming.org/Principal_Variation) during Iterative
-Deepening.
+Deepening. [Futility Pruning](https://www.chessprogramming.org/Futility_Pruning) is also used for nodes 2 plys or less from the search horizon.
 
 After search to a specified depth, all captures are searched during the
 [Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) to limit the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect). [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning) is used to
@@ -297,9 +297,10 @@ of a set of heuristics to perform move ordering in `Engine::OrderMoves()` in
 order to increase the number of [Beta-Cutoffs](https://www.chessprogramming.org/Beta-Cutoff) during alpha-beta pruning.
 Moves are put in the following order:
 1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
-2. Captures, ordered using the [MVV-LVA](https://www.chessprogramming.org/MVV-LVA) heuristic
+2. Good captures (SEE >= 0) ordered by [SEE](https://www.chessprogramming.org/Static_Exchange_Evaluation) heuristic
 3. Two [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
-4. All other moves, unordered
+4. All other quiet moves, unordered
+5. Bad captures (SEE < 0) ordered by [SEE](https://www.chessprogramming.org/Static_Exchange_Evaluation) heuristic
 
 #### Opening Book
 
@@ -376,7 +377,7 @@ levels using cutechess-cli (20 games per level, 5s/move). See
 
 #### Example Games
 
-**~1000 ELO Human Player (White) vs OmegaZero (Black) — 0-1, 32 moves.** English Opening, Symmetrical Variation. OmegaZero struck in the center with ...d5, winning a piece after 13...Nxd2 14.Qxd2 Qxd5. After 18...Qxa2 the engine was up heavy material and coordinated queen and knight to deliver mate with 32...Qxb2#.
+**~1000 ELO Human Player (White) vs OmegaZero v3 (Black) — 0-1, 32 moves.** English Opening, Symmetrical Variation. OmegaZero struck in the center with ...d5, winning a piece after 13...Nxd2 14.Qxd2 Qxd5. After 18...Qxa2 the engine was up heavy material and coordinated queen and knight to deliver mate with 32...Qxb2#.
 
 `1.c4 c5 2.Nc3 Nc6 3.d4 cxd4 4.Nd5 e6 5.Nf4 Bb4+ 6.Bd2 Bxd2+ 7.Qxd2 Nf6 8.Nf3 Ne4 9.Qd3 Qa5+ 10.Nd2 d5 11.cxd5 exd5 12.g3 Bg4 13.Nxd5 Nxd2 14.Qxd2 Qxd5 15.Rg1 0-0-0 16.h3 Bxe2 17.Bxe2 Rhe8 18.0-0-0 Qxa2 19.Bg4+ Kb8 20.Qf4+ Ne5 21.Rxd4 Rxd4 22.Qxd4 Qa1+ 23.Kc2 Qxg1 24.Qd6+ Ka8 25.Bd1 Qxf2+ 26.Qd2 Rc8+ 27.Kb3 Qxd2 28.Ka2 Qxd1 29.g4 Qa4+ 30.Kb1 Qc2+ 31.Ka2 Nd3 32.h4 Qxb2# 0-1`
 
@@ -384,7 +385,7 @@ Final Position
 
 ![Final Position 1000 ELO Player](./figs/final_position_1000_ELO_player.png "Final Position for 1000 ELO Player")
 
-**1643 ELO<sup>1</sup> Human Player (White) vs OmegaZero (Black) — 0-1, 63 moves.** Scandinavian Defense. OmegaZero grabbed the g2 pawn with 5...Qxg2 and traded queens immediately. Down a pawn with no compensation, White slowly crumbled over a long endgame. OmegaZero converted with a centralized knight and advancing passed pawns. White resigned.
+**1643 ELO<sup>1</sup> Human Player (White) vs OmegaZero v3 (Black) — 0-1, 63 moves.** Scandinavian Defense. OmegaZero grabbed the g2 pawn with 5...Qxg2 and traded queens immediately. Down a pawn with no compensation, White slowly crumbled over a long endgame. OmegaZero converted with a centralized knight and advancing passed pawns. White resigned.
 
 `1.e4 d5 2.exd5 Nf6 3.Bc4 Nxd5 4.Bxd5 Qxd5 5.Nc3 Qxg2 6.Qf3 Qxf3 7.Nxf3 Na6 8.a3 Bg4 9.Ne5 Bf5 10.d3 f6 11.Nc4 e5 12.Be3 Nc5 13.b4 Ne6 14.O-O-O Bg4 15.Rd2 c5 16.b5 O-O-O 17.Ne4 Be7 18.Ng3 Nd4 19.h3 Be6 20.Nb2 Nxb5 21.a4 Nd4 22.Ne4 f5 23.Nc3 Nf3 24.Re2 e4 25.dxe4 fxe4 26.Nxe4 Bxh3 27.Rxh3 Ng1 28.Re1 Nxh3 29.Nxc5 Bxc5 30.Bxc5 b6 31.Be3 Rhf8 32.Nd3 Rxd3 33.cxd3 Nxf2 34.Kd2 Rf7 35.Re2 Ng4 36.Bd4 Kb7 37.Rg2 Rf4 38.Bxg7 Rxa4 39.Kc3 Ne3 40.Re2 Nd5+ 41.Kb3 Rb4+ 42.Ka3 Rb5 43.d4 Ra5+ 44.Kb3 Ra1 45.Kc4 Rg1 46.Be5 Rg2 47.Re4 Kc6 48.Bh8 Rc2+ 49.Kd3 Rc3+ 50.Kd2 Rh3 51.Re6+ Kb5 52.Rd6 Rh2+ 53.Kd3 Rh5 54.Rd7 Nb4+ 55.Kc3 Rh3+ 56.Kd2 Nc6 57.d5 Rh2+ 58.Kc3 Nb4 59.d6 Nc6 60.Rc7 Rh4 61.d7 Rh3+ 62.Kd2 Rh5 63.Rc8 Rd5+ 0-1`
 
@@ -392,7 +393,7 @@ Final Position
 
 ![Final Position 1643 ELO Player](./figs/final_position_1643_ELO_player.gif "Final Position for 1643 ELO Player")
 
-**~1900 ELO<sup>2</sup> Human Player vs OmegaZero (Black) — 1-0, 31 moves.** White punished OmegaZero's material greed in a Queen's Gambit Accepted. The engine grabbed two center pawns with its queen (5...Qxd4), spending 5 of its first 15 moves on queen maneuvers. Despite winning the exchange, OmegaZero fell behind in development and left its king in the center. White's knights broke through with Nxe6/Nxg7+ and finished with Qd5#. Textbook example of the engine's material-over-development weakness.
+**~1900 ELO<sup>2</sup> Human Player vs OmegaZero v3 (Black) — 1-0, 31 moves.** White punished OmegaZero's material greed in a Queen's Gambit Accepted. The engine grabbed two center pawns with its queen (5...Qxd4), spending 5 of its first 15 moves on queen maneuvers. Despite winning the exchange, OmegaZero fell behind in development and left its king in the center. White's knights broke through with Nxe6/Nxg7+ and finished with Qd5#. Textbook example of the engine's material-over-development weakness.
 
 `1.d4 d5 2.c4 e6 3.g3 dxc4 4.Bg2 Ne7 5.Nd2 Qxd4 6.Ngf3 Qc5 7.O-O Nd5 8.Qc2 c3 9.Ne4 cxb2 10.Qxb2 Qb6 11.Qc2 Nb4 12.Qa4+ Bd7 13.Qd1 Nxa2 14.Rxa2 Qb1 15.Qc2 Qxa2 16.Qxa2 f5 17.Neg5 Nc6 18.Nxe6 Bd6 19.Nxg7+ Kd8 20.Bg5+ Kc8 21.Rb1 Nb4 22.Qc4 Bxg3 23.Qxb4 Bc6 24.hxg3 Bxf3 25.Bxf3 b6 26.Nxf5 h5 27.Bxa8 h4 28.Qe4 Rd8 29.Ne7+ Kd7 30.Bc6+ Kd6 31.Qd5# 1-0`
 
@@ -402,18 +403,3 @@ Final Position
 
 <sup>1</sup> Lichess rating
 <sup>2</sup> Chess.com rating
-
-#### Strengths and Weaknesses
-
-**Strengths:**
-- Solid tactical play in positions where its search depth is sufficient — finds forks, pins, and mating combinations
-- Strong endgame conversion when ahead in material (pawn promotions, rook coordination)
-- Effective use of passed pawns, especially with rook support
-- Reliable against weaker opponents: 90%+ win rate vs Stockfish at 1320 ELO
-
-**Weaknesses:**
-- Material greed — will grab pawns at the cost of development and king safety, especially with early queen sorties
-- Horizon effect — the #1 failure mode at all levels, leading to queen blunders where the engine can't see recaptures just beyond its search depth
-- Weak opening repertoire as Black — defaults to 1...Nc6 (Nimzowitsch Defense) in nearly every game, leading to passive positions and a large white/black win rate asymmetry
-- No draw handling — zero draws in 60 automated games; the engine can't hold drawn endgames and has no resignation logic
-- Limited search depth — reaches only depth 8 at 2s/move, leaving room for deeper pruning and move ordering improvements

@@ -295,6 +295,8 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       (ply > 0 && RepDetected())) {
     return kNeutralEval;
   }
+
+
   if (depth <= 0) {
     // Initiate the Quiescence search when maximum depth is reached.
     return QuiescenceSearch(alpha, beta);
@@ -306,8 +308,9 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   constexpr int kNullMoveDepthMin = 4;
   constexpr int kDepthReductionIncreaseBoundary = 6;
   int R = (depth > kDepthReductionIncreaseBoundary) ? 3 : 2;
+  bool in_check_before_move = board_->KingInCheck();
   if (depth >= kNullMoveDepthMin && null_move_allowed && !at_pv_node &&
-      ZugzwangUnlikely() && !board_->KingInCheck()) {
+      ZugzwangUnlikely() && !in_check_before_move) {
     board_->MakeNullMove();
     int null_move_eval = -NegamaxSearch(-beta, -alpha, depth - R - 1, ply + 1,
                                         false);
@@ -322,7 +325,6 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   // Reduction, the number of early moves.
   constexpr S8 kNumEarlyMoves = 3;
   constexpr S8 kMinReductionDepth = 3;
-  // Use the Negamax algorithm to traverse the search tree.
   vector<Move> move_list = GenerateMoves();
   move_list = OrderMoves(move_list, ply);
   size_t history_size_before_moves = pos_history_.size();
@@ -332,9 +334,11 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   int search_eval;
   int depth_reduction;
   int legal_moves = 0;
-  // Iterate through all child nodes of the current position.
+  // // Use the Negamax algorithm to traverse the search tree. 
   size_t num_moves = move_list.size();
+  int eval_before_move = board_->Evaluate();
   for (size_t move_idx = 0; move_idx < num_moves; ++move_idx) {
+    // Iterate through all child nodes of the current position.
     move = move_list[move_idx];
     try {
       board_->MakeMove(move);
@@ -342,9 +346,21 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       // Ignore moves that put the player's king in check.
       continue;
     }
+    
     ++legal_moves;
     AddPosToHistory();
     bool gives_check = board_->KingInCheck();
+    if (depth <= 2 && !at_pv_node && !gives_check && !in_check_before_move
+        && move.captured_piece == kNA && move.promoted_to_piece == kNA) {
+      // Perfrorm futility pruning when the position is quiet and depth is low.
+      int futility_margin = depth * kFutilityMargin;
+      if (eval_before_move + futility_margin <= alpha) {
+        board_->UnmakeMove(move);
+        pos_history_.resize(history_size_before_moves);
+        continue;
+      }
+    }
+
     if (legal_moves > kNumEarlyMoves && !at_pv_node &&
         (move.captured_piece == kNA || board_->GetSee(move) < 0)
         && move.promoted_to_piece == kNA &&
@@ -368,6 +384,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     }
     board_->UnmakeMove(move);
     pos_history_.resize(history_size_before_moves);
+    
     if (search_eval > best_eval) {
       best_move = move;
       pv_move = best_move;
@@ -426,7 +443,6 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
     if (!InEndgame()) {
       // If the position is extremely poor, assume it won't improve enough to
       // exceed alpha and perform a delta prune.
-      const int kDelta = kPieceVals[kQueen];
       if (stand_pat_eval < alpha - kDelta) {
         return alpha;
       }

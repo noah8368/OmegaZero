@@ -53,6 +53,10 @@ constexpr int kNeutralEval = kContempt;
 // Use -INT32_MAX rather than INT32_MIN to avoid integer overflow when
 // multipying by -1 during the search function.
 constexpr int kWorstEval = -INT32_MAX;
+// Define the value used in delta pruning to be equal to that of a queen.
+const int kDelta = 900;
+// Define a safety margin for futility pruning.
+const int kFutilityMargin = 200;
 
 
 class Engine {
