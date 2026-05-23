@@ -700,9 +700,10 @@ auto Board::UpdateSliderAttackers(const S8& target_sq,
         rook_attack_map = kMagicIndexToAttackMap.at(index_U64);
       }
       
-      return (bishop_attack_map & pieces_[kBishop])
-              | (rook_attack_map & pieces_[kRook])
-              | ((bishop_attack_map | rook_attack_map) & pieces_[kQueen]);
+      return (((bishop_attack_map & pieces_[kBishop])
+               | (rook_attack_map & pieces_[kRook])
+               | ((bishop_attack_map | rook_attack_map) & pieces_[kQueen]))
+              & all_pieces);
 }
 
 auto Board::EvaluatePiecePositions(Bitboard& white_attackspan,

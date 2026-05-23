@@ -346,7 +346,8 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     AddPosToHistory();
     bool gives_check = board_->KingInCheck();
     if (legal_moves > kNumEarlyMoves && !at_pv_node &&
-        move.captured_piece == kNA && move.promoted_to_piece == kNA &&
+        (move.captured_piece == kNA || board_->GetSee(move) < 0)
+        && move.promoted_to_piece == kNA &&
         !gives_check && depth >= kMinReductionDepth) {
       // Perform Late Move Reduction.
       depth_reduction =
@@ -438,6 +439,11 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
   size_t history_size_before_qmoves = pos_history_.size();
   int legal_moves = 0;
   for (const Move& move : move_list) {
+    // Skip searching captures that are likely to lose material when not in check.
+    if (!in_check && board_->GetSee(move) < 0) {
+      continue;
+    }
+
     try {
       board_->MakeMove(move);
     } catch (BadMove& e) {
@@ -466,21 +472,26 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
     -> vector<Move> {
   Move hash_move = transposition_table_.GetHashMove(board_);
 
-  vector<pair<Move, int>> ordered_capture_pairs;
+  vector<pair<Move, int>> high_see_capture_pairs;
+  vector<pair<Move, int>> low_see_capture_pairs;
   vector<Move> silent_moves;
   vector<Move> killer_moves;
   vector<Move> ordered_moves;
   ordered_moves.reserve(move_list.size());
+  int see_val;
   for (const Move& move : move_list) {
     // Prioritize a move if it's the previously calculated best move of a
     // node.
     if (move == hash_move) {
       ordered_moves.push_back(move);
     } else if (move.captured_piece != kNA) {
-      // Use the MVV-LVA heuristic to order captures.
-      ordered_capture_pairs.emplace_back(
-          move, kVictimSortVals[move.captured_piece] +
-                    kAggressorSortVals[move.moving_piece]);
+      // Use the SEE heuristic to order captures.
+      see_val = board_->GetSee(move);
+      if (see_val >= 0) {
+        high_see_capture_pairs.emplace_back(move, see_val);
+      } else {
+        low_see_capture_pairs.emplace_back(move, see_val);
+      }
     } else if (IsKillerMove(move, ply)) {
       // Use the Killer Move heuristic to order quiet moves.
       killer_moves.push_back(move);
@@ -490,24 +501,34 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
     }
   }
 
-  // Sort captures by descending value of their MVV-LVA heuristic.
-  sort(ordered_capture_pairs.begin(), ordered_capture_pairs.end(),
+  // Sort captures by descending value of their SEE heuristic.
+  sort(high_see_capture_pairs.begin(), high_see_capture_pairs.end(),
        [](const pair<Move, int>& lhs, const pair<Move, int>& rhs) {
          return lhs.second > rhs.second;
        });
-  vector<Move> captures;
-  captures.reserve(ordered_capture_pairs.size());
-  for (const pair<Move, int>& capture_eval_pair : ordered_capture_pairs) {
-    captures.push_back(capture_eval_pair.first);
+  sort(low_see_capture_pairs.begin(), low_see_capture_pairs.end(),
+      [](const pair<Move, int>& lhs, const pair<Move, int>& rhs) {
+        return lhs.second > rhs.second;
+      });
+  vector<Move> good_captures;
+  good_captures.reserve(high_see_capture_pairs.size());
+  for (const pair<Move, int>& capture_eval_pair : high_see_capture_pairs) {
+    good_captures.push_back(capture_eval_pair.first);
+  }
+  vector<Move> bad_captures;
+  bad_captures.reserve(low_see_capture_pairs.size());
+  for (const pair<Move, int>& capture_eval_pair : low_see_capture_pairs) {
+    bad_captures.push_back(capture_eval_pair.first);
   }
 
   // Place all hash moves first, followed by captures, then killer moves, and
   // finally all silent, non-killer moves.
-  ordered_moves.insert(ordered_moves.end(), captures.begin(), captures.end());
+  ordered_moves.insert(ordered_moves.end(), good_captures.begin(), good_captures.end());
   ordered_moves.insert(ordered_moves.end(), killer_moves.begin(),
                        killer_moves.end());
   ordered_moves.insert(ordered_moves.end(), silent_moves.begin(),
                        silent_moves.end());
+  ordered_moves.insert(ordered_moves.end(), bad_captures.begin(), bad_captures.end());
   return ordered_moves;
 }
 
