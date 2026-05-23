@@ -321,6 +321,15 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     }
   }
 
+  int eval_before_move = board_->Evaluate();
+  if (depth <= 2 && !at_pv_node && !in_check_before_move) {
+    // Perform reverse futility pruning.
+    int reverse_futility_margin = depth * kFutilityMargin;
+    if (eval_before_move - reverse_futility_margin >= beta) {
+      return beta;
+    }
+  }
+
   // Store the number of moves to begin searching at full depth during Late Move
   // Reduction, the number of early moves.
   constexpr S8 kNumEarlyMoves = 3;
@@ -336,7 +345,6 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   int legal_moves = 0;
   // // Use the Negamax algorithm to traverse the search tree. 
   size_t num_moves = move_list.size();
-  int eval_before_move = board_->Evaluate();
   for (size_t move_idx = 0; move_idx < num_moves; ++move_idx) {
     // Iterate through all child nodes of the current position.
     move = move_list[move_idx];

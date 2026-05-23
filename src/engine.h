@@ -55,7 +55,7 @@ constexpr int kNeutralEval = kContempt;
 constexpr int kWorstEval = -INT32_MAX;
 // Define the value used in delta pruning to be equal to that of a queen.
 const int kDelta = 900;
-// Define a safety margin for futility pruning.
+// Define a safety margin for reverse (and regular) futility pruning.
 const int kFutilityMargin = 200;
 
 

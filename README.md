@@ -276,7 +276,7 @@ implementation. The Transposition Table is [two-tiered](https://www.chessprogram
 
 The [MTD(f)](https://www.chessprogramming.org/MTD(f)) search algorithm is used within an [Iterative Deepening](https://www.chessprogramming.org/Iterative_Deepening)
 framework. This routine calls an implementation of the [Negamax](https://www.chessprogramming.org/Negamax) algorithm
-with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta), [Null Move Pruning](https://www.chessprogramming.org/Null_Move_Pruning), and [Late Move Reduction](https://www.chessprogramming.org/Late_Move_Reductions). A depth reduction value [R](https://www.chessprogramming.org/Depth_Reduction_R)
+with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta), [Null Move Pruning](https://www.chessprogramming.org/Null_Move_Pruning), [Futility Pruning](https://www.chessprogramming.org/Futility_Pruning), and [Late Move Reduction](https://www.chessprogramming.org/Late_Move_Reductions). A depth reduction value [R](https://www.chessprogramming.org/Depth_Reduction_R)
 of 3 is used when depth is greater than 6, and 2 otherwise in Null Move Pruning.
 Late Move Reductions are computed using the formula
 ```
@@ -286,7 +286,7 @@ taken from [Fruit](https://www.chessprogramming.org/Fruit). Reduction is only do
 Transposition Table is used to cache seen positions, allowing the engine to
 store each [node's type](https://www.chessprogramming.org/Node_Types) and prevent costly re-evaluation of a node. This
 is especially important for storing the [Principle Variation](https://www.chessprogramming.org/Principal_Variation) during Iterative
-Deepening. [Futility Pruning](https://www.chessprogramming.org/Futility_Pruning) is also used for nodes 2 plys or less from the search horizon.
+Deepening.
 
 After search to a specified depth, all captures are searched during the
 [Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) to limit the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect). [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning) is used to
