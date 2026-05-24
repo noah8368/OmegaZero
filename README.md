@@ -276,20 +276,14 @@ implementation. The Transposition Table is [two-tiered](https://www.chessprogram
 
 The [MTD(f)](https://www.chessprogramming.org/MTD(f)) search algorithm is used within an [Iterative Deepening](https://www.chessprogramming.org/Iterative_Deepening)
 framework. This routine calls an implementation of the [Negamax](https://www.chessprogramming.org/Negamax) algorithm
-with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta), [Null Move Pruning](https://www.chessprogramming.org/Null_Move_Pruning), [Futility Pruning](https://www.chessprogramming.org/Futility_Pruning), [Reverse Futility Pruning](https://www.chessprogramming.org/Reverse_Futility_Pruning), and [Late Move Reduction](https://www.chessprogramming.org/Late_Move_Reductions). A depth reduction value [R](https://www.chessprogramming.org/Depth_Reduction_R)
-of 3 is used when depth is greater than 6, and 2 otherwise in Null Move Pruning.
-Late Move Reductions are computed using the formula
-```
-int(sqrt(double(depth-1)) + sqrt(double(move_idx-1)))
-```
-taken from [Fruit](https://www.chessprogramming.org/Fruit). Reduction is only done on non-PV (Principle Variation) nodes. A
+with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta), [Null Move Pruning](https://www.chessprogramming.org/Null_Move_Pruning), [Futility Pruning](https://www.chessprogramming.org/Futility_Pruning), [Reverse Futility Pruning](https://www.chessprogramming.org/Reverse_Futility_Pruning),  [Late Move Reduction](https://www.chessprogramming.org/Late_Move_Reductions), and [Late Move Pruning](https://www.chessprogramming.org/Futility_Pruning#Move_Count_Based_Pruning). A
 Transposition Table is used to cache seen positions, allowing the engine to
 store each [node's type](https://www.chessprogramming.org/Node_Types) and prevent costly re-evaluation of a node. This
 is especially important for storing the [Principle Variation](https://www.chessprogramming.org/Principal_Variation) during Iterative
 Deepening.
 
 After search to a specified depth, all captures are searched during the
-[Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) to limit the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect). [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning) is used to
+[Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) to limit the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect). [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning) and [SEE Pruning](https://www.chessprogramming.org/Static_Exchange_Evaluation#Pruning) is used to
 limit the number of nodes explored during Quiescence Search.
 
 To reduce the number of nodes needed to be searched, OmegaZero takes advantage
@@ -299,7 +293,7 @@ Moves are put in the following order:
 1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
 2. Good captures (SEE value >= 0) ordered by [SEE Heuristic](https://www.chessprogramming.org/Static_Exchange_Evaluation)
 3. Two [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
-4. All other quiet moves, unordered
+4. All other quiet moves, ordered by [History Heuristic](https://www.chessprogramming.org/History_Heuristic)
 5. Bad captures (SEE value < 0) ordered by SEE Heuristic
 
 #### Opening Book

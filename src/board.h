@@ -153,7 +153,7 @@ auto OneSqSet(Bitboard board) -> bool;
 auto RankOnBoard(S8 rank) -> bool;
 auto FileOnBoard(S8 file) -> bool;
 auto SqOnBoard(S8 sq) -> bool;
-auto GetOtherPlayer(const S8& player) -> S8;
+auto GetOtherPlayer(S8 player) -> S8;
 
 auto GetNumSetSq(Bitboard board) -> S8;
 auto GetFileFromSq(S8 sq) -> S8;
@@ -223,11 +223,11 @@ class Board {
   auto GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard;
   
   // Helper functions for GetSee().
-  auto GetLeastValuableAttacker(const Bitboard& attackers,
-                                const S8& attacking_player,
+  auto GetLeastValuableAttacker(Bitboard attackers,
+                                S8 attacking_player,
                                 S8& attacking_piece_type) const -> Bitboard;
-  auto UpdateSliderAttackers(const S8& target_sq,
-                             const Bitboard& all_pieces) const -> Bitboard;
+  auto UpdateSliderAttackers(S8 target_sq,
+                             Bitboard all_pieces) const -> Bitboard;
 
   // Weighs material balance and positional bonuses and computes the white and
   // black pawn cummulative front attackspans for evaluating pawn structure.
@@ -343,7 +343,7 @@ inline auto FileOnBoard(S8 file) -> bool {
 
 inline auto SqOnBoard(S8 sq) -> bool { return sq >= kSqA1 && sq <= kSqH8; }
 
-inline auto GetOtherPlayer(const S8& player) -> S8 {
+inline auto GetOtherPlayer(S8 player) -> S8 {
   return player ^ 1;
 }
 

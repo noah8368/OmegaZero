@@ -333,10 +333,6 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     }
   }
 
-  // Store the number of moves to begin searching at full depth during Late Move
-  // Reduction, the number of early moves.
-  constexpr S8 kNumEarlyMoves = 3;
-  constexpr S8 kMinReductionDepth = 3;
   vector<Move> move_list = GenerateMoves();
   vector<Move> searched_quiet_moves;
   move_list = OrderMoves(move_list, ply);
@@ -371,6 +367,15 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
         pos_history_.resize(history_size_before_moves);
         continue;
       }
+    }
+
+    if (!at_pv_node && depth <= kMaxLateMovePruningDepth
+        && legal_moves > 3 + depth * depth && move.captured_piece == kNA
+        && move.promoted_to_piece == kNA && !gives_check) {
+      // Perform Late Move Pruning.
+      board_->UnmakeMove(move);
+      pos_history_.resize(history_size_before_moves);
+      continue;
     }
 
     if (legal_moves > kNumEarlyMoves && !at_pv_node &&
@@ -409,13 +414,11 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
         // Update killer moves and history heuristic for quiet moves that cause
         // a beta cutoff.
         RecordKillerMove(move, ply);
-        S8 player_to_move = board_->GetPlayerToMove();
-        int bonus = depth * depth;
-        UpdateHistoryHeuristic(move, bonus);
+        UpdateHistoryHeuristic(move, depth * depth);
         for (const Move& quiet_move : searched_quiet_moves) {
           // Add history maluses for quiet moves that were searched
           // but did not cause a beta cutoff.
-          UpdateHistoryHeuristic(quiet_move, -bonus);
+          UpdateHistoryHeuristic(quiet_move, -depth * depth);
         }
       }
       // Prune a subtree when a beta cutoff is detected.

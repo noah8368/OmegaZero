@@ -650,8 +650,8 @@ auto Board::GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard {
           GetPiecesByType(kKing, attacking_player));
 }
 
-auto Board::GetLeastValuableAttacker(const Bitboard& attackers,
-                                     const S8& attacking_player,
+auto Board::GetLeastValuableAttacker(Bitboard attackers,
+                                     S8 attacking_player,
                                      S8& attacking_piece_type) const -> Bitboard {
   // Check for attackers in increasing order of piece value, starting with
   // pawns and ending with kings.
@@ -671,8 +671,7 @@ auto Board::GetLeastValuableAttacker(const Bitboard& attackers,
   return 0X0;
 }
 
-auto Board::UpdateSliderAttackers(const S8& target_sq,
-                                  const Bitboard& all_pieces) const -> Bitboard {
+auto Board::UpdateSliderAttackers(S8 target_sq, Bitboard all_pieces) const -> Bitboard {
       // Use the magic bitboard method to reveal new sliding attackers that
       // could have been previously blocked by the moving piece. The Boost
       // library's 128 bit unsigned int data type "U128" is used here to avoid

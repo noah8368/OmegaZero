@@ -49,17 +49,22 @@ constexpr int kSearchLimit = 50;
 
 // Store values used for transposition table move ordering.
 constexpr int kBestEval = INT32_MAX;
-constexpr int kContempt = -25;
-constexpr int kNeutralEval = kContempt;
+constexpr int kNeutralEval = -25;
 // Use -INT32_MAX rather than INT32_MIN to avoid integer overflow when
 // multipying by -1 during the search function.
 constexpr int kWorstEval = -INT32_MAX;
 // Define the value used in delta pruning to be equal to that of a queen.
-const int kDelta = 900;
+constexpr int kDelta = 900;
 // Define a safety margin for reverse (and regular) futility pruning.
-const int kFutilityMargin = 200;
+constexpr int kFutilityMargin = 200;
 // Define a maximum bonus for the history heuristic to clamp to.
-const int kMaxHistoryBonus = 16384;
+constexpr int kMaxHistoryBonus = 16384;
+// Store the number of moves to stop searching at full depth during Late Move
+// Reduction, the number of early moves. Also store the max depth to apply
+// Late Move Pruning and the minimum depth for Late Move Reduction.
+constexpr S8 kNumEarlyMoves = 3;
+constexpr S8 kMinReductionDepth = 3;
+constexpr S8 kMaxLateMovePruningDepth = 3;
 
 class Engine {
  public:
