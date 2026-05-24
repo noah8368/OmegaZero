@@ -27,7 +27,6 @@
 
 namespace omegazero {
 
-using std::clamp;
 using std::max;
 using std::min;
 using std::pair;
@@ -339,6 +338,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   constexpr S8 kNumEarlyMoves = 3;
   constexpr S8 kMinReductionDepth = 3;
   vector<Move> move_list = GenerateMoves();
+  vector<Move> searched_quiet_moves;
   move_list = OrderMoves(move_list, ply);
   size_t history_size_before_moves = pos_history_.size();
   Move best_move;
@@ -347,7 +347,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   int search_eval;
   int depth_reduction;
   int legal_moves = 0;
-  // // Use the Negamax algorithm to traverse the search tree. 
+  // Use the Negamax algorithm to traverse the search tree. 
   size_t num_moves = move_list.size();
   for (size_t move_idx = 0; move_idx < num_moves; ++move_idx) {
     // Iterate through all child nodes of the current position.
@@ -402,6 +402,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       pv_move = best_move;
       best_eval = search_eval;
     }
+
     alpha = max(alpha, search_eval);
     if (alpha >= beta) {
       if (move.captured_piece == kNA) {
@@ -410,13 +411,20 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
         RecordKillerMove(move, ply);
         S8 player_to_move = board_->GetPlayerToMove();
         int bonus = depth * depth;
-        bonus = clamp(bonus, -kMaxHistoryBonus, kMaxHistoryBonus);
-        int& history = history_heuristic_[player_to_move][move.moving_piece][move.target_sq];
-        // Update the history heuristic value using the history gravity formula.
-        history += (bonus - history * abs(bonus) / kMaxHistoryBonus);
+        UpdateHistoryHeuristic(move, bonus);
+        for (const Move& quiet_move : searched_quiet_moves) {
+          // Add history maluses for quiet moves that were searched
+          // but did not cause a beta cutoff.
+          UpdateHistoryHeuristic(quiet_move, -bonus);
+        }
       }
       // Prune a subtree when a beta cutoff is detected.
       break;
+    }
+
+    // Keep track of searched quiet moves for history maluses.
+    if (move.captured_piece == kNA) {
+      searched_quiet_moves.push_back(move);
     }
   }
 

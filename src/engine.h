@@ -25,6 +25,7 @@
 namespace omegazero {
 
 using std::begin;
+using std::clamp;
 using std::copy;
 using std::end;
 using std::invalid_argument;
@@ -59,7 +60,6 @@ const int kDelta = 900;
 const int kFutilityMargin = 200;
 // Define a maximum bonus for the history heuristic to clamp to.
 const int kMaxHistoryBonus = 16384;
-
 
 class Engine {
  public:
@@ -128,6 +128,7 @@ class Engine {
                         S8 start_sq) const -> void;
   auto CheckSearchTime() -> void;
   auto RecordKillerMove(const Move& move, int ply) -> void;
+  auto UpdateHistoryHeuristic(const Move& move, int bonus) -> void;
 
   Board* board_;
 
@@ -250,6 +251,14 @@ inline auto Engine::RecordKillerMove(const Move& move, int ply) -> void {
     killer_moves_[ply].second = killer_moves_[ply].first;
     killer_moves_[ply].first = move;
   }
+}
+
+inline auto Engine::UpdateHistoryHeuristic(const Move& move, int bonus) -> void {
+  S8 player_to_move = board_->GetPlayerToMove();
+  bonus = clamp(bonus, -kMaxHistoryBonus, kMaxHistoryBonus);
+  int& history = history_heuristic_[player_to_move][move.moving_piece][move.target_sq];
+  // Update the history heuristic value using the history gravity formula.
+  history += (bonus - history * abs(bonus) / kMaxHistoryBonus);
 }
 
 }  // namespace omegazero
