@@ -27,6 +27,7 @@
 
 namespace omegazero {
 
+using std::clamp;
 using std::max;
 using std::min;
 using std::pair;
@@ -64,6 +65,9 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   } else {
     throw invalid_argument("invalid side choice");
   }
+
+  // Initialize the history heuristic table to 0.
+  memset(history_heuristic_, 0, sizeof(history_heuristic_));
 }
 
 auto Engine::GetBestMove() -> Move {
@@ -401,7 +405,15 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     alpha = max(alpha, search_eval);
     if (alpha >= beta) {
       if (move.captured_piece == kNA) {
+        // Update killer moves and history heuristic for quiet moves that cause
+        // a beta cutoff.
         RecordKillerMove(move, ply);
+        S8 player_to_move = board_->GetPlayerToMove();
+        int bonus = depth * depth;
+        bonus = clamp(bonus, -kMaxHistoryBonus, kMaxHistoryBonus);
+        int& history = history_heuristic_[player_to_move][move.moving_piece][move.target_sq];
+        // Update the history heuristic value using the history gravity formula.
+        history += (bonus - history * abs(bonus) / kMaxHistoryBonus);
       }
       // Prune a subtree when a beta cutoff is detected.
       break;
@@ -498,7 +510,7 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
 
   vector<pair<Move, int>> high_see_capture_pairs;
   vector<pair<Move, int>> low_see_capture_pairs;
-  vector<Move> silent_moves;
+  vector<pair<Move, int>> history_silent_move_pairs;
   vector<Move> killer_moves;
   vector<Move> ordered_moves;
   ordered_moves.reserve(move_list.size());
@@ -521,7 +533,9 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
       killer_moves.push_back(move);
     } else {
       // Use the history heuristic to order silent, non-killer moves.
-      silent_moves.push_back(move);
+      S8 player_to_move = board_->GetPlayerToMove();
+      history_silent_move_pairs.emplace_back(
+        move, history_heuristic_[player_to_move][move.moving_piece][move.target_sq]);
     }
   }
 
@@ -530,19 +544,30 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
        [](const pair<Move, int>& lhs, const pair<Move, int>& rhs) {
          return lhs.second > rhs.second;
        });
-  sort(low_see_capture_pairs.begin(), low_see_capture_pairs.end(),
-      [](const pair<Move, int>& lhs, const pair<Move, int>& rhs) {
-        return lhs.second > rhs.second;
-      });
   vector<Move> good_captures;
   good_captures.reserve(high_see_capture_pairs.size());
   for (const pair<Move, int>& capture_eval_pair : high_see_capture_pairs) {
     good_captures.push_back(capture_eval_pair.first);
   }
+  sort(low_see_capture_pairs.begin(), low_see_capture_pairs.end(),
+      [](const pair<Move, int>& lhs, const pair<Move, int>& rhs) {
+        return lhs.second > rhs.second;
+      });
   vector<Move> bad_captures;
   bad_captures.reserve(low_see_capture_pairs.size());
   for (const pair<Move, int>& capture_eval_pair : low_see_capture_pairs) {
     bad_captures.push_back(capture_eval_pair.first);
+  }
+  
+  // Sort silent, non-killer moves by descending value of their history heuristic.
+  sort(history_silent_move_pairs.begin(), history_silent_move_pairs.end(),
+    [](const pair<Move, int>& lhs, const pair<Move, int>& rhs) {
+      return lhs.second > rhs.second;
+    });
+  vector<Move> silent_moves;
+  silent_moves.reserve(history_silent_move_pairs.size());
+  for (const pair<Move, int>& history_silent_pair : history_silent_move_pairs) {
+    silent_moves.push_back(history_silent_pair.first);
   }
 
   // Place all hash moves first, followed by captures, then killer moves, and
@@ -556,6 +581,7 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
   return ordered_moves;
 }
 
+// Implement an overloaded version of OrderMoves for Quescence Search.
 auto Engine::OrderMoves(const vector<Move>& move_list) const -> vector<Move> {
   vector<pair<Move, int>> ordered_capture_pairs;
   vector<Move> late_moves;

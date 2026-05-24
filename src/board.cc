@@ -333,19 +333,19 @@ auto Board::GetSee(const Move& capture) const -> int {
   // at most 32 moves in a sequence of captures.
   int gain[32];
   S8 capture_depth = 0;
-  Bitboard blocker_candidates = (pieces_[kPawn] | pieces_[kKnight] | 
-    pieces_[kBishop] | pieces_[kRook] | pieces_[kQueen]);
+  Bitboard blocker_candidates = (pieces_[kPawn] | pieces_[kBishop]
+                                 | pieces_[kRook] | pieces_[kQueen]);
   Bitboard attacking_piece = 1ULL << capture.start_sq;
   Bitboard all_pieces = player_pieces_[kWhite] | player_pieces_[kBlack];
   Bitboard attackers = (GetAttackersToSq(capture.target_sq, kWhite)
                         | GetAttackersToSq(capture.target_sq, kBlack));
 
   gain[0] = kPieceVals[capture.captured_piece];
-  S8 moving_piece = capture.moving_piece;
+  S8 attacking_piece_type = capture.moving_piece;
   S8 attacking_player;
   while (attacking_piece != 0X0) {
     ++capture_depth;
-    gain[capture_depth] = kPieceVals[moving_piece] - gain[capture_depth - 1];
+    gain[capture_depth] = kPieceVals[attacking_piece_type] - gain[capture_depth - 1];
     attackers ^= attacking_piece;
     all_pieces ^= attacking_piece;
     if ((attacking_piece & blocker_candidates) != 0X0) {
@@ -354,7 +354,7 @@ auto Board::GetSee(const Move& capture) const -> int {
     attacking_player = ((capture_depth & 1) ? GetOtherPlayer(player_to_move_)
                                               : player_to_move_);
     attacking_piece = GetLeastValuableAttacker(attackers, attacking_player, 
-                                               moving_piece);
+                                               attacking_piece_type);
   }
 
   while (--capture_depth > 0) {
@@ -652,7 +652,7 @@ auto Board::GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard {
 
 auto Board::GetLeastValuableAttacker(const Bitboard& attackers,
                                      const S8& attacking_player,
-                                     S8& attacking_piece) const -> Bitboard {
+                                     S8& attacking_piece_type) const -> Bitboard {
   // Check for attackers in increasing order of piece value, starting with
   // pawns and ending with kings.
   Bitboard least_valuable_attacker;
@@ -660,7 +660,7 @@ auto Board::GetLeastValuableAttacker(const Bitboard& attackers,
     least_valuable_attacker = (attackers & pieces_[piece_type]
                                & player_pieces_[attacking_player]);
     if (least_valuable_attacker != 0X0) {
-      attacking_piece = static_cast<Piece>(piece_type);
+      attacking_piece_type = piece_type;
       // Return a bitboard with only one set bit corresponding to a least
       // valuable attacker.
       return least_valuable_attacker & -least_valuable_attacker;

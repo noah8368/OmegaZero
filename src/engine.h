@@ -57,6 +57,8 @@ constexpr int kWorstEval = -INT32_MAX;
 const int kDelta = 900;
 // Define a safety margin for reverse (and regular) futility pruning.
 const int kFutilityMargin = 200;
+// Define a maximum bonus for the history heuristic to clamp to.
+const int kMaxHistoryBonus = 16384;
 
 
 class Engine {
@@ -133,6 +135,7 @@ class Engine {
 
   high_resolution_clock::time_point search_start_;
 
+  int history_heuristic_[kNumPlayers][kNumPieceTypes][kNumSq];
   int nodes_since_time_check_;
 
 #ifdef BENCHMARK

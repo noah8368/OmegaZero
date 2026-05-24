@@ -276,7 +276,7 @@ implementation. The Transposition Table is [two-tiered](https://www.chessprogram
 
 The [MTD(f)](https://www.chessprogramming.org/MTD(f)) search algorithm is used within an [Iterative Deepening](https://www.chessprogramming.org/Iterative_Deepening)
 framework. This routine calls an implementation of the [Negamax](https://www.chessprogramming.org/Negamax) algorithm
-with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta), [Null Move Pruning](https://www.chessprogramming.org/Null_Move_Pruning), [Futility Pruning](https://www.chessprogramming.org/Futility_Pruning), and [Late Move Reduction](https://www.chessprogramming.org/Late_Move_Reductions). A depth reduction value [R](https://www.chessprogramming.org/Depth_Reduction_R)
+with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta), [Null Move Pruning](https://www.chessprogramming.org/Null_Move_Pruning), [Futility Pruning](https://www.chessprogramming.org/Futility_Pruning), [Reverse Futility Pruning](https://www.chessprogramming.org/Reverse_Futility_Pruning), and [Late Move Reduction](https://www.chessprogramming.org/Late_Move_Reductions). A depth reduction value [R](https://www.chessprogramming.org/Depth_Reduction_R)
 of 3 is used when depth is greater than 6, and 2 otherwise in Null Move Pruning.
 Late Move Reductions are computed using the formula
 ```
@@ -297,10 +297,10 @@ of a set of heuristics to perform move ordering in `Engine::OrderMoves()` in
 order to increase the number of [Beta-Cutoffs](https://www.chessprogramming.org/Beta-Cutoff) during alpha-beta pruning.
 Moves are put in the following order:
 1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
-2. Good captures (SEE >= 0) ordered by [SEE](https://www.chessprogramming.org/Static_Exchange_Evaluation) heuristic
+2. Good captures (SEE value >= 0) ordered by [SEE Heuristic](https://www.chessprogramming.org/Static_Exchange_Evaluation)
 3. Two [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
 4. All other quiet moves, unordered
-5. Bad captures (SEE < 0) ordered by [SEE](https://www.chessprogramming.org/Static_Exchange_Evaluation) heuristic
+5. Bad captures (SEE value < 0) ordered by SEE Heuristic
 
 #### Opening Book
 

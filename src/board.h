@@ -225,7 +225,7 @@ class Board {
   // Helper functions for GetSee().
   auto GetLeastValuableAttacker(const Bitboard& attackers,
                                 const S8& attacking_player,
-                                S8& attacking_piece) const -> Bitboard;
+                                S8& attacking_piece_type) const -> Bitboard;
   auto UpdateSliderAttackers(const S8& target_sq,
                              const Bitboard& all_pieces) const -> Bitboard;
 
