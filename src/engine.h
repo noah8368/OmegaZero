@@ -64,7 +64,10 @@ constexpr int kMaxHistoryBonus = 16384;
 // Late Move Pruning and the minimum depth for Late Move Reduction.
 constexpr S8 kNumEarlyMoves = 3;
 constexpr S8 kMinReductionDepth = 3;
-constexpr S8 kMaxLateMovePruningDepth = 3;
+constexpr S8 kMaxLateMovePruningDepth = 2;
+constexpr S8 kMaxSeePruningDepth = 5;
+constexpr S8 kMaxFutilityPruningDepth = 2;
+
 
 class Engine {
  public:

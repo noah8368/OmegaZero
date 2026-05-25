@@ -283,8 +283,8 @@ is especially important for storing the [Principle Variation](https://www.chessp
 Deepening.
 
 After search to a specified depth, all captures are searched during the
-[Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) to limit the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect). [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning) and [SEE Pruning](https://www.chessprogramming.org/Static_Exchange_Evaluation#Pruning) is used to
-limit the number of nodes explored during Quiescence Search.
+[Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) to limit the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect). [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning) and [SEE Pruning](https://www.chessprogramming.org/Static_Exchange_Evaluation#Pruning) are used to
+limit the number of nodes explored during Quiescence Search. 
 
 To reduce the number of nodes needed to be searched, OmegaZero takes advantage
 of a set of heuristics to perform move ordering in `Engine::OrderMoves()` in
@@ -295,6 +295,8 @@ Moves are put in the following order:
 3. Two [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
 4. All other quiet moves, ordered by [History Heuristic](https://www.chessprogramming.org/History_Heuristic)
 5. Bad captures (SEE value < 0) ordered by SEE Heuristic
+
+The [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA) is used to order captures in Quiescence Search, with all quiets placed after, unordered.
 
 #### Opening Book
 

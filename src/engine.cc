@@ -293,46 +293,56 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     }
   }
 
+  // Check for draw by fifty-move rule or move repitition.
   constexpr S8 kHalfmoveClockLimit = 100;
-  if (board_->GetHalfmoveClock() >= kHalfmoveClockLimit ||
-      (ply > 0 && RepDetected())) {
+  if (board_->GetHalfmoveClock() >= kHalfmoveClockLimit
+      || (ply > 0 && RepDetected())) {
     return kNeutralEval;
   }
-
 
   if (depth <= 0) {
     // Initiate the Quiescence search when maximum depth is reached.
     return QuiescenceSearch(alpha, beta);
   }
 
+  bool in_check_before_move = board_->KingInCheck();
   bool at_pv_node = transposition_table_.PosIsPvNode(board_);
 
-  // Compute the depth reduction value (R) for Null-Move pruning.
+  // Perform Null-Move pruning.
   constexpr int kNullMoveDepthMin = 4;
   constexpr int kDepthReductionIncreaseBoundary = 6;
-  int R = (depth > kDepthReductionIncreaseBoundary) ? 3 : 2;
-  bool in_check_before_move = board_->KingInCheck();
   if (depth >= kNullMoveDepthMin && null_move_allowed && !at_pv_node &&
       ZugzwangUnlikely() && !in_check_before_move) {
     board_->MakeNullMove();
+    int R = (depth > kDepthReductionIncreaseBoundary) ? 3 : 2;
     int null_move_eval = -NegamaxSearch(-beta, -alpha, depth - R - 1, ply + 1,
                                         false);
     board_->UnmakeNullMove();
     if (null_move_eval >= beta) {
-      // Perform a null-move prune.
       return beta;
     }
   }
 
-  int eval_before_move = board_->Evaluate();
+  // Only compute static eval if it's needed for futility pruning.
+  bool futility_pruned = false;
+  int eval_before_move = kWorstEval;
+  if (depth <= kMaxFutilityPruningDepth && !at_pv_node && !in_check_before_move) {
+    eval_before_move = board_->Evaluate();
+  }
+
+  // Perform reverse futility pruning.
   if (depth <= 2 && !at_pv_node && !in_check_before_move) {
-    // Perform reverse futility pruning.
     int reverse_futility_margin = depth * kFutilityMargin;
+    if (eval_before_move == kWorstEval) {
+      eval_before_move = board_->Evaluate();
+    }
     if (eval_before_move - reverse_futility_margin >= beta) {
       return beta;
     }
   }
 
+  // Use the Negamax algorithm to traverse the search tree. Iterate through all
+  // child nodes of the current position.
   vector<Move> move_list = GenerateMoves();
   vector<Move> searched_quiet_moves;
   move_list = OrderMoves(move_list, ply);
@@ -343,58 +353,90 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   int search_eval;
   int depth_reduction;
   int legal_moves = 0;
-  // Use the Negamax algorithm to traverse the search tree. 
   size_t num_moves = move_list.size();
   for (size_t move_idx = 0; move_idx < num_moves; ++move_idx) {
-    // Iterate through all child nodes of the current position.
     move = move_list[move_idx];
+
+    // Perform futility pruning when the position is quiet and depth is low.
+    if (depth <= kMaxFutilityPruningDepth && !at_pv_node && !in_check_before_move
+        && move.captured_piece == kNA && move.promoted_to_piece == kNA) {
+        if (eval_before_move == kWorstEval) {
+          eval_before_move = board_->Evaluate();
+        }
+        if (eval_before_move + (depth * kFutilityMargin) <= alpha) {
+          futility_pruned = true;
+          continue;
+        }
+    }
+
     try {
       board_->MakeMove(move);
     } catch (BadMove& e) {
       // Ignore moves that put the player's king in check.
       continue;
     }
-    
     ++legal_moves;
     AddPosToHistory();
     bool gives_check = board_->KingInCheck();
-    if (depth <= 2 && !at_pv_node && !gives_check && !in_check_before_move
-        && move.captured_piece == kNA && move.promoted_to_piece == kNA) {
-      // Perfrorm futility pruning when the position is quiet and depth is low.
-      int futility_margin = depth * kFutilityMargin;
-      if (eval_before_move + futility_margin <= alpha) {
+
+    // Skip searching late moves that are unlikely to be good with Late Move Pruning.
+    int num_quiet_moves_searched = static_cast<int>(searched_quiet_moves.size());
+    if (!at_pv_node && depth <= kMaxLateMovePruningDepth
+        && num_quiet_moves_searched > 6 + 2 * depth * depth
+        && move.captured_piece == kNA && move.promoted_to_piece == kNA
+        && !gives_check && !in_check_before_move && !IsKillerMove(move, ply)) {
+      board_->UnmakeMove(move);
+      pos_history_.resize(history_size_before_moves);
+      continue;
+    }
+
+    // Skip losing captures at shallow depths with SEE Pruning
+    int see_val = kWorstEval;
+    if (!at_pv_node && depth <= kMaxSeePruningDepth && move.captured_piece != kNA
+        && !gives_check && !in_check_before_move) {
+      see_val = board_->GetSee(move);
+      if (see_val < -depth * 100) {
         board_->UnmakeMove(move);
         pos_history_.resize(history_size_before_moves);
         continue;
       }
     }
 
-    if (!at_pv_node && depth <= kMaxLateMovePruningDepth
-        && legal_moves > 3 + depth * depth && move.captured_piece == kNA
-        && move.promoted_to_piece == kNA && !gives_check) {
-      // Perform Late Move Pruning.
-      board_->UnmakeMove(move);
-      pos_history_.resize(history_size_before_moves);
-      continue;
-    }
+    if (legal_moves > kNumEarlyMoves && !at_pv_node
+        && move.promoted_to_piece == kNA
+        && !gives_check && depth >= kMinReductionDepth) {
+      if (move.captured_piece == kNA) {
+        // Perform Late Move Reduction for later quiet moves that are likely bad.
+        reduced_depth_search:
+        depth_reduction =
+            static_cast<int>(sqrt(static_cast<double>(depth - 1)) +
+                            sqrt(static_cast<double>(legal_moves - 1)));
+        search_eval = -NegamaxSearch(-beta, -alpha, depth - depth_reduction - 1,
+                                    ply + 1, true);
+        if (search_eval > alpha) {
+          // Perform a re-search at full depth if the search doesn't fail low.
+          search_eval =
+              -NegamaxSearch(-beta, -alpha, depth - 1, ply + 1, true);
+        }
+      } else {
+        // Compute SEE value only if not already computed and needed to determine
+        // if the should be reduced. This is an optimization to avoid the
+        // overhead of SEE when it's not needed.
+        if (see_val == kWorstEval) {
+          see_val = board_->GetSee(move);
+        }
 
-    if (legal_moves > kNumEarlyMoves && !at_pv_node &&
-        (move.captured_piece == kNA || board_->GetSee(move) < 0)
-        && move.promoted_to_piece == kNA &&
-        !gives_check && depth >= kMinReductionDepth) {
-      // Perform Late Move Reduction.
-      depth_reduction =
-          static_cast<int>(sqrt(static_cast<double>(depth - 1)) +
-                           sqrt(static_cast<double>(legal_moves - 1)));
-      search_eval = -NegamaxSearch(-beta, -alpha, depth - depth_reduction - 1,
-                                   ply + 1, true);
-      if (search_eval > alpha) {
-        // Perform a re-search at full depth.
-        search_eval =
-            -NegamaxSearch(-beta, -alpha, depth - 1, ply + 1, true);
+        if (see_val < 0) {
+          goto reduced_depth_search;
+        } else {
+          goto full_depth_search;
+        }
       }
+
     } else {
-      // Search at full depth, extending the depth by one if the move gives check.
+      // Search the first few moves and captures at full depth, extending the
+      // depth by one if the move gives check.
+      full_depth_search:
       S8 check_ext = gives_check ? 1 : 0;
       search_eval =
           -NegamaxSearch(-beta, -alpha, depth - 1 + check_ext, ply + 1, true);
@@ -414,11 +456,13 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
         // Update killer moves and history heuristic for quiet moves that cause
         // a beta cutoff.
         RecordKillerMove(move, ply);
-        UpdateHistoryHeuristic(move, depth * depth);
-        for (const Move& quiet_move : searched_quiet_moves) {
-          // Add history maluses for quiet moves that were searched
-          // but did not cause a beta cutoff.
-          UpdateHistoryHeuristic(quiet_move, -depth * depth);
+        if (move.castling_type == kNA) {
+          UpdateHistoryHeuristic(move, depth * depth);
+          for (const Move& quiet_move : searched_quiet_moves) {
+            // Add history maluses for quiet moves that were searched
+            // but did not cause a beta cutoff.
+            UpdateHistoryHeuristic(quiet_move, -depth * depth);
+          }
         }
       }
       // Prune a subtree when a beta cutoff is detected.
@@ -426,12 +470,15 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     }
 
     // Keep track of searched quiet moves for history maluses.
-    if (move.captured_piece == kNA) {
+    if (move.captured_piece == kNA && move.castling_type == kNA) {
       searched_quiet_moves.push_back(move);
     }
   }
 
   if (legal_moves == 0) {
+    if (futility_pruned) {
+      return alpha;
+    }
     return board_->KingInCheck() ? kWorstEval : kNeutralEval;
   }
 
@@ -472,8 +519,8 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
     alpha = max(stand_pat_eval, alpha);
 
     if (!InEndgame()) {
-      // If the position is extremely poor, assume it won't improve enough to
-      // exceed alpha and perform a delta prune.
+      // Perfrom Delta Pruninhg if the position is extremely poor. It is assumed
+      // it won't improve enough to exceed alpha.
       if (stand_pat_eval < alpha - kDelta) {
         return alpha;
       }
@@ -542,6 +589,8 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
     } else if (IsKillerMove(move, ply)) {
       // Use the Killer Move heuristic to order quiet moves.
       killer_moves.push_back(move);
+    } else if (move.castling_type != kNA) {
+      history_silent_move_pairs.emplace_back(move, 0);
     } else {
       // Use the history heuristic to order silent, non-killer moves.
       S8 player_to_move = board_->GetPlayerToMove();
@@ -581,8 +630,8 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
     silent_moves.push_back(history_silent_pair.first);
   }
 
-  // Place all hash moves first, followed by captures, then killer moves, and
-  // finally all silent, non-killer moves.
+  // Place all hash moves first, followed by good captures, then killer moves,
+  // then all silent, non-killer moves, and finally bad captures.
   ordered_moves.insert(ordered_moves.end(), good_captures.begin(), good_captures.end());
   ordered_moves.insert(ordered_moves.end(), killer_moves.begin(),
                        killer_moves.end());
