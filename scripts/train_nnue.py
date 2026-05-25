@@ -393,11 +393,13 @@ def train(args):
     # Save final model
     torch.save(model.state_dict(), out_dir / "final.pt")
 
-    # Export quantized weights to repo root (next to p3ECO.txt)
+    # Export quantized weights to nnue_weights/ at repo root
     model.load_state_dict(torch.load(out_dir / "best.pt", weights_only=True))
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
-    export_path = repo_root / "nnue.bin"
+    weights_dir = repo_root / "nnue_weights"
+    weights_dir.mkdir(parents=True, exist_ok=True)
+    export_path = weights_dir / "nnue.bin"
     export_quantized(model, export_path)
     print(f"\nTraining complete.")
     print(f"  Best validation loss: {best_val_loss:.6f}")
@@ -414,14 +416,14 @@ def train(args):
 #   Hidden layer weights: int8 (scale = 64)
 #   Hidden layer biases: int32 (scale = 127 * 64 = 8128)
 #   Output weights: int8 (scale = 64)
-#   Output bias: int32 (scale = 64 * 64 = 4096)
+#   Output bias: int32 (scale = 127 * 64 = 8128)
 
 FT_WEIGHT_SCALE = 127
 HIDDEN_WEIGHT_SCALE = 64
 FT_BIAS_SCALE = FT_WEIGHT_SCALE           # 127
 HIDDEN_BIAS_SCALE = FT_WEIGHT_SCALE * HIDDEN_WEIGHT_SCALE  # 8128
 OUTPUT_WEIGHT_SCALE = HIDDEN_WEIGHT_SCALE  # 64
-OUTPUT_BIAS_SCALE = HIDDEN_WEIGHT_SCALE * OUTPUT_WEIGHT_SCALE  # 4096
+OUTPUT_BIAS_SCALE = FT_WEIGHT_SCALE * OUTPUT_WEIGHT_SCALE  # 8128
 
 
 def quantize_i16(tensor, scale):

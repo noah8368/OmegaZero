@@ -23,16 +23,16 @@ else
 endif
 
 OBJECTS = build/play/board.o build/play/engine.o build/play/game.o build/play/magics.o \
-          build/play/main.o build/play/masks.o build/play/transposition_table.o \
+          build/play/main.o build/play/masks.o build/play/nnue.o build/play/transposition_table.o \
           build/play/piece_sq_tables.o build/play/uci.o
 
 DEBUG_OBJECTS = build/debug/board.o build/debug/engine.o build/debug/game.o \
-                build/debug/magics.o build/debug/test_harness.o \
+                build/debug/magics.o build/debug/nnue.o build/debug/test_harness.o \
                 build/debug/masks.o build/debug/transposition_table.o \
                 build/debug/piece_sq_tables.o
 
 BENCH_OBJECTS = build/bench/board.o build/bench/engine.o build/bench/game.o \
-                build/bench/magics.o build/bench/test_harness.o \
+                build/bench/magics.o build/bench/nnue.o build/bench/test_harness.o \
                 build/bench/masks.o build/bench/transposition_table.o \
                 build/bench/piece_sq_tables.o
 

@@ -286,7 +286,7 @@ python3 scripts/train_nnue.py --epochs 300 --batch 8192 --lr 0.001
 ```
 
 Training outputs:
-- `nnue.bin` (repo root) — quantized binary weights for C++ inference
+- `nnue_weights/nnue.bin` — quantized binary weights for C++ inference
 - `scripts/nnue_training_data/model/best.pt` — best PyTorch checkpoint (by validation loss)
 - `scripts/nnue_training_data/model/final.pt` — last epoch checkpoint
 
