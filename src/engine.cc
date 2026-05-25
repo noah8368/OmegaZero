@@ -353,6 +353,7 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth, int pl
   int depth_reduction;
   int legal_moves = 0;
   size_t num_moves = move_list.size();
+  S8 player_to_move = board_->GetPlayerToMove();
   for (size_t move_idx = 0; move_idx < num_moves; ++move_idx) {
     move = move_list[move_idx];
 
@@ -407,9 +408,20 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth, int pl
       if (move.captured_piece == kNA) {
         // Perform Late Move Reduction for later quiet moves that are likely bad.
         reduced_depth_search:
-        depth_reduction =
-            static_cast<int>(sqrt(static_cast<double>(depth - 1)) +
-                            sqrt(static_cast<double>(legal_moves - 1)));
+        depth_reduction = static_cast<int>(sqrt(static_cast<double>(depth - 1)) +
+                                           sqrt(static_cast<double>(legal_moves - 1)));
+
+        // Adjust reduction based on history score. Reduce more for historically
+        // bad moves, and less for historically good moves. 
+        int history_score = history_heuristic_[player_to_move][move.moving_piece][move.target_sq];
+        if (history_score > 0) {
+          depth_reduction -= 1;  
+        }
+        else if (history_score < -1000) {
+          depth_reduction += 1;  
+        }
+        // Reduce to 1 or above.
+        depth_reduction = max(1, depth_reduction);
         search_eval = -NegamaxSearch(-beta, -alpha, depth - depth_reduction - 1,
                                     ply + 1, true);
         if (search_eval > alpha) {
