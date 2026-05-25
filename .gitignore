@@ -7,3 +7,4 @@ cutechess
 elo_results
 *.pgn
 .DS_Store
+v4_benchmark.csv

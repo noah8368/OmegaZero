@@ -7,6 +7,8 @@
 
 #include "transposition_table.h"
 
+#include <cassert>
+
 #include "board.h"
 #include "move.h"
 
@@ -16,6 +18,7 @@ constexpr U64 kHashMask = kTableSize - 1;
 
 auto TranspositionTable::Access(const Board* board, int depth, int& eval,
                                 S8& node_type) const -> bool {
+  assert(board != nullptr);
   U64 board_hash = board->GetBoardHash();
   int index = board_hash & kHashMask;
   if (occupancy_table_[index]) {
@@ -42,6 +45,7 @@ auto TranspositionTable::Access(const Board* board, int depth, int& eval,
 }
 
 auto TranspositionTable::PosIsPvNode(const Board* board) const -> bool {
+  assert(board != nullptr);
   U64 board_hash = board->GetBoardHash();
   int index = board_hash & kHashMask;
   if (occupancy_table_[index]) {
@@ -63,6 +67,7 @@ auto TranspositionTable::PosIsPvNode(const Board* board) const -> bool {
 }
 
 auto TranspositionTable::GetHashMove(const Board* board) const -> Move {
+  assert(board != nullptr);
   U64 board_hash = board->GetBoardHash();
   int index = board_hash & kHashMask;
   Move hash_move;
@@ -85,6 +90,7 @@ auto TranspositionTable::GetHashMove(const Board* board) const -> Move {
 
 auto TranspositionTable::Update(const Board* board, int depth, int eval,
                                 S8 node_type, const Move& hash_move) -> void {
+  assert(board != nullptr);
   TableEntry new_entry;
   new_entry.hash_move = hash_move;
   U64 board_hash = board->GetBoardHash();

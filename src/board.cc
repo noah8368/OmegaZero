@@ -26,9 +26,7 @@ namespace omegazero {
 
 using std::begin;
 using std::copy;
-using std::cout;
 using std::end;
-using std::endl;
 using std::invalid_argument;
 using std::string;
 using std::max;
@@ -329,8 +327,9 @@ auto Board::Evaluate() -> int {
 }
 
 auto Board::GetSee(const Move& capture) const -> int {
-  // Keep track of the potential material gain at different depths. There are 
-  // at most 32 moves in a sequence of captures.
+  assert(capture.captured_piece != kNA);
+  assert(SqOnBoard(capture.start_sq));
+  assert(SqOnBoard(capture.target_sq));
   int gain[32];
   S8 capture_depth = 0;
   Bitboard blocker_candidates = (pieces_[kPawn] | pieces_[kBishop]
@@ -674,38 +673,34 @@ auto Board::GetLeastValuableAttacker(Bitboard attackers,
   return 0X0;
 }
 
-auto Board::UpdateSliderAttackers(S8 target_sq, Bitboard all_pieces) const -> Bitboard {
-      // Use the magic bitboard method to reveal new sliding attackers that
-      // could have been previously blocked by the moving piece. The Boost
-      // library's 128 bit unsigned int data type "U128" is used here to avoid
-      // integer overflow.
-      Bitboard blockers = (kSliderPieceMaps[kBishopMoves][target_sq]
-                           & all_pieces);
-      Bitboard bishop_attack_map;
-      if (blockers == 0X0) {
-        bishop_attack_map = kUnblockedSliderAttackMaps[kBishopMoves][target_sq];
-      } else {
-        U128 magic = kMagics[kBishopMoves][target_sq];
-        U128 index = (blockers * magic) >> (kNumSq - kBishopMagicLengths[target_sq]);
-        U64 index_U64 = static_cast<U64>(index);
-        bishop_attack_map = kMagicIndexToAttackMap.at(index_U64);
-      }
+auto Board::UpdateSliderAttackers(S8 target_sq, Bitboard all_pieces) const
+    -> Bitboard {
+  Bitboard blockers = kSliderPieceMaps[kBishopMoves][target_sq] & all_pieces;
+  Bitboard bishop_attack_map;
+  if (blockers == 0X0) {
+    bishop_attack_map = kUnblockedSliderAttackMaps[kBishopMoves][target_sq];
+  } else {
+    U128 magic = kMagics[kBishopMoves][target_sq];
+    U128 index = (blockers * magic) >> (kNumSq - kBishopMagicLengths[target_sq]);
+    U64 index_U64 = static_cast<U64>(index);
+    bishop_attack_map = kMagicIndexToAttackMap.at(index_U64);
+  }
 
-      blockers = kSliderPieceMaps[kRookMoves][target_sq] & all_pieces;
-      Bitboard rook_attack_map;
-      if (blockers == 0X0) {
-        rook_attack_map = kUnblockedSliderAttackMaps[kRookMoves][target_sq];
-      } else {
-        U128 magic = kMagics[kRookMoves][target_sq];
-        U128 index = (blockers * magic) >> (kNumSq - kRookMagicLengths[target_sq]);
-        U64 index_U64 = static_cast<U64>(index);
-        rook_attack_map = kMagicIndexToAttackMap.at(index_U64);
-      }
-      
-      return (((bishop_attack_map & pieces_[kBishop])
-               | (rook_attack_map & pieces_[kRook])
-               | ((bishop_attack_map | rook_attack_map) & pieces_[kQueen]))
-              & all_pieces);
+  blockers = kSliderPieceMaps[kRookMoves][target_sq] & all_pieces;
+  Bitboard rook_attack_map;
+  if (blockers == 0X0) {
+    rook_attack_map = kUnblockedSliderAttackMaps[kRookMoves][target_sq];
+  } else {
+    U128 magic = kMagics[kRookMoves][target_sq];
+    U128 index = (blockers * magic) >> (kNumSq - kRookMagicLengths[target_sq]);
+    U64 index_U64 = static_cast<U64>(index);
+    rook_attack_map = kMagicIndexToAttackMap.at(index_U64);
+  }
+
+  return ((bishop_attack_map & pieces_[kBishop])
+          | (rook_attack_map & pieces_[kRook])
+          | ((bishop_attack_map | rook_attack_map) & pieces_[kQueen]))
+         & all_pieces;
 }
 
 auto Board::EvaluatePiecePositions(Bitboard& white_attackspan,
@@ -1173,7 +1168,9 @@ auto Board::InitBoardPos(const std::string& init_pos) -> void {
 }
 
 auto Board::MakeNonCastlingMove(const Move& move) -> void {
-  // Remove a captured piece from the board.
+  assert(move.moving_piece != kNA);
+  assert(SqOnBoard(move.start_sq));
+  assert(SqOnBoard(move.target_sq));
   if (move.captured_piece != kNA) {
     S8 other_player = GetOtherPlayer(player_to_move_);
     if (move.is_ep) {

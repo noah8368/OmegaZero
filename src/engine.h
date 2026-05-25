@@ -47,27 +47,18 @@ enum GameStatus : S8 {
 constexpr int kRanOutOfTime = 2;
 constexpr int kSearchLimit = 50;
 
-// Store values used for transposition table move ordering.
 constexpr int kBestEval = INT32_MAX;
 constexpr int kNeutralEval = -25;
 // Use -INT32_MAX rather than INT32_MIN to avoid integer overflow when
 // multipying by -1 during the search function.
 constexpr int kWorstEval = -INT32_MAX;
-// Define the value used in delta pruning to be equal to that of a queen.
-constexpr int kDelta = 900;
-// Define a safety margin for reverse (and regular) futility pruning.
-constexpr int kFutilityMargin = 200;
-// Define a maximum bonus for the history heuristic to clamp to.
+
 constexpr int kMaxHistoryBonus = 16384;
-constexpr int kCountermoveBonus = 5000;
-// Store the number of moves to stop searching at full depth during Late Move
-// Reduction, the number of early moves. Also store the max depth to apply
-// Late Move Pruning and the minimum depth for Late Move Reduction.
-constexpr S8 kNumEarlyMoves = 3;
-constexpr S8 kMinReductionDepth = 3;
-constexpr S8 kMaxLateMovePruningDepth = 2;
-constexpr S8 kMaxSeePruningDepth = 5;
-constexpr S8 kMaxFutilityPruningDepth = 2;
+
+constexpr int kFutilityMargin = 200;
+constexpr int kMaxFutilityPruningDepth = 2;
+constexpr int kMaxLateMovePruningDepth = 2;
+constexpr int kMaxSeePruningDepth = 5;
 
 
 class Engine {
@@ -138,6 +129,31 @@ class Engine {
   auto CheckSearchTime() -> void;
   auto RecordKillerMove(const Move& move, int ply) -> void;
   auto UpdateHistoryHeuristic(const Move& move, int bonus) -> void;
+
+  auto ProbeTt(Move& pv_move, int& alpha, int& beta, int depth,
+               int& result) -> bool;
+  auto TryNullMovePrune(int alpha, int beta, int depth, int ply,
+                         bool at_pv_node, bool in_check) -> bool;
+  auto ComputeStaticEval(int depth, bool at_pv_node, bool in_check) -> int;
+  auto TryReverseFutilityPrune(int static_eval, int depth, int beta,
+                                bool at_pv_node, bool in_check) -> bool;
+  auto ShouldFutilityPrune(const Move& move, int static_eval, int depth,
+                           bool at_pv_node, bool in_check, int alpha) -> bool;
+  auto ShouldLateMovePrune(const Move& move, int num_quiet_searched, int depth,
+                            bool at_pv_node, bool gives_check, bool in_check,
+                            int ply) -> bool;
+  auto ShouldSeePrune(const Move& move, int depth, bool at_pv_node,
+                       bool gives_check, bool in_check,
+                       int& see_val) -> bool;
+  auto SearchMove(int alpha, int beta, int depth, int ply, int legal_moves,
+                   bool at_pv_node, bool gives_check, const Move& move,
+                   S8 player_to_move, int& see_val) -> int;
+  auto ComputeLmrReduction(int depth, int legal_moves, S8 player_to_move,
+                            const Move& move) -> int;
+  auto RecordBetaCutoff(const Move& move, int depth, int ply,
+                         const vector<Move>& searched_quiet_moves) -> void;
+  auto StoreTtEntry(int best_eval, int orig_alpha, int beta, int depth,
+                     const Move& best_move) -> void;
 
   Board* board_;
 
@@ -269,6 +285,35 @@ inline auto Engine::UpdateHistoryHeuristic(const Move& move, int bonus) -> void 
   int& history = history_heuristic_[player_to_move][move.moving_piece][move.target_sq];
   // Update the history heuristic value using the history gravity formula.
   history += (bonus - history * abs(bonus) / kMaxHistoryBonus);
+}
+
+inline auto Engine::ShouldFutilityPrune(const Move& move, int static_eval,
+                                        int depth, bool at_pv_node,
+                                        bool in_check, int alpha) -> bool {
+  return depth <= kMaxFutilityPruningDepth && !at_pv_node && !in_check
+      && move.captured_piece == kNA && move.promoted_to_piece == kNA
+      && static_eval + depth * kFutilityMargin <= alpha;
+}
+
+inline auto Engine::ShouldLateMovePrune(const Move& move,
+                                        int num_quiet_searched, int depth,
+                                        bool at_pv_node, bool gives_check,
+                                        bool in_check, int ply) -> bool {
+  return !at_pv_node && depth <= kMaxLateMovePruningDepth
+      && num_quiet_searched > 6 + 2 * depth * depth
+      && move.captured_piece == kNA && move.promoted_to_piece == kNA
+      && !gives_check && !in_check && !IsKillerMove(move, ply);
+}
+
+inline auto Engine::ShouldSeePrune(const Move& move, int depth,
+                                   bool at_pv_node, bool gives_check,
+                                   bool in_check, int& see_val) -> bool {
+  if (at_pv_node || depth > kMaxSeePruningDepth || move.captured_piece == kNA
+      || gives_check || in_check) {
+    return false;
+  }
+  see_val = board_->GetSee(move);
+  return see_val < -depth * 100;
 }
 
 }  // namespace omegazero

@@ -133,11 +133,7 @@ inline auto Game::OutputWinner() const -> void {
 }
 
 inline auto Game::RecordBoardState() -> void {
-  if (pos_history_.find(board_) == pos_history_.end()) {
-    pos_history_[board_] = 1;
-  } else {
-    ++pos_history_[board_];
-  }
+  ++pos_history_[board_];
 }
 
 inline auto Game::RecordFinalScore() -> void {

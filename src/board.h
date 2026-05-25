@@ -414,7 +414,7 @@ inline auto Board::operator==(const Board& rhs) const -> bool {
 }
 
 inline auto Board::GetPrevMove(Move& prev_move) const -> bool {
-  if (move_history_.size() > 0) {
+  if (!move_history_.empty()) {
     prev_move = move_history_.top();
     return true;
   }
