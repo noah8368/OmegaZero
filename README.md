@@ -29,9 +29,6 @@
 - [Performance](#performance)
   - [NPS Comparison](#nodes-per-second-nps-comparison)
   - [Stockfish ELO Comparison](#stockfish-elo-comparison)
-    - [v1 Results](#v1-results)
-    - [v2 Results](#v2-results)
-    - [v3 Results](#v3-results)
   - [Example Games](#example-games)
   - [Strengths and Weaknesses](#strengths-and-weaknesses)
 
@@ -296,7 +293,18 @@ Moves are put in the following order:
 4. All other quiet moves, ordered by [History Heuristic](https://www.chessprogramming.org/History_Heuristic) and [Countermove Heuristic](https://www.chessprogramming.org/Countermove_Heuristic)
 5. Bad captures (SEE value < 0) ordered by SEE Heuristic
 
-The [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA) is used to order captures in Quiescence Search, with all quiets placed after, unordered.
+The [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA) is used to order captures in Quiescence Search, with all quiets placed after, unordered.  
+
+Each column in the table below shows the cumulative effect of adding one more search feature on top of all previous ones. kNPS = thousands of nodes per second; depth = search depth reached.
+
+*V4 Feature Stacking Benchmark (5s/position)*
+| Position | No Features | + LMR | + NMP + History | + RFP | + SEE | + Futility | + LMP | + Countermove | + Hist LMR |
+|----------|-------------|-------|-----------------|-------|-------|------------|-------|---------------|------------|
+| opening  | 1084k, d6   | 997k, d8  | 906k, d12 | 911k, d11 | 537k, d12 | 508k, d14 | 431k, d14 | 472k, d14 | 512k, d13 |
+| midgame  | 838k, d5    | 617k, d6  | 569k, d6  | 1085k, d7 | 767k, d11 | 486k, d11 | 410k, d13 | 439k, d12 | 434k, d13 |
+| kiwipete | 532k, d4    | 173k, d3  | 174k, d3  | 518k, d5  | 157k, d5  | 134k, d5  | 148k, d6  | 148k, d6  | 145k, d6  |
+| endgame  | 795k, d10   | 781k, d14 | 782k, d18 | 785k, d17 | 779k, d17 | 772k, d17 | 618k, d18 | 593k, d17 | 532k, d18 |
+| **Avg NPS** | **812k** | **641k** | **608k** | **825k** | **560k** | **475k** | **402k** | **413k** | **406k** |
 
 #### Opening Book
 
@@ -347,24 +355,21 @@ ELO was estimated by running OmegaZero against Stockfish at various `UCI_Elo`
 levels using cutechess-cli (20 games per level, 5s/move). See
 [ELO Testing](#elo-testing) for details.
 
-##### v1 Results
-
+*v1 Results*
 | Stockfish ELO | Win Rate | ELO Estimate | 
 |---|---|---|
 | 1320 | 90% | 1701.7 |
 | 1700 | 55% | 1734.9 |
 | 2100 | 30% | 1952.8 |
 
-##### v2 Results
-
+*v2 Results*
 | Stockfish ELO | Win Rate | ELO Estimate | 
 |---|---|---|
 | 1320 | 100% | 2519.8 |
 | 1700 | 50% | 1700 |
 | 2100 | 35% | 1992.5 |
 
-##### v3 Results
-
+*v3 Results*
 | Stockfish ELO | Win Rate | ELO Estimate | 
 |---|---|---|
 | 1320 | 97.5% | 1956.4 |
