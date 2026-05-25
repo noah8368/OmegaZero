@@ -23,6 +23,7 @@ import argparse
 import os
 import random
 import subprocess
+from tqdm import tqdm
 import sys
 import time
 from pathlib import Path
@@ -341,9 +342,9 @@ def main():
 
     try:
         with open(out_path, mode) as f:
-            for game_num in range(1, args.games + 1):
-                t0 = time.time()
-
+            pbar = tqdm(range(1, args.games + 1), desc="Self-play",
+                        unit="game")
+            for game_num in pbar:
                 positions, result = play_game_with_eval(
                     engine, movetime_ms, use_random
                 )
@@ -354,15 +355,12 @@ def main():
                 total_positions += len(positions)
                 results[result] = results.get(result, 0) + 1
 
-                elapsed = time.time() - t0
                 result_str = {1.0: "1-0", 0.0: "0-1", 0.5: "draw"}[result]
-                print(
-                    f"  Game {game_num:4d}/{args.games}  "
-                    f"{result_str:>4s}  "
-                    f"{len(positions):3d} positions  "
-                    f"{elapsed:.1f}s  "
-                    f"(total: {total_positions})",
-                    flush=True,
+                w = results.get(1.0, 0)
+                b = results.get(0.0, 0)
+                d = results.get(0.5, 0)
+                pbar.set_postfix_str(
+                    f"{result_str}  W:{w} D:{d} L:{b}  pos:{total_positions}"
                 )
 
                 f.flush()

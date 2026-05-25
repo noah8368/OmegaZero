@@ -28,6 +28,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+from tqdm import tqdm
 
 
 # --------------------------------------------------------------------------- #
@@ -143,8 +144,9 @@ class NnueDataset(Dataset):
         print(f"Loading data from {path}...")
         t0 = time.time()
 
+        num_lines = sum(1 for _ in open(path))
         with open(path) as f:
-            for line_num, line in enumerate(f, 1):
+            for line in tqdm(f, total=num_lines, desc="Loading", unit="pos"):
                 line = line.strip()
                 if not line:
                     continue
@@ -166,9 +168,6 @@ class NnueDataset(Dataset):
                 self.scores.append(score)
                 self.results.append(result)
                 self.stms.append(1.0 if stm_is_white else 0.0)
-
-                if line_num % 500_000 == 0:
-                    print(f"  {line_num} positions loaded...", flush=True)
 
         elapsed = time.time() - t0
         print(f"Loaded {len(self.scores)} positions in {elapsed:.1f}s")
@@ -324,7 +323,8 @@ def train(args):
 
     best_val_loss = float("inf")
 
-    for epoch in range(1, args.epochs + 1):
+    epoch_pbar = tqdm(range(1, args.epochs + 1), desc="Training", unit="epoch")
+    for epoch in epoch_pbar:
         # --- Train ---
         model.train()
         train_loss_sum = 0.0
@@ -383,11 +383,8 @@ def train(args):
             torch.save(model.state_dict(), out_dir / "best.pt")
             improved = " *"
 
-        print(
-            f"Epoch {epoch:4d}/{args.epochs}  "
-            f"train_loss={train_loss:.6f}  val_loss={val_loss:.6f}  "
-            f"lr={lr:.2e}{improved}",
-            flush=True,
+        epoch_pbar.set_postfix_str(
+            f"train={train_loss:.6f}  val={val_loss:.6f}  lr={lr:.2e}{improved}"
         )
 
         if epoch % args.save_every == 0:
@@ -396,13 +393,15 @@ def train(args):
     # Save final model
     torch.save(model.state_dict(), out_dir / "final.pt")
 
-    # Export quantized weights
+    # Export quantized weights to repo root (next to p3ECO.txt)
     model.load_state_dict(torch.load(out_dir / "best.pt", weights_only=True))
-    export_path = out_dir / "nnue.bin"
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+    export_path = repo_root / "nnue.bin"
     export_quantized(model, export_path)
     print(f"\nTraining complete.")
     print(f"  Best validation loss: {best_val_loss:.6f}")
-    print(f"  PyTorch model: {out_dir / 'best.pt'}")
+    print(f"  PyTorch checkpoints: {out_dir}")
     print(f"  Quantized weights: {export_path}")
 
 

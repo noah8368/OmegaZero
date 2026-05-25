@@ -63,7 +63,7 @@ also required to generate the move masks and magic bitboards used by the engine.
 
 For NNUE training, two additional Python packages are needed:
 ```
-pip3 install python-chess torch
+pip3 install python-chess torch tqdm
 ```
 
 To verify all dependencies are satisfied before building, run:
@@ -255,7 +255,7 @@ Training the NNUE is a two-step process: generate self-play training data, then 
 
 **Prerequisites:**
 ```bash
-pip3 install python-chess torch
+pip3 install python-chess torch tqdm
 ```
 
 **Step 1: Generate training data**
@@ -285,10 +285,10 @@ python3 scripts/train_nnue.py
 python3 scripts/train_nnue.py --epochs 300 --batch 8192 --lr 0.001
 ```
 
-Training outputs are saved to `scripts/nnue_training_data/model/`:
-- `best.pt` — best PyTorch checkpoint (by validation loss)
-- `final.pt` — last epoch checkpoint
-- `nnue.bin` — quantized binary weights for C++ inference
+Training outputs:
+- `nnue.bin` (repo root) — quantized binary weights for C++ inference
+- `scripts/nnue_training_data/model/best.pt` — best PyTorch checkpoint (by validation loss)
+- `scripts/nnue_training_data/model/final.pt` — last epoch checkpoint
 
 The training target blends the search score with the game outcome: `0.7 * sigmoid(score/400) + 0.3 * game_result`. This can be adjusted with `--lmbda`.
 

@@ -86,6 +86,9 @@ check-deps:
 	@python3 -c "import torch" >/dev/null 2>&1 || \
 	  { echo "WARNING: PyTorch not found (needed for NNUE training)."; \
 	    echo "  pip3 install torch"; }
+	@python3 -c "import tqdm" >/dev/null 2>&1 || \
+	  { echo "WARNING: tqdm not found (needed for NNUE training progress bars)."; \
+	    echo "  pip3 install tqdm"; }
 	@echo "All dependencies satisfied. Run 'make' to build."
 
 .PHONY: clean
