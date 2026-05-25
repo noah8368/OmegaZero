@@ -486,6 +486,7 @@ auto Board::MakeMove(const Move& move) -> void {
   }
 
   UpdateCastlingRights(move);
+  move_history_.push(move);
 
   // Undo the move if it puts the king in check.
   if (KingInCheck()) {
@@ -567,6 +568,8 @@ auto Board::UnmakeMove(const Move& move) -> void {
     S8 ep_file = GetFileFromSq(ep_target_sq_);
     board_hash_ ^= ep_file_rand_nums_[ep_file];
   }
+
+  move_history_.pop();
 
   // Revert all castling rights and update the board hash.
   if (castling_rights_[kWhite][kQueenSide] !=

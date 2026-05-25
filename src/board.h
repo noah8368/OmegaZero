@@ -177,6 +177,7 @@ class Board {
 
   auto CastlingLegal(S8 board_side) const -> bool;
   auto DoublePawnPushLegal(S8 file) const -> bool;
+  auto GetPrevMove(Move& prev_move) const -> bool;
   auto KingInCheck() const -> bool;
 
   // Compute and return a static evaluation of the board state. This score is
@@ -311,6 +312,7 @@ class Board {
   stack<bool> white_kingside_castling_rights_history_;
   stack<bool> black_queenside_castling_rights_history_;
   stack<bool> black_kingside_castling_rights_history_;
+  stack<Move> move_history_;
   stack<S8> ep_target_sq_history_;
   stack<S8> halfmove_clock_history_;
 
@@ -409,6 +411,14 @@ inline auto RemoveFirstPiece(Bitboard& board) -> void { board &= (board - 1); }
 
 inline auto Board::operator==(const Board& rhs) const -> bool {
   return GetBoardHash() == rhs.GetBoardHash();
+}
+
+inline auto Board::GetPrevMove(Move& prev_move) const -> bool {
+  if (move_history_.size() > 0) {
+    prev_move = move_history_.top();
+    return true;
+  }
+  return false;
 }
 
 inline auto Board::KingInCheck() const -> bool {

@@ -59,6 +59,7 @@ constexpr int kDelta = 900;
 constexpr int kFutilityMargin = 200;
 // Define a maximum bonus for the history heuristic to clamp to.
 constexpr int kMaxHistoryBonus = 16384;
+constexpr int kCountermoveBonus = 5000;
 // Store the number of moves to stop searching at full depth during Late Move
 // Reduction, the number of early moves. Also store the max depth to apply
 // Late Move Pruning and the minimum depth for Late Move Reduction.
@@ -151,6 +152,8 @@ class Engine {
   uint64_t total_nodes_;
 #endif
 
+  Move countermove_table_[kNumPieceTypes][kNumSq];
+
   pair<Move, Move> killer_moves_[kSearchLimit];
 
   vector<U64> pos_history_;
@@ -229,9 +232,8 @@ inline auto Engine::ZugzwangUnlikely() const -> bool {
 inline auto Engine::NegamaxSearch(int alpha, int beta, int depth, int ply,
                                   bool null_move_allowed)
     -> int {
-  Move throwaway_move;
-  return NegamaxSearch(throwaway_move, alpha, beta, depth, ply,
-                       null_move_allowed);
+  Move pv_move;
+  return NegamaxSearch(pv_move, alpha, beta, depth, ply, null_move_allowed);
 }
 
 inline auto Engine::CheckSearchTime() -> void {

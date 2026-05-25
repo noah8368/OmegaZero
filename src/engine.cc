@@ -261,9 +261,8 @@ auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
   return g;
 }
 
-auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
-                           int ply, bool null_move_allowed)
-    -> int {
+auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth, int ply,
+                           bool null_move_allowed) -> int {
   assert(ply >= 0 && ply < kSearchLimit);
   assert(alpha < beta);
   CheckSearchTime();
@@ -457,6 +456,11 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
         // a beta cutoff.
         RecordKillerMove(move, ply);
         if (move.castling_type == kNA) {
+          Move prev_move;
+          if (board_->GetPrevMove(prev_move) && prev_move.castling_type == kNA) {
+            countermove_table_[prev_move.moving_piece][prev_move.target_sq] = move;
+          }
+
           UpdateHistoryHeuristic(move, depth * depth);
           for (const Move& quiet_move : searched_quiet_moves) {
             // Add history maluses for quiet moves that were searched
@@ -592,10 +596,16 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
     } else if (move.castling_type != kNA) {
       history_silent_move_pairs.emplace_back(move, 0);
     } else {
-      // Use the history heuristic to order silent, non-killer moves.
+      // Use history and countermove heuristics to order silent, non-killer moves.
       S8 player_to_move = board_->GetPlayerToMove();
+      int move_bonus = history_heuristic_[player_to_move][move.moving_piece][move.target_sq];
+      Move prev_move;
+      if (board_->GetPrevMove(prev_move) && prev_move.castling_type == kNA
+          && move == countermove_table_[prev_move.moving_piece][prev_move.target_sq]) {
+        move_bonus += kCountermoveBonus;
+      }
       history_silent_move_pairs.emplace_back(
-        move, history_heuristic_[player_to_move][move.moving_piece][move.target_sq]);
+        move, move_bonus);
     }
   }
 
