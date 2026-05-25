@@ -19,6 +19,7 @@
   - [Test Harness](#test-harness)
   - [Benchmarking](#benchmarking)
   - [Generating Move Tables](#generating-move-tables)
+  - [NNUE Training](#nnue-training)
 - [Implementation](#implementation)
   - [Board Representation](#board-representation)
   - [Move Generation](#move-generation)
@@ -59,6 +60,11 @@ The bot runs the same engine described below, connected via the UCI protocol.
 The included `Makefile` supports both GNU/Linux and macOS. The [Boost library](https://www.boost.org/)
 is a requirement and should be installed locally before compilation. `python3` is
 also required to generate the move masks and magic bitboards used by the engine.
+
+For NNUE training, two additional Python packages are needed:
+```
+pip3 install python-chess torch
+```
 
 To verify all dependencies are satisfied before building, run:
 ```
@@ -243,6 +249,51 @@ python3 scripts/mine_magics.py
 
 `make` will automatically regenerate these files if they are missing.
 
+#### NNUE Training
+
+Training the NNUE is a two-step process: generate self-play training data, then train the network.
+
+**Prerequisites:**
+```bash
+pip3 install python-chess torch
+```
+
+**Step 1: Generate training data**
+
+The data generator plays OmegaZero against itself via UCI, recording each position's FEN, material score, and game outcome:
+
+```bash
+# Generate 1000 games at 0.5s/move (~50K-70K positions)
+python3 scripts/generate_training_data.py --games 1000 --st 0.5
+
+# For higher quality data, use longer think times
+python3 scripts/generate_training_data.py --games 500 --st 2.0
+
+# Append more data to an existing file
+python3 scripts/generate_training_data.py --games 1000 --st 0.5 --append
+```
+
+Data is saved to `scripts/nnue_training_data/training_data.txt`. For best results, aim for 5-10M+ positions (e.g., `--games 10000 --st 1.0` run overnight). Random opening diversification (8 random plies per game) is enabled by default to produce varied positions.
+
+**Step 2: Train the network**
+
+```bash
+# Train with default settings (200 epochs, batch size 16384)
+python3 scripts/train_nnue.py
+
+# Custom settings
+python3 scripts/train_nnue.py --epochs 300 --batch 8192 --lr 0.001
+```
+
+Training outputs are saved to `scripts/nnue_training_data/model/`:
+- `best.pt` — best PyTorch checkpoint (by validation loss)
+- `final.pt` — last epoch checkpoint
+- `nnue.bin` — quantized binary weights for C++ inference
+
+The training target blends the search score with the game outcome: `0.7 * sigmoid(score/400) + 0.3 * game_result`. This can be adjusted with `--lmbda`.
+
+**Iterative improvement:** After training an initial NNUE, you can integrate it into the engine, generate new self-play data using the NNUE-equipped engine, and retrain — each cycle produces stronger play.
+
 ### Implementation
 
 #### Board Representation
@@ -307,25 +358,15 @@ J.E.H.Shaw). Slight modifications have been made to the file to aid in parsing.
 
 #### Evaluation
 
-Following in the footsteps of [Fruit](https://www.chessprogramming.org/Fruit), OmegaZero follows a minimalist
-evaluation philosophy, with a "light" evaluation, which scores a board position
-based on the following factors:
-- Raw material
+OmegaZero uses an [NNUE](https://www.chessprogramming.org/NNUE) (Efficiently Updatable Neural Network) for position evaluation, trained on self-play data from the engine's own games.
 
-- Piece position, using the [Piece Square Tables](https://www.chessprogramming.org/Simplified_Evaluation_Function) defined in `piece_sq_tables.cc`
+The NNUE architecture used is [HalfKP](https://www.chessprogramming.org/Stockfish_NNUE). The network takes a sparse input encoding of (king_square, piece_type, piece_square) features — 40,960 features per perspective (white king and black king), of which only ~30 are active in any given position.
 
-- Pawn structure. The engine is aware of [backward pawns](https://www.google.com/search?q=backward+pawns&oq=backward+pawns&aqs=chrome..69i57j0i512j0i22i30j0i390j69i60.1876j1j4&client=ubuntu&sourceid=chrome&ie=UTF-8), [isolated pawns](https://en.wikipedia.org/wiki/Isolated_pawn),
-[passed pawns](https://en.wikipedia.org/wiki/Passed_pawn#:~:text=In%20chess%2C%20a%20passed%20pawn,sometimes%20colloquially%20called%20a%20passer.), [phalanxes](https://www.chessprogramming.org/Duo_Trio_Quart_(Bitboards)), and [defended pawns](https://www.chessprogramming.org/Defended_Pawns_(Bitboards)). It also adds penalties for holes in the king's pawn shield when castled.
+![NNUE Architecture](./figs/nnue_architecture.png "NNUE Architecture")
 
-- [Piece mobility](https://www.chessprogramming.org/Mobility). Counts pseudo-legal squares for knights, bishops, rooks, and queens. Minor pieces exclude squares attacked by enemy pawns.
+The "efficiently updatable" property means that when a move is made, only the few changed features need to be added/removed from the hidden layer accumulator, rather than recomputing the entire input — making inference nearly free inside the search.
 
-- [King safety](https://www.chessprogramming.org/King_Safety). Uses a Toga/Fruit-style attack counting scheme: a king zone is defined as the squares the king can move to plus one rank forward toward the enemy. Enemy non-pawn pieces attacking the zone are counted and weighted (knight=20, bishop=20, rook=40, queen=80), then scaled by an attacker count table that ramps up sharply with multiple attackers converging.
-
-- Misc. bonuses/penalties for the following features: connected rooks, loss of
-[castling rights](https://www.chessprogramming.org/Castling_Rights), [bishop pair](https://www.chessprogramming.org/Bishop_Pair), and [rook behind passed pawn](https://www.chessprogramming.org/Tarrasch_Rule).
-
-We use a [Tapered Eval](https://www.chessprogramming.org/Tapered_Eval) scheme when scoring the position of the king, using
-the formula found [here](https://www.chessprogramming.org/Tapered_Eval#Implementation_example).
+Weights are quantized to `int16` (feature transformer) and `int8` (hidden layers) for fast integer arithmetic during inference. See [NNUE Training](#nnue-training) for how to generate training data and train the network.
 
 ### Performance
 

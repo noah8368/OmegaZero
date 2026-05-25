@@ -80,6 +80,12 @@ check-deps:
 	  || { echo "ERROR: boost not found. Install it:"; \
 	       if [ "$(UNAME_S)" = "Darwin" ]; then echo "  brew install boost"; \
 	       else echo "  sudo apt-get install libboost-program-options-dev"; fi; exit 1; }
+	@python3 -c "import chess" >/dev/null 2>&1 || \
+	  { echo "WARNING: python-chess not found (needed for NNUE data generation)."; \
+	    echo "  pip3 install python-chess"; }
+	@python3 -c "import torch" >/dev/null 2>&1 || \
+	  { echo "WARNING: PyTorch not found (needed for NNUE training)."; \
+	    echo "  pip3 install torch"; }
 	@echo "All dependencies satisfied. Run 'make' to build."
 
 .PHONY: clean
