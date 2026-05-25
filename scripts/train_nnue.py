@@ -17,7 +17,6 @@ Usage:
 """
 
 import argparse
-import math
 import os
 import struct
 import sys
@@ -281,6 +280,140 @@ def compute_target(score, result, lmbda):
     return lmbda * score_sigmoid + (1 - lmbda) * result
 
 
+def generate_plots(train_losses, val_losses, plot_dir,
+                    model, val_loader, device, lmbda):
+    """Generate and save training plots."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    plot_dir = Path(plot_dir)
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    epochs = range(1, len(train_losses) + 1)
+
+    # Loss curve
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(epochs, train_losses, label="Train Loss")
+    ax.plot(epochs, val_losses, label="Val Loss")
+    best_epoch = val_losses.index(min(val_losses)) + 1
+    ax.axvline(best_epoch, color="gray", linestyle="--", alpha=0.5,
+               label=f"Best val (epoch {best_epoch})")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("MSE Loss")
+    ax.set_title("NNUE Training Loss")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.savefig(plot_dir / "loss.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    # Collect predictions on validation set
+    model.eval()
+    all_predicted = []
+    all_actual = []
+    all_results = []
+    all_material = []
+    with torch.no_grad():
+        for wf, bf, score, result, stm in val_loader:
+            wf = wf.to(device)
+            bf = bf.to(device)
+            stm = stm.to(device)
+
+            pred = model(wf, bf, stm).squeeze(1)
+            pred_cp = pred * SCORE_SCALE
+            all_predicted.extend(pred_cp.cpu().tolist())
+            all_actual.extend(score.tolist())
+            all_results.extend(result.tolist())
+            material = wf.sum(dim=1)
+            all_material.extend(material.tolist())
+
+    # Score accuracy: predicted vs actual
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.scatter(all_actual, all_predicted, alpha=0.15, s=4)
+    lo = min(min(all_actual), min(all_predicted))
+    hi = max(max(all_actual), max(all_predicted))
+    ax.plot([lo, hi], [lo, hi], "r--", linewidth=1, label="Perfect prediction")
+    ax.set_xlabel("Actual Score (cp)")
+    ax.set_ylabel("Predicted Score (cp)")
+    ax.set_title("NNUE Score Accuracy (Validation Set)")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    ax.set_aspect("equal")
+    fig.savefig(plot_dir / "score_accuracy.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    # Score distribution: predicted vs actual histograms
+    fig, ax = plt.subplots(figsize=(10, 6))
+    clip = 2000
+    clipped_actual = [max(-clip, min(clip, s)) for s in all_actual]
+    clipped_predicted = [max(-clip, min(clip, s)) for s in all_predicted]
+    bins = 80
+    ax.hist(clipped_actual, bins=bins, alpha=0.5, label="Actual", density=True)
+    ax.hist(clipped_predicted, bins=bins, alpha=0.5, label="Predicted", density=True)
+    ax.set_xlabel("Score (cp)")
+    ax.set_ylabel("Density")
+    ax.set_title("Score Distribution (Validation Set)")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.savefig(plot_dir / "score_distribution.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    # Error by game phase: prediction error vs piece count
+    errors = [abs(p - a) for p, a in zip(all_predicted, all_actual)]
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.scatter(all_material, errors, alpha=0.1, s=4)
+    # Bin by material count and plot mean error
+    import numpy as np
+    mat_arr = np.array(all_material)
+    err_arr = np.array(errors)
+    bin_edges = np.linspace(mat_arr.min(), mat_arr.max(), 20)
+    bin_centers = []
+    bin_means = []
+    for i in range(len(bin_edges) - 1):
+        mask = (mat_arr >= bin_edges[i]) & (mat_arr < bin_edges[i + 1])
+        if mask.sum() > 0:
+            bin_centers.append((bin_edges[i] + bin_edges[i + 1]) / 2)
+            bin_means.append(err_arr[mask].mean())
+    ax.plot(bin_centers, bin_means, "r-o", linewidth=2, markersize=5,
+            label="Mean error")
+    ax.set_xlabel("Piece Count (active features)")
+    ax.set_ylabel("Absolute Error (cp)")
+    ax.set_title("Prediction Error by Game Phase")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.savefig(plot_dir / "error_by_phase.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    # Win/draw/loss calibration: actual win% vs predicted score bucket
+    paired = list(zip(all_predicted, all_results))
+    paired.sort(key=lambda x: x[0])
+    bucket_size = max(1, len(paired) // 15)
+    bucket_scores = []
+    bucket_winrates = []
+    for i in range(0, len(paired), bucket_size):
+        bucket = paired[i:i + bucket_size]
+        if len(bucket) < 5:
+            continue
+        avg_score = sum(s for s, _ in bucket) / len(bucket)
+        avg_result = sum(r for _, r in bucket) / len(bucket)
+        bucket_scores.append(avg_score)
+        bucket_winrates.append(avg_result * 100)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(bucket_scores, bucket_winrates, "b-o", linewidth=2, markersize=6)
+    # Expected sigmoid curve
+    xs = np.linspace(min(bucket_scores), max(bucket_scores), 200)
+    expected = 100.0 / (1.0 + np.exp(-xs / SCORE_SCALE))
+    ax.plot(xs, expected, "r--", linewidth=1, alpha=0.7, label="Expected (sigmoid)")
+    ax.set_xlabel("Predicted Score (cp)")
+    ax.set_ylabel("Actual Win Rate (%)")
+    ax.set_title("Win Rate Calibration")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.savefig(plot_dir / "calibration.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"  Plots saved to: {plot_dir}")
+
+
 def train(args):
     device = torch.device("mps" if torch.backends.mps.is_available()
                           else "cuda" if torch.cuda.is_available()
@@ -322,6 +455,9 @@ def train(args):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     best_val_loss = float("inf")
+    train_losses = []
+    val_losses = []
+    learning_rates = []
 
     epoch_pbar = tqdm(range(1, args.epochs + 1), desc="Training", unit="epoch")
     for epoch in epoch_pbar:
@@ -377,6 +513,10 @@ def train(args):
         val_loss = val_loss_sum / val_count
         lr = optimizer.param_groups[0]["lr"]
 
+        train_losses.append(train_loss)
+        val_losses.append(val_loss)
+        learning_rates.append(lr)
+
         improved = ""
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -401,6 +541,13 @@ def train(args):
     weights_dir.mkdir(parents=True, exist_ok=True)
     export_path = weights_dir / "nnue.bin"
     export_quantized(model, export_path)
+
+    # Generate training plots
+    model.to(device)
+    plot_dir = repo_root / "results" / "training_plots"
+    generate_plots(train_losses, val_losses, plot_dir,
+                   model, val_loader, device, args.lmbda)
+
     print(f"\nTraining complete.")
     print(f"  Best validation loss: {best_val_loss:.6f}")
     print(f"  PyTorch checkpoints: {out_dir}")
