@@ -27,6 +27,7 @@
   - [Opening Book](#opening-book)
   - [Evaluation](#evaluation)
 - [Performance](#performance)
+  - [Changelog](#changelog)
   - [NPS Comparison](#nodes-per-second-nps-comparison)
   - [Stockfish ELO Comparison](#stockfish-elo-comparison)
   - [Example Games](#example-games)
@@ -297,7 +298,9 @@ The [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA) is used to ord
 
 Each column in the table below shows the cumulative effect of adding one more search feature on top of all previous ones. kNPS = thousands of nodes per second; depth = search depth reached.
 
-*V4 Feature Stacking Benchmark (5s/position)*
+The table below shows how each search feature contributes when stacked cumulatively. Each column adds one feature on top of all previous ones.<sup>3</sup>
+
+*Search Feature Stacking Benchmark (5s/position)*
 | Position | No Features | + LMR | + NMP + History | + RFP | + SEE | + Futility | + LMP | + Countermove | + Hist LMR |
 |----------|-------------|-------|-----------------|-------|-------|------------|-------|---------------|------------|
 | opening  | 1084k, d6   | 997k, d8  | 906k, d12 | 911k, d11 | 537k, d12 | 508k, d14 | 431k, d14 | 472k, d14 | 512k, d13 |
@@ -337,17 +340,21 @@ the formula found [here](https://www.chessprogramming.org/Tapered_Eval#Implement
 
 ### Performance
 
+#### Changelog
+
+- **v1** — Baseline engine: bitboards, magic move gen, MTD(f) search, handcrafted eval, opening book
+- **v2** — Persistent TT, eliminated double move gen (2.7x NPS), check extensions, LMR fix
+- **v3** — Exponential passed pawn bonus, rook-behind-passer fix, piece mobility, Toga/Fruit king safety
+- **v4** — Full search tuning: NMP, history heuristic, RFP, SEE, futility pruning, LMP, countermove heuristic, history-aware LMR
+- **v5** — NNUE evaluation (HalfKP), self-play training pipeline, handcrafted eval fallback
+
 #### Nodes Per Second (NPS) Comparison
 
 NPS (nodes per second) is measured by the bench harness, averaging across four positions
 (opening, midgame, complex midgame, endgame) at 5s/position. See
 [Benchmarking](#benchmarking) for details.
 
-| Version | Avg NPS |
-|---------|---------|
-| v1      | 197k   |
-| v2      | 507k   |
-| v3      | 498k   |
+![NPS by Version](./figs/version_nps_plot.png "Nodes Per Second by Version")
 
 #### Stockfish ELO Comparison
 
@@ -355,26 +362,7 @@ ELO was estimated by running OmegaZero against Stockfish at various `UCI_Elo`
 levels using cutechess-cli (20 games per level, 5s/move). See
 [ELO Testing](#elo-testing) for details.
 
-*v1 Results*
-| Stockfish ELO | Win Rate | ELO Estimate | 
-|---|---|---|
-| 1320 | 90% | 1701.7 |
-| 1700 | 55% | 1734.9 |
-| 2100 | 30% | 1952.8 |
-
-*v2 Results*
-| Stockfish ELO | Win Rate | ELO Estimate | 
-|---|---|---|
-| 1320 | 100% | 2519.8 |
-| 1700 | 50% | 1700 |
-| 2100 | 35% | 1992.5 |
-
-*v3 Results*
-| Stockfish ELO | Win Rate | ELO Estimate | 
-|---|---|---|
-| 1320 | 97.5% | 1956.4 |
-| 1700 | 75% | 1890.8 |
-| 2100 | 35% | 1992.5 |
+![ELO by Version](./figs/version_elo_plot.png "ELO by Stockfish Level and Version")
 
 #### Example Games
 
@@ -404,3 +392,4 @@ Final Position
 
 <sup>1</sup> Lichess rating
 <sup>2</sup> Chess.com rating
+<sup>3</sup> Benchmarked on [v4](#changelog), the first version with all search features. Earlier versions lacked the features being measured.
