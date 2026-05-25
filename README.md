@@ -293,7 +293,7 @@ Moves are put in the following order:
 1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
 2. Good captures (SEE value >= 0) ordered by [SEE Heuristic](https://www.chessprogramming.org/Static_Exchange_Evaluation)
 3. Two [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
-4. All other quiet moves, ordered by [History Heuristic](https://www.chessprogramming.org/History_Heuristic)
+4. All other quiet moves, ordered by [History Heuristic](https://www.chessprogramming.org/History_Heuristic) and [Countermove Heuristic](https://www.chessprogramming.org/Countermove_Heuristic)
 5. Bad captures (SEE value < 0) ordered by SEE Heuristic
 
 The [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA) is used to order captures in Quiescence Search, with all quiets placed after, unordered.
