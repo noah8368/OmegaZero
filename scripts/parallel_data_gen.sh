@@ -9,8 +9,8 @@
 
 set -e
 
-WORKERS=8
-TOTAL_GAMES=22000
+WORKERS=10
+TOTAL_GAMES=44500
 ST=2.0
 ENGINE="build/OmegaZero"
 OUT_DIR="scripts/nnue_training_data"
