@@ -31,7 +31,7 @@ from pathlib import Path
 
 START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
-MAX_MOVES_PER_GAME = 400
+MAX_MOVES_PER_GAME = 150
 SKIP_FIRST_N_PLIES = 8
 RANDOM_OPENING_PLIES = 8
 
@@ -198,10 +198,15 @@ def game_result(board):
         return 0.5
 
 
+ADJUDICATE_THRESHOLD = 1000
+ADJUDICATE_COUNT = 5
+
 def play_game_with_eval(engine, movetime_ms, use_random_openings):
     """Play one self-play game capturing search scores via UCI info lines.
 
     Falls back to material eval if the engine doesn't emit 'info ... score cp'.
+    Games are adjudicated as wins if the score exceeds ADJUDICATE_THRESHOLD
+    for ADJUDICATE_COUNT consecutive moves.
     """
     import chess
 
@@ -217,6 +222,7 @@ def play_game_with_eval(engine, movetime_ms, use_random_openings):
         board.push_uci(m)
 
     positions = []
+    consecutive_high = 0
 
     for ply in range(len(uci_moves), MAX_MOVES_PER_GAME):
         if board.is_game_over():
@@ -239,6 +245,15 @@ def play_game_with_eval(engine, movetime_ms, use_random_openings):
 
         if ply >= SKIP_FIRST_N_PLIES and not board.is_check():
             positions.append((fen, score_white))
+
+        if score_cp is not None and abs(score_cp) >= ADJUDICATE_THRESHOLD:
+            consecutive_high += 1
+        else:
+            consecutive_high = 0
+
+        if consecutive_high >= ADJUDICATE_COUNT:
+            result = 1.0 if score_white > 0 else 0.0
+            return positions, result
 
         try:
             board.push_uci(bestmove)

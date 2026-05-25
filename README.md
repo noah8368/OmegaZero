@@ -262,20 +262,28 @@ pip3 install python-chess torch tqdm
 
 **Step 1: Generate training data**
 
-The data generator plays OmegaZero against itself via UCI, recording each position's FEN, material score, and game outcome:
+The data generator plays OmegaZero against itself via UCI, recording each position's FEN, search score, and game outcome.
+
+For large runs, use the parallel script to distribute across multiple cores:
 
 ```bash
-# Generate 1000 games at 0.5s/move (~50K-70K positions)
-python3 scripts/generate_training_data.py --games 1000 --st 0.5
+# Generate ~2M positions using 8 parallel workers at 2s/move (~5 days)
+caffeinate ./scripts/parallel_data_gen.sh --workers 8 --games 22000 --st 2
 
-# For higher quality data, use longer think times
-python3 scripts/generate_training_data.py --games 500 --st 2.0
+# Smaller test run
+caffeinate ./scripts/parallel_data_gen.sh --workers 4 --games 1000 --st 0.5
+```
+
+For single-threaded runs:
+
+```bash
+python3 scripts/generate_training_data.py --games 1000 --st 0.5
 
 # Append more data to an existing file
 python3 scripts/generate_training_data.py --games 1000 --st 0.5 --append
 ```
 
-Data is saved to `scripts/nnue_training_data/training_data.txt`. For best results, aim for 5-10M+ positions (e.g., `--games 10000 --st 1.0` run overnight). Random opening diversification (8 random plies per game) is enabled by default to produce varied positions.
+Data is saved to `scripts/nnue_training_data/training_data.txt`. For best results, aim for 1-5M+ positions. Random opening diversification (8 random plies per game) is enabled by default to produce varied positions.
 
 **Step 2: Train the network**
 
