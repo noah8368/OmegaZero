@@ -181,10 +181,10 @@ python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50 --st
 
 Regenerate plots and summary table from existing results:
 ```
-python3 scripts/elo_test.py plot --input elo_results
+python3 scripts/elo_test.py plot --input results
 ```
 
-Results are saved to `elo_results/` by default:
+Results are saved to `results/` by default:
 - `games.csv` — per-game results with running ELO estimates
 - `summary.csv` — win/draw/loss totals and ELO estimate per opponent level
 - `elo_convergence.png` — ELO estimate over games played (one line per level)

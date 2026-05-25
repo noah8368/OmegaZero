@@ -4,8 +4,7 @@ __pycache__
 **/.vscode/**
 games
 cutechess
-elo_results
+results
 *.pgn
 .DS_Store
-v4_benchmark.csv
 scripts/nnue_training_data

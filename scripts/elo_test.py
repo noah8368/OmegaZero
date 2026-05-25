@@ -12,7 +12,7 @@ Usage:
 Examples:
     python3 scripts/elo_test.py run --games 20 --st 0.5
     python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50
-    python3 scripts/elo_test.py plot --input elo_results
+    python3 scripts/elo_test.py plot --input results
 """
 
 import argparse
@@ -347,14 +347,14 @@ def main():
         help="Fixed time per move in seconds (default: 0.1)",
     )
     run_p.add_argument(
-        "--output", default="elo_results",
-        help="Output directory (default: elo_results)",
+        "--output", default="results",
+        help="Output directory (default: results)",
     )
 
     plot_p = sub.add_parser("plot", help="Generate plots from existing results")
     plot_p.add_argument(
-        "--input", default="elo_results",
-        help="Directory with CSV results (default: elo_results)",
+        "--input", default="results",
+        help="Directory with CSV results (default: results)",
     )
 
     args = parser.parse_args()
