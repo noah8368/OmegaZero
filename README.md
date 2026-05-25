@@ -27,6 +27,8 @@
   - [Search](#search)
   - [Opening Book](#opening-book)
   - [Evaluation](#evaluation)
+    - [NNUE Eval](#nnue-eval)
+    - [Handcrafted Eval](#handcrafted-eval)
 - [Performance](#performance)
   - [NPS Comparison](#nodes-per-second-nps-comparison)
   - [Stockfish ELO Comparison](#stockfish-elo-comparison)
@@ -358,6 +360,8 @@ J.E.H.Shaw). Slight modifications have been made to the file to aid in parsing.
 
 #### Evaluation
 
+##### NNUE Eval
+
 OmegaZero uses an [NNUE](https://www.chessprogramming.org/NNUE) (Efficiently Updatable Neural Network) for position evaluation, trained on self-play data from the engine's own games.
 
 The NNUE architecture used is [HalfKP](https://www.chessprogramming.org/Stockfish_NNUE). The network takes a sparse input encoding of (king_square, piece_type, piece_square) features — 40,960 features per perspective (white king and black king), of which only ~30 are active in any given position.
@@ -367,6 +371,30 @@ The NNUE architecture used is [HalfKP](https://www.chessprogramming.org/Stockfis
 The "efficiently updatable" property means that when a move is made, only the few changed features need to be added/removed from the hidden layer accumulator, rather than recomputing the entire input — making inference nearly free inside the search.
 
 Weights are quantized to `int16` (feature transformer) and `int8` (hidden layers) for fast integer arithmetic during inference. See [NNUE Training](#nnue-training) for how to generate training data and train the network.
+
+##### Handcrafted Eval
+
+If no NNUE weights file is found (at the default `nnue_weights/nnue.bin` or the path specified via `--nnue`), the engine falls back to a handcrafted evaluation function.
+
+Following in the footsteps of [Fruit](https://www.chessprogramming.org/Fruit), OmegaZero follows a minimalist
+evaluation philosophy, with a "light" evaluation, which scores a board position
+based on the following factors:
+- Raw material
+
+- Piece position, using the [Piece Square Tables](https://www.chessprogramming.org/Simplified_Evaluation_Function) defined in `piece_sq_tables.cc`
+
+- Pawn structure. The engine is aware of [backward pawns](https://www.google.com/search?q=backward+pawns&oq=backward+pawns&aqs=chrome..69i57j0i512j0i22i30j0i390j69i60.1876j1j4&client=ubuntu&sourceid=chrome&ie=UTF-8), [isolated pawns](https://en.wikipedia.org/wiki/Isolated_pawn),
+[passed pawns](https://en.wikipedia.org/wiki/Passed_pawn#:~:text=In%20chess%2C%20a%20passed%20pawn,sometimes%20colloquially%20called%20a%20passer.), [phalanxes](https://www.chessprogramming.org/Duo_Trio_Quart_(Bitboards)), and [defended pawns](https://www.chessprogramming.org/Defended_Pawns_(Bitboards)). It also adds penalties for holes in the king's pawn shield when castled.
+
+- [Piece mobility](https://www.chessprogramming.org/Mobility). Counts pseudo-legal squares for knights, bishops, rooks, and queens. Minor pieces exclude squares attacked by enemy pawns.
+
+- [King safety](https://www.chessprogramming.org/King_Safety). Uses a Toga/Fruit-style attack counting scheme: a king zone is defined as the squares the king can move to plus one rank forward toward the enemy. Enemy non-pawn pieces attacking the zone are counted and weighted (knight=20, bishop=20, rook=40, queen=80), then scaled by an attacker count table that ramps up sharply with multiple attackers converging.
+
+- Misc. bonuses/penalties for the following features: connected rooks, loss of
+[castling rights](https://www.chessprogramming.org/Castling_Rights), [bishop pair](https://www.chessprogramming.org/Bishop_Pair), and [rook behind passed pawn](https://www.chessprogramming.org/Tarrasch_Rule).
+
+We use a [Tapered Eval](https://www.chessprogramming.org/Tapered_Eval) scheme when scoring the position of the king, using
+the formula found [here](https://www.chessprogramming.org/Tapered_Eval#Implementation_example).
 
 ### Performance
 

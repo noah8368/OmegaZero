@@ -206,10 +206,133 @@ auto Board::DoublePawnPushLegal(S8 file) const -> bool {
 }
 
 auto Board::Evaluate() -> int {
-  S8 white_king_sq = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kWhite]);
-  S8 black_king_sq = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kBlack]);
-  return g_nnue.Forward(white_king_sq, black_king_sq,
-                        piece_layout_, player_layout_, player_to_move_);
+  if (g_nnue.IsLoaded()) {
+    S8 white_king_sq = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kWhite]);
+    S8 black_king_sq = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kBlack]);
+    return g_nnue.Forward(white_king_sq, black_king_sq,
+                          piece_layout_, player_layout_, player_to_move_);
+  }
+
+  // Handcrafted eval fallback (used when no NNUE weights are loaded).
+  int board_score = 0;
+  Bitboard white_pawn_attackspan;
+  Bitboard white_pawn_attack_map;
+  Bitboard white_pawn_defender_map;
+  Bitboard black_pawn_attackspan;
+  Bitboard black_pawn_attack_map;
+  Bitboard black_pawn_defender_map;
+  // Count material and add positional bonuses using Piece Square Tables.
+  board_score += EvaluatePiecePositions(
+      white_pawn_attackspan, white_pawn_attack_map, white_pawn_defender_map,
+      black_pawn_attackspan, black_pawn_attack_map, black_pawn_defender_map);
+
+  // Evaluate pawn structure.
+  int pawn_eval;
+  U64 pawn_hash = GetPawnHash();
+  if (!pawn_table_.Access(pawn_hash, pawn_eval)) {
+    pawn_eval = EvaluatePawnStructure(
+        white_pawn_attackspan, white_pawn_attack_map, white_pawn_defender_map,
+        black_pawn_attackspan, black_pawn_attack_map, black_pawn_defender_map);
+    pawn_table_.Update(pawn_hash, pawn_eval);
+  }
+  board_score += pawn_eval;
+
+  // Evaluate miscelaneous piece bonuses/penalties.
+  constexpr int kBishopPairBonus = 12;
+  constexpr int kConnectedRookBonus = 25;
+  constexpr int kCastlingRightsLossPenalty = 6;
+  constexpr int kMobilityWeight[kNumPieceTypes] = {0, 4, 3, 2, 1, 0};
+  S8 player_side;
+  S8 first_sq;
+  Bitboard bishops;
+  Bitboard rooks;
+  for (S8 player = kWhite; player <= kBlack; ++player) {
+    player_side = (player == kWhite) ? 1 : -1;
+
+    // Add a bonus for a bishop pair.
+    bishops = GetPiecesByType(kBishop, player);
+    if (GetNumSetSq(bishops) >= 2) {
+      board_score += (player_side * kBishopPairBonus);
+    }
+
+    // Add a bonus for connected rooks.
+    rooks = GetPiecesByType(kRook, player);
+    if (GetNumSetSq(rooks) >= 2) {
+      first_sq = GetSqOfFirstPiece(rooks);
+      if (static_cast<bool>(GetAttackMap(player, first_sq, kRook) & rooks)) {
+        board_score += (player_side * kConnectedRookBonus);
+      }
+    }
+
+    // Add a penalty for losing castling rights.
+    if (!castling_status_[player]) {
+      if (!castling_rights_[player][kQueenSide]) {
+        board_score -= (player_side * kCastlingRightsLossPenalty);
+      }
+      if (!castling_rights_[player][kKingSide]) {
+        board_score -= (player_side * kCastlingRightsLossPenalty);
+      }
+    }
+
+    // Evaluate mobility: count pseudo-legal squares for each non-pawn, non-king
+    // piece. For knights and bishops, exclude squares attacked by enemy pawns.
+    Bitboard friendly_pieces = GetPiecesByType(kNA, player);
+    Bitboard enemy_pawn_attacks = (player == kWhite) ? black_pawn_attack_map
+                                                     : white_pawn_attack_map;
+    for (S8 piece = kKnight; piece <= kQueen; ++piece) {
+      Bitboard pieces = GetPiecesByType(piece, player);
+      while (pieces) {
+        S8 sq = GetSqOfFirstPiece(pieces);
+        Bitboard moves = GetAttackMap(player, sq, piece) & ~friendly_pieces;
+        if (piece == kKnight || piece == kBishop) {
+          moves &= ~enemy_pawn_attacks;
+        }
+        board_score += player_side * GetNumSetSq(moves) * kMobilityWeight[piece];
+        RemoveFirstPiece(pieces);
+      }
+    }
+
+    // King safety: penalize when enemy pieces attack squares around our king.
+    constexpr int kKingSafetyPieceWeight[kNumPieceTypes] = {0, 20, 20, 40, 80, 0};
+    constexpr int kAttackWeight[] = {0, 0, 50, 75, 88, 94, 97, 99};
+    constexpr int kMaxAttackers = 7;
+
+    S8 enemy = GetOtherPlayer(player);
+    Bitboard king_board = GetPiecesByType(kKing, player);
+    S8 king_sq = GetSqOfFirstPiece(king_board);
+    Bitboard king_zone = kNonSliderAttackMaps[kKingAttack][king_sq] |
+                         (static_cast<Bitboard>(1) << king_sq);
+    // Extend the zone forward by one rank toward the enemy.
+    if (player == kWhite) {
+      king_zone |= (king_zone << 8) & ~kRankMasks[kRank1];
+    } else {
+      king_zone |= (king_zone >> 8) & ~kRankMasks[kRank8];
+    }
+
+    int attacking_pieces_count = 0;
+    int value_of_attacks = 0;
+    for (S8 piece = kKnight; piece <= kQueen; ++piece) {
+      Bitboard enemy_pieces = GetPiecesByType(piece, enemy);
+      while (enemy_pieces) {
+        S8 sq = GetSqOfFirstPiece(enemy_pieces);
+        Bitboard attack = GetAttackMap(enemy, sq, piece) & king_zone;
+        if (attack) {
+          ++attacking_pieces_count;
+          value_of_attacks +=
+              GetNumSetSq(attack) * kKingSafetyPieceWeight[piece];
+        }
+        RemoveFirstPiece(enemy_pieces);
+      }
+    }
+    if (attacking_pieces_count > kMaxAttackers) {
+      attacking_pieces_count = kMaxAttackers;
+    }
+    board_score -= (player_side * value_of_attacks
+                    * kAttackWeight[attacking_pieces_count] / 100);
+  }
+
+  S8 moving_side = (player_to_move_ == kWhite) ? 1 : -1;
+  return board_score * moving_side;
 }
 
 auto Board::GetSee(const Move& capture) const -> int {
