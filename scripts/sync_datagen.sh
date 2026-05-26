@@ -1,33 +1,32 @@
 #!/usr/bin/env bash
 # Sync datagen output to a remote machine (e.g. laptop) twice daily.
 # Sends an email status report after each sync.
+# All settings read from nnue/config.json.
 #
 # Usage:
-#   ./scripts/sync_datagen.sh user@laptop:~/OmegaZero/nnue/data/ --email noahhimed1@gmail.com
-#   ./scripts/sync_datagen.sh user@laptop:~/OmegaZero/nnue/data/ --email noahhimed1@gmail.com --name epyc-1 --games 1700000
-#
-# Requires GMAIL_APP_PASSWORD env var for email notifications.
+#   ./scripts/sync_datagen.sh
 
 set -euo pipefail
 
-DEST="${1:?Usage: $0 <user@host:/path/to/dest/> [options]}"
-INTERVAL=43200  # 12 hours = 2x/day
-DATA_DIR="nnue/data"
-EMAIL=""
-NAME=""
-TOTAL_GAMES=0
+CONFIG="nnue/config.json"
+if [[ ! -f "$CONFIG" ]]; then
+    echo "Error: $CONFIG not found. Copy nnue/config.json.example and fill it in."
+    exit 1
+fi
 
-shift
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --interval) INTERVAL="$2"; shift 2 ;;
-        --data-dir) DATA_DIR="$2"; shift 2 ;;
-        --email) EMAIL="$2"; shift 2 ;;
-        --name) NAME="$2"; shift 2 ;;
-        --games) TOTAL_GAMES="$2"; shift 2 ;;
-        *) echo "Unknown option: $1"; exit 1 ;;
-    esac
-done
+read_cfg() { python3 -c "import json; c=json.load(open('$CONFIG')); print(c.get('$1','$2'))" ; }
+
+DEST=$(read_cfg sync_dest "")
+INTERVAL=$(read_cfg sync_interval 43200)
+DATA_DIR=$(read_cfg output "nnue/data")
+EMAIL=$(read_cfg email "")
+NAME=$(read_cfg name "")
+TOTAL_GAMES=$(read_cfg games 0)
+
+if [[ -z "$DEST" ]]; then
+    echo "Error: sync_dest not set in $CONFIG (e.g. \"user@laptop:~/OmegaZero/nnue/data/\")"
+    exit 1
+fi
 
 if [[ ! -d "$DATA_DIR" ]]; then
     echo "Error: $DATA_DIR does not exist. Is datagen running?"

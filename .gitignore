@@ -7,5 +7,6 @@ cutechess
 results
 *.pgn
 .DS_Store
-nnue
+nnue/*
+!nnue/config.json.example
 config.json

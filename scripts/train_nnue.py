@@ -690,48 +690,61 @@ def export_quantized(model, path):
 #  Entry point
 # --------------------------------------------------------------------------- #
 
+def load_config():
+    import json
+    cfg_path = os.path.join(os.path.dirname(__file__), "..", "nnue", "config.json")
+    try:
+        with open(cfg_path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
 def main():
+    cfg = load_config()
+    t = cfg.get("training", {})
+
     parser = argparse.ArgumentParser(
         description="Train an NNUE evaluation network for OmegaZero"
     )
     parser.add_argument(
-        "--data", default="nnue/data",
+        "--data", default=t.get("data", "nnue/data"),
         help="Path to training data file or directory (auto-resolves latest run)",
     )
     parser.add_argument(
-        "--val-data", default=None,
+        "--val-data", default=t.get("val_data"),
         help="Path to separate validation data file (from different games, avoids contamination)",
     )
     parser.add_argument(
-        "--output", default="nnue/model",
+        "--output", default=t.get("output", "nnue/model"),
         help="Output directory for model checkpoints (default: nnue/model)",
     )
     parser.add_argument(
-        "--epochs", type=int, default=200,
+        "--epochs", type=int, default=t.get("epochs", 200),
         help="Number of training epochs (default: 200)",
     )
     parser.add_argument(
-        "--batch", type=int, default=16384,
+        "--batch", type=int, default=t.get("batch", 16384),
         help="Batch size (default: 16384)",
     )
     parser.add_argument(
-        "--lr", type=float, default=1e-3,
+        "--lr", type=float, default=t.get("lr", 1e-3),
         help="Initial learning rate (default: 0.001)",
     )
     parser.add_argument(
-        "--wd", type=float, default=1e-6,
+        "--wd", type=float, default=t.get("wd", 1e-6),
         help="Weight decay (default: 1e-6)",
     )
     parser.add_argument(
-        "--lmbda", type=float, default=0.7,
+        "--lmbda", type=float, default=t.get("lmbda", 0.7),
         help="Blend factor: lambda*sigmoid(score) + (1-lambda)*result (default: 0.7)",
     )
     parser.add_argument(
-        "--val-split", type=float, default=0.05,
+        "--val-split", type=float, default=t.get("val_split", 0.05),
         help="Fraction of data for validation (default: 0.05)",
     )
     parser.add_argument(
-        "--save-every", type=int, default=50,
+        "--save-every", type=int, default=t.get("save_every", 50),
         help="Save checkpoint every N epochs (default: 50)",
     )
     args = parser.parse_args()

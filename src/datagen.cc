@@ -53,6 +53,56 @@ constexpr int kMaxAbsScore = 3000;
 static const string kStartFen =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+struct Config {
+  int games = 100;
+  float st = 0.5f;
+  int workers = 1;
+  string output = "nnue/data";
+  float val_fraction = 0.1f;
+  string email;
+  string name;
+};
+
+static auto TrimQuotes(const string& s) -> string {
+  if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
+    return s.substr(1, s.size() - 2);
+  return s;
+}
+
+static auto LoadConfig(const string& path) -> Config {
+  Config cfg;
+  std::ifstream f(path);
+  if (!f.is_open()) return cfg;
+
+  string line;
+  while (std::getline(f, line)) {
+    auto colon = line.find(':');
+    if (colon == string::npos) continue;
+    string key = line.substr(0, colon);
+    string val = line.substr(colon + 1);
+    // Strip whitespace, quotes, trailing commas
+    auto strip = [](string& s) {
+      while (!s.empty() && (s.back() == ',' || s.back() == ' ' || s.back() == '\t'))
+        s.pop_back();
+      while (!s.empty() && (s.front() == ' ' || s.front() == '\t'))
+        s.erase(s.begin());
+    };
+    strip(key);
+    strip(val);
+    key = TrimQuotes(key);
+    val = TrimQuotes(val);
+
+    if (key == "games") cfg.games = std::stoi(val);
+    else if (key == "st") cfg.st = std::stof(val);
+    else if (key == "workers") cfg.workers = std::stoi(val);
+    else if (key == "output") cfg.output = val;
+    else if (key == "val_fraction") cfg.val_fraction = std::stof(val);
+    else if (key == "email") cfg.email = val;
+    else if (key == "name") cfg.name = val;
+  }
+  return cfg;
+}
+
 static auto GetGitHash() -> string {
   std::array<char, 64> buf{};
   string hash = "unknown";
@@ -388,43 +438,15 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
  }
 }
 
-auto main(int argc, char* argv[]) -> int {
-  int total_games = 100;
-  float search_time = 0.5f;
-  int num_workers = 1;
-  string output_dir = "nnue/data";
-  float validation_fraction = 0.1f;
-
-  for (int i = 1; i < argc; ++i) {
-    string arg(argv[i]);
-    if (arg == "--games" && i + 1 < argc) total_games = atoi(argv[++i]);
-    else if (arg == "--st" && i + 1 < argc) search_time = static_cast<float>(atof(argv[++i]));
-    else if (arg == "--workers" && i + 1 < argc) num_workers = atoi(argv[++i]);
-    else if (arg == "--output" && i + 1 < argc) output_dir = argv[++i];
-    else if (arg == "--val-fraction" && i + 1 < argc) validation_fraction = static_cast<float>(atof(argv[++i]));
-    else if (arg == "--email" && i + 1 < argc) g_email = argv[++i];
-    else if (arg == "--name" && i + 1 < argc) g_name = argv[++i];
-    else if (arg == "--help") {
-      cout << "Usage: datagen [OPTIONS]\n"
-           << "  --games N          Total self-play games (default: 100)\n"
-           << "  --st S             Search time per move in seconds (default: 0.5)\n"
-           << "  --workers W        Number of parallel threads (default: 1)\n"
-           << "  --output DIR       Output directory (default: nnue/data)\n"
-           << "  --val-fraction F   Fraction of games for validation (default: 0.1)\n"
-           << "  --email ADDR       Email progress at 25/50/75/100% (requires GMAIL_APP_PASSWORD)\n"
-           << "  --name NAME        Machine name for email subject lines (e.g. epyc-1)\n"
-           << "\n"
-           << "Quality filters (compile-time constants):\n"
-           << "  Skip first " << kSkipFirstNPlies << " plies\n"
-           << "  Sample every " << kSampleInterval << "th eligible position\n"
-           << "  Skip positions with |score| > " << kMaxAbsScore << "cp\n"
-           << "  Skip positions in check\n"
-           << "  Zobrist hash deduplication per worker\n"
-           << "  Adjudicate at " << kAdjudicateThreshold << "cp for "
-           << kAdjudicateCount << " consecutive moves\n";
-      return 0;
-    }
-  }
+auto main() -> int {
+  Config cfg = LoadConfig("nnue/config.json");
+  int total_games = cfg.games;
+  float search_time = cfg.st;
+  int num_workers = cfg.workers;
+  string output_dir = cfg.output;
+  float validation_fraction = cfg.val_fraction;
+  g_email = cfg.email;
+  g_name = cfg.name;
 
   if (num_workers < 1) num_workers = 1;
   if (total_games < 1) total_games = 1;

@@ -1,0 +1,21 @@
+{
+  "gmail_app_password": "xxxx xxxx xxxx xxxx",
+  "games": 5000,
+  "st": 0.5,
+  "workers": 8,
+  "val_fraction": 0.1,
+  "output": "nnue/data",
+  "email": "you@gmail.com",
+  "name": "macbook",
+  "sync_dest": "user@laptop:~/OmegaZero/nnue/data/",
+  "sync_interval": 43200,
+  "training": {
+    "epochs": 200,
+    "batch": 16384,
+    "lr": 0.001,
+    "wd": 1e-6,
+    "lmbda": 0.7,
+    "val_split": 0.05,
+    "save_every": 50
+  }
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Send an email via Gmail SMTP. Used by datagen_harness for progress notifications.
 
-Requires GMAIL_APP_PASSWORD environment variable (not your regular password).
+Reads gmail_app_password from nnue/config.json (not your regular password).
 To create one: https://myaccount.google.com/apppasswords
 
 Usage:
@@ -15,13 +15,10 @@ import smtplib
 import sys
 from email.mime.text import MIMEText
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.json")
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "nnue", "config.json")
 
 
 def load_password():
-    password = os.environ.get("GMAIL_APP_PASSWORD")
-    if password:
-        return password
     try:
         with open(CONFIG_PATH) as f:
             return json.load(f).get("gmail_app_password")
@@ -40,7 +37,7 @@ def main():
 
     password = load_password()
     if not password:
-        print("GMAIL_APP_PASSWORD not set and no config.json found — skipping email", file=sys.stderr)
+        print("No gmail_app_password in nnue/config.json — skipping email", file=sys.stderr)
         sys.exit(1)
 
     sender = args.from_addr or args.to

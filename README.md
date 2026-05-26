@@ -10,7 +10,6 @@
 - [Play Online](#play-online)
 - [Usage](#usage)
   - [Prerequisites](#prerequisites)
-  - [ELO Testing Dependencies](#elo-testing-dependencies)
   - [Building](#building)
   - [Playing a Game](#playing-a-game)
   - [UCI Mode](#uci-mode)
@@ -56,57 +55,43 @@ The bot runs the same engine described below, connected via the UCI protocol.
 
 #### Prerequisites
 
-The included `Makefile` supports both GNU/Linux and macOS. The [Boost library](https://www.boost.org/)
-is a requirement and should be installed locally before compilation. `python3` is
-also required to generate the move masks and magic bitboards used by the engine.
+The `Makefile` supports GNU/Linux and macOS. Install the core dependencies first, then add optional ones as needed.
 
-For NNUE training, two additional Python packages are needed:
-```
-pip3 install torch tqdm
-```
+**Core (required to build and play)**
 
-To verify all dependencies are satisfied before building, run:
+| | Ubuntu | macOS ([Homebrew](https://brew.sh/)) |
+|---|---|---|
+| C++ / build tools | `sudo apt-get install g++ make` | Xcode Command Line Tools |
+| [Boost](https://www.boost.org/) | `sudo apt-get install libboost-all-dev` | `brew install boost` |
+| Python 3 | `sudo apt-get install python3` | pre-installed |
+
+Verify everything is in place:
 ```
 make check-deps
 ```
 
-On Ubuntu, install Boost via `apt-get`:
+**NNUE training** (datagen + training scripts)
 ```
-sudo apt-get install libboost-all-dev
-```
-
-On macOS, install Boost via [Homebrew](https://brew.sh/). If Homebrew isn't installed,
-follow the instructions on their site first, then run:
-```
-brew install boost
+pip3 install torch tqdm
 ```
 
-#### ELO Testing Dependencies
+**ELO testing** ([Stockfish](https://stockfishchess.org/) + [cutechess-cli](https://github.com/cutechess/cutechess) + [matplotlib](https://matplotlib.org/))
 
-To run automated ELO testing, the following additional tools are required:
+On Ubuntu:
+```
+sudo apt-get install stockfish cutechess qtbase5-dev cmake
+pip3 install matplotlib
+```
 
-- [Stockfish](https://stockfishchess.org/) — opponent engine
-- [Cute Chess](https://github.com/cutechess/cutechess) (`cutechess-cli`) — tournament manager
-- [matplotlib](https://matplotlib.org/) — plot generation (Python)
-
-On MacOS, install cutechess from source:
-
+On macOS (cutechess must be built from source):
 ```bash
 brew install stockfish qt cmake
 pip3 install matplotlib --break-system-packages
 
 cd ~/path/to/OmegaZero
 git clone https://github.com/cutechess/cutechess.git
-cd cutechess
-mkdir build && cd build
-cmake ..
-make -j8
-```
-
-On Ubuntu, install with `apt-get`:
-```
-sudo apt-get install stockfish cutechess qtbase5-dev cmake
-pip3 install matplotlib
+cd cutechess && mkdir build && cd build
+cmake .. && make -j8
 ```
 
 #### Building
@@ -256,19 +241,29 @@ Training the NNUE is a three-step process: generate self-play training data, tra
 
 Build and run the native data generator, which plays OmegaZero against itself using direct engine calls (no UCI overhead). Each position's FEN, search score, and game outcome are recorded.
 
+All settings are read from `nnue/config.json`. Copy the example and edit it:
 ```bash
-make datagen
-./build/datagen_harness --games 5000 --st 0.5 --workers 8
+cp nnue/config.json.example nnue/config.json
 ```
 
-Options:
-- `--games N` — Total self-play games (default: 100)
-- `--st S` — Search time per move in seconds (default: 0.5)
-- `--workers W` — Number of parallel threads (default: 1)
-- `--output DIR` — Output directory (default: `nnue/data`)
-- `--val-fraction F` — Fraction of games reserved for validation (default: 0.1)
-- `--email ADDR` — Email notifications for run lifecycle (see below)
-- `--name NAME` — Machine identifier, included in email subjects (e.g. `epyc-1`)
+| Field | Description | Default |
+|---|---|---|
+| `games` | Total self-play games | 100 |
+| `st` | Search time per move (seconds) | 0.5 |
+| `workers` | Parallel threads | 1 |
+| `output` | Output directory | `nnue/data` |
+| `val_fraction` | Fraction of games for validation | 0.1 |
+| `email` | Email address for notifications (see below) | `""` |
+| `name` | Machine identifier for email subjects (e.g. `epyc-1`) | `""` |
+| `gmail_app_password` | [Gmail app password](https://myaccount.google.com/apppasswords) for sending email | `""` |
+| `sync_dest` | rsync destination for background sync (see below) | `""` |
+| `sync_interval` | Seconds between syncs | 43200 (12h) |
+
+Then build and run:
+```bash
+make datagen
+./build/datagen_harness
+```
 
 Quality filters are applied automatically: positions in check, mate scores, and tactical explosions (|score| > 3000cp) are skipped. Every 4th eligible position is sampled, and Zobrist hash deduplication removes near-duplicates within each worker. Games are adjudicated at 1000cp for 5 consecutive moves. The first 10 plies are skipped (opening theory), and each game begins with 8 random moves for opening diversity.
 
@@ -277,60 +272,51 @@ Output (under a timestamped subdirectory, e.g. `nnue/data/2026-05-25_20-33-09_ea
 - `validation_data.txt` — validation positions (from separate games to avoid contamination)
 - `metadata.txt` — generation parameters, timestamp, and git commit hash
 
+For best results, aim for 100M+ positions.
+
 **Email notifications**
 
-When `--email` is provided, the datagen harness sends emails at key lifecycle events:
+When `email` is set in `nnue/config.json`, the datagen harness sends emails at key lifecycle events:
 - **Startup** — run configuration (games, workers, search time, output dir)
 - **Milestones** — 25%, 50%, 75%, and 100% completion
 - **Crashes** — per-game or per-worker exceptions (the harness keeps running)
 - **Shutdown** — graceful save on SIGTERM/SIGINT with progress summary
 - **Completion** — final game/position counts and elapsed time
 
-Email requires a [Gmail app password](https://myaccount.google.com/apppasswords) (not your regular password). Set it via either method:
-
-```bash
-# Option 1: environment variable
-export GMAIL_APP_PASSWORD="xxxx xxxx xxxx xxxx"
-
-# Option 2: config.json (gitignored)
-cp config.json.example config.json
-# then edit config.json with your app password
-```
-
 **Background sync**
 
-For long-running server deployments, `scripts/sync_datagen.sh` rsyncs data to a remote machine on a schedule and sends its own email reports:
+For long-running server deployments, `scripts/sync_datagen.sh` rsyncs data to a remote machine on a schedule and sends email reports. Set `sync_dest` in `nnue/config.json`, then:
 
 ```bash
-./scripts/sync_datagen.sh user@laptop:~/OmegaZero/nnue/data/ \
-  --email you@gmail.com --name epyc-1 --games 1700000
+./scripts/sync_datagen.sh
 ```
 
-Options: `--interval SECS` (default: 43200 = 12h), `--data-dir DIR`, `--email ADDR`, `--name NAME`, `--games N` (for % progress estimate).
+It reads `sync_dest`, `sync_interval`, `email`, `name`, and `games` from the config.
 
 **Step 2: Train the network**
 
+Training parameters are read from the `training` section of `nnue/config.json`:
+
 ```bash
-# Train with default settings (200 epochs, batch size 16384)
 python3 scripts/train_nnue.py
-
-# Use the separate validation set from datagen
-python3 scripts/train_nnue.py --val-data nnue/data/<run>/validation_data.txt
-
-# Custom settings
-python3 scripts/train_nnue.py --epochs 300 --batch 8192 --lr 0.001
 ```
 
-Options:
-- `--data PATH` — Training data file or directory (default: `nnue/data`, auto-resolves latest run)
-- `--val-data PATH` — Separate validation data file (avoids train/val contamination)
-- `--output DIR` — Model checkpoint directory (default: `nnue/model`)
-- `--epochs N` — Training epochs (default: 200)
-- `--batch N` — Batch size (default: 16384)
-- `--lr F` — Initial learning rate (default: 0.001)
-- `--lmbda F` — Score/result blend: `lambda * sigmoid(score/400) + (1-lambda) * game_result` (default: 0.7)
+CLI args (e.g. `--epochs 300`) override config values for one-off experiments.
 
-Training outputs:
+| Field | Description | Default |
+|---|---|---|
+| `epochs` | Training epochs | 200 |
+| `batch` | Batch size | 16384 |
+| `lr` | Initial learning rate | 0.001 |
+| `wd` | Weight decay | 1e-6 |
+| `lmbda` | Score/result blend: `lmbda * sigmoid(score/400) + (1-lmbda) * result` | 0.7 |
+| `val_split` | Fraction of data for validation (if no separate val file) | 0.05 |
+| `save_every` | Save checkpoint every N epochs | 50 |
+| `data` | Training data path (auto-resolves latest run) | `nnue/data` |
+| `val_data` | Separate validation data file | auto-detected |
+| `output` | Model checkpoint directory | `nnue/model` |
+
+Outputs:
 - `nnue/nnue.bin` — quantized binary weights for C++ inference (always at the base)
 - `nnue/model/<run>/best.pt` — best PyTorch checkpoint (by validation loss)
 - `nnue/model/<run>/final.pt` — last epoch checkpoint
