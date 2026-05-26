@@ -17,6 +17,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -213,10 +214,65 @@ struct WorkerStats {
 
 static std::mutex g_output_mutex;
 static std::atomic<int> g_games_done{0};
+static std::atomic<bool> g_shutdown{false};
+
+static void SignalHandler(int /*sig*/) {
+  g_shutdown.store(true);
+}
+static std::atomic<int> g_total_games{0};
+static string g_email;
+static string g_name;
+static string g_output_dir_global;
+static std::atomic<bool> g_milestone_25{false};
+static std::atomic<bool> g_milestone_50{false};
+static std::atomic<bool> g_milestone_75{false};
+static std::atomic<bool> g_milestone_100{false};
+
+static auto SendEmail(const string& subject, const string& body) -> void {
+  if (g_email.empty()) return;
+  string cmd = "python3 scripts/send_email.py"
+               " --to '" + g_email + "'"
+               " --subject '" + subject + "'"
+               " --body '" + body + "'"
+               " 2>/dev/null";
+  std::system(cmd.c_str());
+}
+
+static auto CheckMilestones(int done) -> void {
+  if (g_email.empty()) return;
+  int total = g_total_games.load();
+  if (total <= 0) return;
+
+  int pct = (done * 100) / total;
+
+  auto fire = [&](int threshold, std::atomic<bool>& flag) {
+    if (pct >= threshold) {
+      bool expected = false;
+      if (flag.compare_exchange_strong(expected, true)) {
+        string tag = g_name.empty() ? "" : " [" + g_name + "]";
+        string subject = "OmegaZero datagen" + tag + " "
+                         + std::to_string(threshold) + "% complete";
+        string body = (g_name.empty() ? "" : "Machine: " + g_name + "\n")
+                      + std::to_string(done) + "/" + std::to_string(total)
+                      + " games done (" + std::to_string(threshold) + "%)\n"
+                      + "Output: " + g_output_dir_global;
+        SendEmail(subject, body);
+        std::lock_guard<std::mutex> lock(g_output_mutex);
+        cerr << "\n  [EMAIL] " << threshold << "% milestone → " << g_email << endl;
+      }
+    }
+  };
+
+  fire(25, g_milestone_25);
+  fire(50, g_milestone_50);
+  fire(75, g_milestone_75);
+  fire(100, g_milestone_100);
+}
 
 static auto WorkerThread(int worker_id, int num_games, float search_time,
                          const string& output_dir, float validation_fraction,
                          WorkerStats& stats) -> void {
+ try {
   std::mt19937 rng(std::random_device{}() + worker_id);
 
   string train_path = output_dir + "/data_worker_" + std::to_string(worker_id + 1) + ".txt";
@@ -234,35 +290,102 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
   std::unordered_set<U64> seen_hashes;
   seen_hashes.reserve(num_games * 20);
 
-  for (int g = 0; g < num_games; ++g) {
-    vector<Position> positions;
-    positions.reserve(32);
+  for (int g = 0; g < num_games && !g_shutdown.load(); ++g) {
+    try {
+      vector<Position> positions;
+      positions.reserve(32);
 
-    size_t hashes_before = seen_hashes.size();
-    GameResult result = PlayGame(search_time, rng, positions, seen_hashes);
-    int deduped = static_cast<int>(seen_hashes.size() - hashes_before);
-    stats.duplicates_skipped += (static_cast<int>(positions.size()) - deduped);
+      size_t hashes_before = seen_hashes.size();
+      GameResult result = PlayGame(search_time, rng, positions, seen_hashes);
+      int deduped = static_cast<int>(seen_hashes.size() - hashes_before);
+      stats.duplicates_skipped += (static_cast<int>(positions.size()) - deduped);
 
-    std::ofstream& out = (g >= val_start_game) ? val_out : train_out;
-    string result_str = ResultToStr(result);
-    for (const auto& pos : positions) {
-      out << pos.fen << " | " << pos.score << " | " << result_str << '\n';
+      std::ofstream& out = (g >= val_start_game) ? val_out : train_out;
+      string result_str = ResultToStr(result);
+      for (const auto& pos : positions) {
+        out << pos.fen << " | " << pos.score << " | " << result_str << '\n';
+      }
+
+      stats.positions += static_cast<int>(positions.size());
+      stats.games++;
+      if (result == kWhiteWin) stats.white_wins++;
+      else if (result == kBlackWin) stats.black_wins++;
+      else stats.draws++;
+    } catch (const std::exception& e) {
+      {
+        std::lock_guard<std::mutex> lock(g_output_mutex);
+        cerr << "\nWorker " << worker_id << " game " << g
+             << " crashed: " << e.what() << " — skipping" << endl;
+      }
+      string tag = g_name.empty() ? "" : " [" + g_name + "]";
+      SendEmail("OmegaZero" + tag + " CRASH — worker "
+                + std::to_string(worker_id),
+                (g_name.empty() ? "" : "Machine: " + g_name + "\n")
+                + "Worker " + std::to_string(worker_id) + " game "
+                + std::to_string(g) + " crashed\n"
+                + "Error: " + e.what());
+      stats.games++;
+    } catch (...) {
+      {
+        std::lock_guard<std::mutex> lock(g_output_mutex);
+        cerr << "\nWorker " << worker_id << " game " << g
+             << " crashed (unknown) — skipping" << endl;
+      }
+      string tag = g_name.empty() ? "" : " [" + g_name + "]";
+      SendEmail("OmegaZero" + tag + " CRASH — worker "
+                + std::to_string(worker_id),
+                (g_name.empty() ? "" : "Machine: " + g_name + "\n")
+                + "Worker " + std::to_string(worker_id) + " game "
+                + std::to_string(g) + " crashed\n"
+                + "Error: unknown exception");
+      stats.games++;
     }
 
-    stats.positions += static_cast<int>(positions.size());
-    stats.games++;
-    if (result == kWhiteWin) stats.white_wins++;
-    else if (result == kBlackWin) stats.black_wins++;
-    else stats.draws++;
-
     int done = g_games_done.fetch_add(1) + 1;
-    if (done % 10 == 0) {
+    CheckMilestones(done);
+    if (done % 100 == 0) {
+      train_out.flush();
+      val_out.flush();
+      std::lock_guard<std::mutex> lock(g_output_mutex);
+      cerr << "\r  " << done << " games complete (" << stats.positions
+           << " positions from worker " << worker_id << ")" << std::flush;
+    } else if (done % 10 == 0) {
       std::lock_guard<std::mutex> lock(g_output_mutex);
       cerr << "\r  " << done << " games complete" << std::flush;
     }
   }
+  if (g_shutdown.load()) {
+    std::lock_guard<std::mutex> lock(g_output_mutex);
+    cerr << "\nWorker " << worker_id << " stopping (shutdown signal)" << endl;
+  }
+  train_out.flush();
+  val_out.flush();
   train_out.close();
   val_out.close();
+
+ } catch (const std::exception& e) {
+    string tag = g_name.empty() ? "" : " [" + g_name + "]";
+    string msg = "Worker " + std::to_string(worker_id)
+                 + " fatal crash: " + e.what();
+    {
+      std::lock_guard<std::mutex> lock(g_output_mutex);
+      cerr << "\n" << msg << endl;
+    }
+    SendEmail("OmegaZero" + tag + " FATAL — worker "
+              + std::to_string(worker_id),
+              (g_name.empty() ? "" : "Machine: " + g_name + "\n") + msg);
+ } catch (...) {
+    string tag = g_name.empty() ? "" : " [" + g_name + "]";
+    string msg = "Worker " + std::to_string(worker_id)
+                 + " fatal crash: unknown exception";
+    {
+      std::lock_guard<std::mutex> lock(g_output_mutex);
+      cerr << "\n" << msg << endl;
+    }
+    SendEmail("OmegaZero" + tag + " FATAL — worker "
+              + std::to_string(worker_id),
+              (g_name.empty() ? "" : "Machine: " + g_name + "\n") + msg);
+ }
 }
 
 auto main(int argc, char* argv[]) -> int {
@@ -279,6 +402,8 @@ auto main(int argc, char* argv[]) -> int {
     else if (arg == "--workers" && i + 1 < argc) num_workers = atoi(argv[++i]);
     else if (arg == "--output" && i + 1 < argc) output_dir = argv[++i];
     else if (arg == "--val-fraction" && i + 1 < argc) validation_fraction = static_cast<float>(atof(argv[++i]));
+    else if (arg == "--email" && i + 1 < argc) g_email = argv[++i];
+    else if (arg == "--name" && i + 1 < argc) g_name = argv[++i];
     else if (arg == "--help") {
       cout << "Usage: datagen [OPTIONS]\n"
            << "  --games N          Total self-play games (default: 100)\n"
@@ -286,6 +411,8 @@ auto main(int argc, char* argv[]) -> int {
            << "  --workers W        Number of parallel threads (default: 1)\n"
            << "  --output DIR       Output directory (default: nnue/data)\n"
            << "  --val-fraction F   Fraction of games for validation (default: 0.1)\n"
+           << "  --email ADDR       Email progress at 25/50/75/100% (requires GMAIL_APP_PASSWORD)\n"
+           << "  --name NAME        Machine name for email subject lines (e.g. epyc-1)\n"
            << "\n"
            << "Quality filters (compile-time constants):\n"
            << "  Skip first " << kSkipFirstNPlies << " plies\n"
@@ -316,6 +443,9 @@ auto main(int argc, char* argv[]) -> int {
   string mkdir_cmd = "mkdir -p " + output_dir;
   std::system(mkdir_cmd.c_str());
 
+  g_total_games.store(total_games);
+  g_output_dir_global = output_dir;
+
   cout << "Native NNUE data generator\n"
        << "  Games: " << total_games << "\n"
        << "  Search time: " << search_time << "s/move\n"
@@ -324,7 +454,22 @@ auto main(int argc, char* argv[]) -> int {
        << "  Validation: " << static_cast<int>(validation_fraction * 100) << "% of games\n"
        << "  Filters: skip " << kSkipFirstNPlies << " plies, sample 1/"
        << kSampleInterval << ", |score| <= " << kMaxAbsScore
-       << ", dedup, no check\n" << endl;
+       << ", dedup, no check\n"
+       << "  Email: " << (g_email.empty() ? "(none)" : g_email) << "\n"
+       << "  Name: " << (g_name.empty() ? "(none)" : g_name) << "\n" << endl;
+
+  std::signal(SIGTERM, SignalHandler);
+  std::signal(SIGINT, SignalHandler);
+
+  if (!g_email.empty()) {
+    string tag = g_name.empty() ? "" : " [" + g_name + "]";
+    SendEmail("OmegaZero" + tag + " datagen STARTED",
+              (g_name.empty() ? "" : "Machine: " + g_name + "\n")
+              + "Games: " + std::to_string(total_games) + "\n"
+              + "Workers: " + std::to_string(num_workers) + "\n"
+              + "Search time: " + std::to_string(search_time).substr(0, 4) + "s/move\n"
+              + "Output: " + output_dir);
+  }
 
   auto start = std::chrono::high_resolution_clock::now();
 
@@ -340,6 +485,17 @@ auto main(int argc, char* argv[]) -> int {
   }
 
   for (auto& t : threads) t.join();
+
+  if (g_shutdown.load()) {
+    cerr << "\nShutdown signal received — saving partial results..." << endl;
+    string tag = g_name.empty() ? "" : " [" + g_name + "]";
+    SendEmail("OmegaZero" + tag + " SHUTDOWN — partial save",
+              (g_name.empty() ? "" : "Machine: " + g_name + "\n")
+              + "Process received SIGTERM/SIGINT.\n"
+              + std::to_string(g_games_done.load()) + "/" + std::to_string(total_games)
+              + " games completed before shutdown.\n"
+              + "Data flushed to: " + output_dir);
+  }
 
   auto end = std::chrono::high_resolution_clock::now();
   float elapsed = std::chrono::duration<float>(end - start).count();
@@ -387,14 +543,26 @@ auto main(int argc, char* argv[]) -> int {
   WriteMetadata(output_dir, games_played, search_time, num_workers,
                 total_positions, elapsed);
 
-  cout << "\n\nDone: " << games_played << " games, "
-       << total_positions << " positions in " << elapsed << "s\n"
-       << "Results: W:" << total_w << " D:" << total_d << " L:" << total_b << "\n"
-       << "Training: " << train_count << " positions → " << train_combined << "\n"
-       << "Validation: " << val_count << " positions → " << val_combined << "\n"
-       << "Rate: " << static_cast<int>(total_positions / elapsed) << " positions/sec\n"
-       << "Avg positions/game: " << (games_played > 0 ? total_positions / games_played : 0) << "\n"
+  string summary =
+      (g_name.empty() ? "" : "Machine: " + g_name + "\n")
+      + "Done: " + std::to_string(games_played) + " games, "
+      + std::to_string(total_positions) + " positions in "
+      + std::to_string(static_cast<int>(elapsed)) + "s\n"
+      + "Results: W:" + std::to_string(total_w) + " D:" + std::to_string(total_d)
+      + " L:" + std::to_string(total_b) + "\n"
+      + "Training: " + std::to_string(train_count) + " positions\n"
+      + "Validation: " + std::to_string(val_count) + " positions\n"
+      + "Rate: " + std::to_string(static_cast<int>(total_positions / elapsed))
+      + " positions/sec\n"
+      + "Avg positions/game: "
+      + std::to_string(games_played > 0 ? total_positions / games_played : 0) + "\n"
+      + "Output: " + output_dir;
+
+  cout << "\n\n" << summary << "\n"
        << "Metadata: " << output_dir << "/metadata.txt\n";
+
+  string tag = g_name.empty() ? "" : " [" + g_name + "]";
+  SendEmail("OmegaZero datagen" + tag + " COMPLETE", summary);
 
   return 0;
 }

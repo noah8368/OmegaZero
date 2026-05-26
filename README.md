@@ -34,7 +34,6 @@
   - [NPS Comparison](#nodes-per-second-nps-comparison)
   - [Stockfish ELO Comparison](#stockfish-elo-comparison)
   - [Example Games](#example-games)
-  - [Strengths and Weaknesses](#strengths-and-weaknesses)
 
 ### Project Summary
 
@@ -268,6 +267,8 @@ Options:
 - `--workers W` — Number of parallel threads (default: 1)
 - `--output DIR` — Output directory (default: `nnue/data`)
 - `--val-fraction F` — Fraction of games reserved for validation (default: 0.1)
+- `--email ADDR` — Email notifications for run lifecycle (see below)
+- `--name NAME` — Machine identifier, included in email subjects (e.g. `epyc-1`)
 
 Quality filters are applied automatically: positions in check, mate scores, and tactical explosions (|score| > 3000cp) are skipped. Every 4th eligible position is sampled, and Zobrist hash deduplication removes near-duplicates within each worker. Games are adjudicated at 1000cp for 5 consecutive moves. The first 10 plies are skipped (opening theory), and each game begins with 8 random moves for opening diversity.
 
@@ -276,7 +277,27 @@ Output (under a timestamped subdirectory, e.g. `nnue/data/2026-05-25_20-33-09_ea
 - `validation_data.txt` — validation positions (from separate games to avoid contamination)
 - `metadata.txt` — generation parameters, timestamp, and git commit hash
 
-For best results, aim for 5M+ positions. At 0.5s/move with 8 workers, expect ~15 positions/game and ~3 positions/second.
+**Email notifications**
+
+When `--email` is provided, the datagen harness sends emails at key lifecycle events:
+- **Startup** — run configuration (games, workers, search time, output dir)
+- **Milestones** — 25%, 50%, 75%, and 100% completion
+- **Crashes** — per-game or per-worker exceptions (the harness keeps running)
+- **Shutdown** — graceful save on SIGTERM/SIGINT with progress summary
+- **Completion** — final game/position counts and elapsed time
+
+Requires the `GMAIL_APP_PASSWORD` environment variable (a [Gmail app password](https://myaccount.google.com/apppasswords), not your regular password). See [scripts/send_email.py](scripts/send_email.py) for details.
+
+**Background sync**
+
+For long-running server deployments, `scripts/sync_datagen.sh` rsyncs data to a remote machine on a schedule and sends its own email reports:
+
+```bash
+./scripts/sync_datagen.sh user@laptop:~/OmegaZero/nnue/data/ \
+  --email you@gmail.com --name epyc-1 --games 1700000
+```
+
+Options: `--interval SECS` (default: 43200 = 12h), `--data-dir DIR`, `--email ADDR`, `--name NAME`, `--games N` (for % progress estimate).
 
 **Step 2: Train the network**
 
