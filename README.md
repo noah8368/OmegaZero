@@ -286,7 +286,16 @@ When `--email` is provided, the datagen harness sends emails at key lifecycle ev
 - **Shutdown** — graceful save on SIGTERM/SIGINT with progress summary
 - **Completion** — final game/position counts and elapsed time
 
-Requires the `GMAIL_APP_PASSWORD` environment variable (a [Gmail app password](https://myaccount.google.com/apppasswords), not your regular password). See [scripts/send_email.py](scripts/send_email.py) for details.
+Email requires a [Gmail app password](https://myaccount.google.com/apppasswords) (not your regular password). Set it via either method:
+
+```bash
+# Option 1: environment variable
+export GMAIL_APP_PASSWORD="xxxx xxxx xxxx xxxx"
+
+# Option 2: config.json (gitignored)
+cp config.json.example config.json
+# then edit config.json with your app password
+```
 
 **Background sync**
 

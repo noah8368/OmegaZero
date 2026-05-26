@@ -9,10 +9,24 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import smtplib
 import sys
 from email.mime.text import MIMEText
+
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.json")
+
+
+def load_password():
+    password = os.environ.get("GMAIL_APP_PASSWORD")
+    if password:
+        return password
+    try:
+        with open(CONFIG_PATH) as f:
+            return json.load(f).get("gmail_app_password")
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
 
 
 def main():
@@ -24,9 +38,9 @@ def main():
     parser.add_argument("--body", required=True)
     args = parser.parse_args()
 
-    password = os.environ.get("GMAIL_APP_PASSWORD")
+    password = load_password()
     if not password:
-        print("GMAIL_APP_PASSWORD not set — skipping email", file=sys.stderr)
+        print("GMAIL_APP_PASSWORD not set and no config.json found — skipping email", file=sys.stderr)
         sys.exit(1)
 
     sender = args.from_addr or args.to

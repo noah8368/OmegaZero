@@ -8,3 +8,4 @@ results
 *.pgn
 .DS_Store
 nnue
+config.json
