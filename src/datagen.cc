@@ -275,9 +275,15 @@ static std::atomic<int> g_total_games{0};
 static string g_email;
 static string g_name;
 static string g_output_dir_global;
-static std::atomic<bool> g_milestone_25{false};
+static std::atomic<bool> g_milestone_10{false};
+static std::atomic<bool> g_milestone_20{false};
+static std::atomic<bool> g_milestone_30{false};
+static std::atomic<bool> g_milestone_40{false};
 static std::atomic<bool> g_milestone_50{false};
-static std::atomic<bool> g_milestone_75{false};
+static std::atomic<bool> g_milestone_60{false};
+static std::atomic<bool> g_milestone_70{false};
+static std::atomic<bool> g_milestone_80{false};
+static std::atomic<bool> g_milestone_90{false};
 static std::atomic<bool> g_milestone_100{false};
 
 static auto SendEmail(const string& subject, const string& body) -> void {
@@ -315,9 +321,15 @@ static auto CheckMilestones(int done) -> void {
     }
   };
 
-  fire(25, g_milestone_25);
+  fire(10, g_milestone_10);
+  fire(20, g_milestone_20);
+  fire(30, g_milestone_30);
+  fire(40, g_milestone_40);
   fire(50, g_milestone_50);
-  fire(75, g_milestone_75);
+  fire(60, g_milestone_60);
+  fire(70, g_milestone_70);
+  fire(80, g_milestone_80);
+  fire(90, g_milestone_90);
   fire(100, g_milestone_100);
 }
 
