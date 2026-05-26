@@ -12,8 +12,8 @@ Architecture: HalfKP (Half King-Piece)
 Training target: blend of sigmoid(search_score) and game outcome.
 
 Usage:
-    python3 scripts/train_nnue.py --data scripts/nnue_training_data/training_data.txt
-    python3 scripts/train_nnue.py --data scripts/nnue_training_data/training_data.txt --epochs 200 --batch 16384
+    python3 scripts/train_nnue.py --data nnue/data/<run>/training_data.txt
+    python3 scripts/train_nnue.py --data nnue/data/<run>/training_data.txt --val-data nnue/data/<run>/validation_data.txt
 """
 
 import argparse
@@ -397,21 +397,56 @@ def generate_plots(train_losses, val_losses, plot_dir,
         avg_result = sum(r for _, r in bucket) / len(bucket)
         bucket_scores.append(avg_score)
         bucket_winrates.append(avg_result * 100)
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(bucket_scores, bucket_winrates, "b-o", linewidth=2, markersize=6)
-    # Expected sigmoid curve
-    xs = np.linspace(min(bucket_scores), max(bucket_scores), 200)
-    expected = 100.0 / (1.0 + np.exp(-xs / SCORE_SCALE))
-    ax.plot(xs, expected, "r--", linewidth=1, alpha=0.7, label="Expected (sigmoid)")
-    ax.set_xlabel("Predicted Score (cp)")
-    ax.set_ylabel("Actual Win Rate (%)")
-    ax.set_title("Win Rate Calibration")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    fig.savefig(plot_dir / "calibration.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    if bucket_scores:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(bucket_scores, bucket_winrates, "b-o", linewidth=2, markersize=6)
+        xs = np.linspace(min(bucket_scores), max(bucket_scores), 200)
+        expected = 100.0 / (1.0 + np.exp(-xs / SCORE_SCALE))
+        ax.plot(xs, expected, "r--", linewidth=1, alpha=0.7, label="Expected (sigmoid)")
+        ax.set_xlabel("Predicted Score (cp)")
+        ax.set_ylabel("Actual Win Rate (%)")
+        ax.set_title("Win Rate Calibration")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        fig.savefig(plot_dir / "calibration.png", dpi=150, bbox_inches="tight")
+        plt.close(fig)
 
     print(f"  Plots saved to: {plot_dir}")
+
+
+def get_run_tag():
+    """Return a timestamped run tag: YYYY-MM-DD_HH-MM-SS_<githash>."""
+    import subprocess
+    from datetime import datetime
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        commit = "unknown"
+    return f"{ts}_{commit}"
+
+
+def resolve_latest_data(base_dir):
+    """Find the latest timestamped subdir under base_dir and return training_data.txt path."""
+    base = Path(base_dir)
+    if not base.is_dir():
+        return base_dir
+    subdirs = sorted(
+        [d for d in base.iterdir() if d.is_dir()],
+        key=lambda d: d.name,
+        reverse=True,
+    )
+    if subdirs:
+        candidate = subdirs[0] / "training_data.txt"
+        if candidate.exists():
+            return str(candidate)
+    fallback = base / "training_data.txt"
+    if fallback.exists():
+        return str(fallback)
+    return base_dir
 
 
 def train(args):
@@ -420,18 +455,38 @@ def train(args):
                           else "cpu")
     print(f"Device: {device}")
 
-    dataset = NnueDataset(args.data)
+    data_path = args.data
+    if Path(data_path).is_dir():
+        data_path = resolve_latest_data(data_path)
+        print(f"Resolved data: {data_path}")
+
+    val_data_path = args.val_data
+    if val_data_path is None:
+        candidate = Path(data_path).parent / "validation_data.txt"
+        if candidate.exists():
+            val_data_path = str(candidate)
+            print(f"Auto-detected validation data: {val_data_path}")
+
+    dataset = NnueDataset(data_path)
     if len(dataset) == 0:
         sys.exit("No training data found.")
 
-    val_size = max(1, int(len(dataset) * args.val_split))
-    train_size = len(dataset) - val_size
-    train_set, val_set = torch.utils.data.random_split(
-        dataset, [train_size, val_size],
-        generator=torch.Generator().manual_seed(42),
-    )
-
-    print(f"Training: {train_size}  Validation: {val_size}")
+    if val_data_path:
+        train_set = dataset
+        val_set = NnueDataset(val_data_path)
+        if len(val_set) == 0:
+            sys.exit("No validation data found.")
+        train_size = len(train_set)
+        val_size = len(val_set)
+        print(f"Training: {train_size}  Validation: {val_size} (separate file, no contamination)")
+    else:
+        val_size = max(1, int(len(dataset) * args.val_split))
+        train_size = len(dataset) - val_size
+        train_set, val_set = torch.utils.data.random_split(
+            dataset, [train_size, val_size],
+            generator=torch.Generator().manual_seed(42),
+        )
+        print(f"Training: {train_size}  Validation: {val_size} (random split)")
 
     train_loader = DataLoader(
         train_set, batch_size=args.batch, shuffle=True,
@@ -451,7 +506,8 @@ def train(args):
         optimizer, step_size=max(1, args.epochs // 4), gamma=0.5
     )
 
-    out_dir = Path(args.output)
+    run_tag = get_run_tag()
+    out_dir = Path(args.output) / run_tag
     out_dir.mkdir(parents=True, exist_ok=True)
 
     best_val_loss = float("inf")
@@ -533,18 +589,16 @@ def train(args):
     # Save final model
     torch.save(model.state_dict(), out_dir / "final.pt")
 
-    # Export quantized weights to nnue_weights/ at repo root
     model.load_state_dict(torch.load(out_dir / "best.pt", weights_only=True))
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
-    weights_dir = repo_root / "nnue_weights"
+    weights_dir = repo_root / "nnue"
     weights_dir.mkdir(parents=True, exist_ok=True)
     export_path = weights_dir / "nnue.bin"
     export_quantized(model, export_path)
 
-    # Generate training plots
     model.to(device)
-    plot_dir = repo_root / "results" / "training_plots"
+    plot_dir = repo_root / "results" / "nnue_training" / run_tag
     generate_plots(train_losses, val_losses, plot_dir,
                    model, val_loader, device, args.lmbda)
 
@@ -641,12 +695,16 @@ def main():
         description="Train an NNUE evaluation network for OmegaZero"
     )
     parser.add_argument(
-        "--data", default="scripts/nnue_training_data/training_data.txt",
-        help="Path to training data file",
+        "--data", default="nnue/data",
+        help="Path to training data file or directory (auto-resolves latest run)",
     )
     parser.add_argument(
-        "--output", default="scripts/nnue_training_data/model",
-        help="Output directory for model checkpoints (default: scripts/nnue_training_data/model)",
+        "--val-data", default=None,
+        help="Path to separate validation data file (from different games, avoids contamination)",
+    )
+    parser.add_argument(
+        "--output", default="nnue/model",
+        help="Output directory for model checkpoints (default: nnue/model)",
     )
     parser.add_argument(
         "--epochs", type=int, default=200,

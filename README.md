@@ -30,11 +30,9 @@
     - [NNUE Eval](#nnue-eval)
     - [Handcrafted Eval](#handcrafted-eval)
 - [Performance](#performance)
+  - [Changelog](#changelog)
   - [NPS Comparison](#nodes-per-second-nps-comparison)
   - [Stockfish ELO Comparison](#stockfish-elo-comparison)
-    - [v1 Results](#v1-results)
-    - [v2 Results](#v2-results)
-    - [v3 Results](#v3-results)
   - [Example Games](#example-games)
   - [Strengths and Weaknesses](#strengths-and-weaknesses)
 
@@ -65,7 +63,7 @@ also required to generate the move masks and magic bitboards used by the engine.
 
 For NNUE training, two additional Python packages are needed:
 ```
-pip3 install python-chess torch tqdm
+pip3 install torch tqdm
 ```
 
 To verify all dependencies are satisfied before building, run:
@@ -253,37 +251,32 @@ python3 scripts/mine_magics.py
 
 #### NNUE Training
 
-Training the NNUE is a two-step process: generate self-play training data, then train the network.
-
-**Prerequisites:**
-```bash
-pip3 install python-chess torch tqdm
-```
+Training the NNUE is a three-step process: generate self-play training data, train the network, then analyze the results.
 
 **Step 1: Generate training data**
 
-The data generator plays OmegaZero against itself via UCI, recording each position's FEN, search score, and game outcome.
-
-For large runs, use the parallel script to distribute across multiple cores:
+Build and run the native data generator, which plays OmegaZero against itself using direct engine calls (no UCI overhead). Each position's FEN, search score, and game outcome are recorded.
 
 ```bash
-# Generate ~2M positions using 8 parallel workers at 2s/move (~5 days)
-caffeinate ./scripts/parallel_data_gen.sh --workers 8 --games 22000 --st 2
-
-# Smaller test run
-caffeinate ./scripts/parallel_data_gen.sh --workers 4 --games 1000 --st 0.5
+make datagen
+./build/datagen_harness --games 5000 --st 0.5 --workers 8
 ```
 
-For single-threaded runs:
+Options:
+- `--games N` — Total self-play games (default: 100)
+- `--st S` — Search time per move in seconds (default: 0.5)
+- `--workers W` — Number of parallel threads (default: 1)
+- `--output DIR` — Output directory (default: `nnue/data`)
+- `--val-fraction F` — Fraction of games reserved for validation (default: 0.1)
 
-```bash
-python3 scripts/generate_training_data.py --games 1000 --st 0.5
+Quality filters are applied automatically: positions in check, mate scores, and tactical explosions (|score| > 3000cp) are skipped. Every 4th eligible position is sampled, and Zobrist hash deduplication removes near-duplicates within each worker. Games are adjudicated at 1000cp for 5 consecutive moves. The first 10 plies are skipped (opening theory), and each game begins with 8 random moves for opening diversity.
 
-# Append more data to an existing file
-python3 scripts/generate_training_data.py --games 1000 --st 0.5 --append
-```
+Output (under a timestamped subdirectory, e.g. `nnue/data/2026-05-25_20-33-09_eaf5059/`):
+- `training_data.txt` — training positions
+- `validation_data.txt` — validation positions (from separate games to avoid contamination)
+- `metadata.txt` — generation parameters, timestamp, and git commit hash
 
-Data is saved to `scripts/nnue_training_data/training_data.txt`. For best results, aim for 1-5M+ positions. Random opening diversification (8 random plies per game) is enabled by default to produce varied positions.
+For best results, aim for 5M+ positions. At 0.5s/move with 8 workers, expect ~15 positions/game and ~3 positions/second.
 
 **Step 2: Train the network**
 
@@ -291,18 +284,40 @@ Data is saved to `scripts/nnue_training_data/training_data.txt`. For best result
 # Train with default settings (200 epochs, batch size 16384)
 python3 scripts/train_nnue.py
 
+# Use the separate validation set from datagen
+python3 scripts/train_nnue.py --val-data nnue/data/<run>/validation_data.txt
+
 # Custom settings
 python3 scripts/train_nnue.py --epochs 300 --batch 8192 --lr 0.001
 ```
 
+Options:
+- `--data PATH` — Training data file or directory (default: `nnue/data`, auto-resolves latest run)
+- `--val-data PATH` — Separate validation data file (avoids train/val contamination)
+- `--output DIR` — Model checkpoint directory (default: `nnue/model`)
+- `--epochs N` — Training epochs (default: 200)
+- `--batch N` — Batch size (default: 16384)
+- `--lr F` — Initial learning rate (default: 0.001)
+- `--lmbda F` — Score/result blend: `lambda * sigmoid(score/400) + (1-lambda) * game_result` (default: 0.7)
+
 Training outputs:
-- `nnue_weights/nnue.bin` — quantized binary weights for C++ inference
-- `scripts/nnue_training_data/model/best.pt` — best PyTorch checkpoint (by validation loss)
-- `scripts/nnue_training_data/model/final.pt` — last epoch checkpoint
+- `nnue/nnue.bin` — quantized binary weights for C++ inference (always at the base)
+- `nnue/model/<run>/best.pt` — best PyTorch checkpoint (by validation loss)
+- `nnue/model/<run>/final.pt` — last epoch checkpoint
 
-The training target blends the search score with the game outcome: `0.7 * sigmoid(score/400) + 0.3 * game_result`. This can be adjusted with `--lmbda`.
+**Step 3: Analyze data and model quality**
 
-**Iterative improvement:** After training an initial NNUE, you can integrate it into the engine, generate new self-play data using the NNUE-equipped engine, and retrain — each cycle produces stronger play.
+```bash
+# Analyze the training data (score distributions, result balance, phase coverage)
+python3 scripts/plot_training.py data
+
+# Evaluate trained model (accuracy scatter, calibration, error analysis)
+python3 scripts/plot_training.py model
+```
+
+Plots are saved to `results/` with a `plot_metadata.json` recording the timestamp and git commit.
+
+**Iterative improvement:** After training an initial NNUE, generate new self-play data using the NNUE-equipped engine and retrain — each cycle produces stronger play.
 
 ### Implementation
 
@@ -359,6 +374,17 @@ Moves are put in the following order:
 
 The [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA) is used to order captures in Quiescence Search, with all quiets placed after, unordered.
 
+The table below shows how each search feature contributes when stacked cumulatively. Each column adds one feature on top of all previous ones.<sup>3</sup>
+
+*Search Feature Stacking Benchmark (5s/position)*
+| Position | No Features | + LMR | + NMP + History | + RFP | + SEE | + Futility | + LMP | + Countermove | + Hist LMR |
+|----------|-------------|-------|-----------------|-------|-------|------------|-------|---------------|------------|
+| opening  | 1084k, d6   | 997k, d8  | 906k, d12 | 911k, d11 | 537k, d12 | 508k, d14 | 431k, d14 | 472k, d14 | 512k, d13 |
+| midgame  | 838k, d5    | 617k, d6  | 569k, d6  | 1085k, d7 | 767k, d11 | 486k, d11 | 410k, d13 | 439k, d12 | 434k, d13 |
+| kiwipete | 532k, d4    | 173k, d3  | 174k, d3  | 518k, d5  | 157k, d5  | 134k, d5  | 148k, d6  | 148k, d6  | 145k, d6  |
+| endgame  | 795k, d10   | 781k, d14 | 782k, d18 | 785k, d17 | 779k, d17 | 772k, d17 | 618k, d18 | 593k, d17 | 532k, d18 |
+| **Avg NPS** | **812k** | **641k** | **608k** | **825k** | **560k** | **475k** | **402k** | **413k** | **406k** |
+
 #### Opening Book
 
 In the beginning of the game, the engine randomly picks an opening from an
@@ -382,7 +408,7 @@ Weights are quantized to `int16` (feature transformer) and `int8` (hidden layers
 
 ##### Handcrafted Eval
 
-If no NNUE weights file is found (at the default `nnue_weights/nnue.bin` or the path specified via `--nnue`), the engine falls back to a handcrafted evaluation function.
+If no NNUE weights file is found (at the default `nnue/nnue.bin` or the path specified via `--nnue`), the engine falls back to a handcrafted evaluation function.
 
 Following in the footsteps of [Fruit](https://www.chessprogramming.org/Fruit), OmegaZero follows a minimalist
 evaluation philosophy, with a "light" evaluation, which scores a board position
@@ -406,17 +432,21 @@ the formula found [here](https://www.chessprogramming.org/Tapered_Eval#Implement
 
 ### Performance
 
+#### Changelog
+
+- **v1** — Baseline engine: bitboards, magic move gen, MTD(f) search, handcrafted eval, opening book
+- **v2** — Persistent TT, eliminated double move gen (2.7x NPS), check extensions, LMR fix
+- **v3** — Exponential passed pawn bonus, rook-behind-passer fix, piece mobility, Toga/Fruit king safety
+- **v4** — Full search tuning: NMP, history heuristic, RFP, SEE, futility pruning, LMP, countermove heuristic, history-aware LMR
+- **v5** — NNUE evaluation (HalfKP), self-play training pipeline, handcrafted eval fallback
+
 #### Nodes Per Second (NPS) Comparison
 
 NPS (nodes per second) is measured by the bench harness, averaging across four positions
 (opening, midgame, complex midgame, endgame) at 5s/position. See
 [Benchmarking](#benchmarking) for details.
 
-| Version | Avg NPS |
-|---------|---------|
-| v1      | 197k   |
-| v2      | 507k   |
-| v3      | 498k   |
+![NPS by Version](./figs/version_nps_plot.png "Nodes Per Second by Version")
 
 #### Stockfish ELO Comparison
 
@@ -424,29 +454,7 @@ ELO was estimated by running OmegaZero against Stockfish at various `UCI_Elo`
 levels using cutechess-cli (20 games per level, 5s/move). See
 [ELO Testing](#elo-testing) for details.
 
-##### v1 Results
-
-| Stockfish ELO | Win Rate | ELO Estimate | 
-|---|---|---|
-| 1320 | 90% | 1701.7 |
-| 1700 | 55% | 1734.9 |
-| 2100 | 30% | 1952.8 |
-
-##### v2 Results
-
-| Stockfish ELO | Win Rate | ELO Estimate | 
-|---|---|---|
-| 1320 | 100% | 2519.8 |
-| 1700 | 50% | 1700 |
-| 2100 | 35% | 1992.5 |
-
-##### v3 Results
-
-| Stockfish ELO | Win Rate | ELO Estimate | 
-|---|---|---|
-| 1320 | 97.5% | 1956.4 |
-| 1700 | 75% | 1890.8 |
-| 2100 | 35% | 1992.5 |
+![ELO by Version](./figs/version_elo_plot.png "ELO by Stockfish Level and Version")
 
 #### Example Games
 
@@ -476,3 +484,4 @@ Final Position
 
 <sup>1</sup> Lichess rating
 <sup>2</sup> Chess.com rating
+<sup>3</sup> Benchmarked on [v4](#changelog), the first version with all search features. Earlier versions lacked the features being measured.

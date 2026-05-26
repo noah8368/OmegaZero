@@ -36,18 +36,27 @@ BENCH_OBJECTS = build/bench/board.o build/bench/engine.o build/bench/game.o \
                 build/bench/masks.o build/bench/transposition_table.o \
                 build/bench/piece_sq_tables.o
 
+DATAGEN_OBJECTS = build/datagen/board.o build/datagen/engine.o build/datagen/game.o \
+                  build/datagen/magics.o build/datagen/nnue.o build/datagen/datagen.o \
+                  build/datagen/masks.o build/datagen/transposition_table.o \
+                  build/datagen/piece_sq_tables.o
+
 all : build/play $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS) $(OPT_FLAGS) $(LINK_FLAGS)
 debug : build/debug $(DEBUG_OBJECTS)
 	$(CC) -o build/test_harness $(DEBUG_OBJECTS) $(FLAGS) $(DEBUG_FLAGS) $(LINK_FLAGS)
 bench : build/bench $(BENCH_OBJECTS)
 	$(CC) -o build/bench_harness $(BENCH_OBJECTS) $(FLAGS) $(OPT_FLAGS) -DBENCHMARK $(LINK_FLAGS)
+datagen : build/datagen $(DATAGEN_OBJECTS)
+	$(CC) -o build/datagen_harness $(DATAGEN_OBJECTS) $(FLAGS) $(OPT_FLAGS) -lpthread
 build/play/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS)
 build/debug/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(DEBUG_FLAGS)
 build/bench/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS) -DBENCHMARK
+build/datagen/%.o: src/%.cc
+	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS) -DNDEBUG
 
 build :
 	mkdir $@
@@ -56,6 +65,8 @@ build/play : build
 build/debug : build
 	mkdir -p $@
 build/bench : build
+	mkdir -p $@
+build/datagen : build
 	mkdir -p $@
 
 src/masks.cc :

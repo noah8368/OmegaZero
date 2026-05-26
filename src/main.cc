@@ -30,7 +30,7 @@ auto main(int argc, char* argv[]) -> int {
   exe_dir.erase(exe_dir.length() - kProgNameLen);
 
   string opening_book_path = exe_dir + "../p3ECO.txt";
-  string nnue_path = exe_dir + "../nnue_weights/nnue.bin";
+  string nnue_path = exe_dir + "../nnue/nnue.bin";
 
   // Parse optional arguments for testing and specifying initial position.
   namespace prog_opt = boost::program_options;

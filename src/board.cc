@@ -1023,6 +1023,53 @@ auto Board::InitHash() -> void {
   }
 }
 
+auto Board::ToFen() const -> string {
+  static constexpr char kPieceChars[] = "pnbrqk";
+  string fen;
+  for (S8 rank = 7; rank >= 0; --rank) {
+    int empty = 0;
+    for (S8 file = 0; file < 8; ++file) {
+      S8 sq = GetSqFromRankFile(rank, file);
+      S8 piece = piece_layout_[sq];
+      S8 player = player_layout_[sq];
+      if (piece == kNA) {
+        ++empty;
+      } else {
+        if (empty > 0) {
+          fen += static_cast<char>('0' + empty);
+          empty = 0;
+        }
+        char c = kPieceChars[piece];
+        fen += (player == kWhite) ? static_cast<char>(toupper(c)) : c;
+      }
+    }
+    if (empty > 0) fen += static_cast<char>('0' + empty);
+    if (rank > 0) fen += '/';
+  }
+
+  fen += (player_to_move_ == kWhite) ? " w " : " b ";
+
+  string castling;
+  if (castling_rights_[kWhite][kKingSide]) castling += 'K';
+  if (castling_rights_[kWhite][kQueenSide]) castling += 'Q';
+  if (castling_rights_[kBlack][kKingSide]) castling += 'k';
+  if (castling_rights_[kBlack][kQueenSide]) castling += 'q';
+  fen += castling.empty() ? "-" : castling;
+
+  fen += ' ';
+  if (ep_target_sq_ == kNA) {
+    fen += '-';
+  } else {
+    fen += static_cast<char>('a' + GetFileFromSq(ep_target_sq_));
+    fen += static_cast<char>('1' + GetRankFromSq(ep_target_sq_));
+  }
+
+  fen += ' ';
+  fen += std::to_string(halfmove_clock_);
+  fen += " 1";
+  return fen;
+}
+
 auto Board::InitBoardPos(const std::string& init_pos) -> void {
   S8 FEN_field = 0;
   S8 current_sq = kSqA8;

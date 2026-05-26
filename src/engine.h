@@ -69,6 +69,7 @@ class Engine {
   // as the root function to call the Negamax search algorithm in an iterative
   // deepening framework.
   auto GetBestMove() -> Move;
+  auto GetBestMove(int& score_out) -> Move;
 
   // Check for draws, checks, and checkmates. Note that this function does not
   // check for move repititions.

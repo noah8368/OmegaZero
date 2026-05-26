@@ -7,5 +7,4 @@ cutechess
 results
 *.pgn
 .DS_Store
-scripts/nnue_training_data
-nnue_weights
+nnue
