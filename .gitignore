@@ -10,3 +10,4 @@ results
 nnue/*
 !nnue/config.json.example
 config.json
+datagen.log

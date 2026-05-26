@@ -43,6 +43,9 @@ while true; do
     sync_count=$((sync_count + 1))
     ts=$(date "+%Y-%m-%d %H:%M:%S")
 
+    echo "[$ts] Merging worker files..."
+    ./scripts/merge_workers.sh "$DATA_DIR" 2>&1 || echo "Merge had warnings (non-fatal)"
+
     echo "[$ts] Sync #$sync_count starting..."
     if rsync -avz --progress --partial "$DATA_DIR/" "$DEST"; then
         echo "[$ts] Sync #$sync_count complete."
@@ -50,13 +53,13 @@ while true; do
         echo "[$ts] Sync #$sync_count FAILED (rsync exit $?). Will retry next cycle."
     fi
 
-    # Count positions across all worker and combined files
+    # Count positions from combined files (worker files already merged above)
     train_positions=0
     val_positions=0
-    for f in "$DATA_DIR"/*/training_data.txt "$DATA_DIR"/*/data_worker_*.txt; do
+    for f in "$DATA_DIR"/*/training_data.txt; do
         [[ -f "$f" ]] && train_positions=$((train_positions + $(wc -l < "$f")))
     done
-    for f in "$DATA_DIR"/*/validation_data.txt "$DATA_DIR"/*/val_worker_*.txt; do
+    for f in "$DATA_DIR"/*/validation_data.txt; do
         [[ -f "$f" ]] && val_positions=$((val_positions + $(wc -l < "$f")))
     done
     total_positions=$((train_positions + val_positions))
