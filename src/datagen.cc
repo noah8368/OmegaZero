@@ -61,6 +61,7 @@ struct Config {
   float val_fraction = 0.1f;
   string email;
   string name;
+  string sync_dest;
 };
 
 static auto TrimQuotes(const string& s) -> string {
@@ -99,6 +100,7 @@ static auto LoadConfig(const string& path) -> Config {
     else if (key == "val_fraction") cfg.val_fraction = std::stof(val);
     else if (key == "email") cfg.email = val;
     else if (key == "name") cfg.name = val;
+    else if (key == "sync_dest") cfg.sync_dest = val;
   }
   return cfg;
 }
@@ -585,6 +587,23 @@ auto main() -> int {
 
   string tag = g_name.empty() ? "" : " [" + g_name + "]";
   SendEmail("OmegaZero datagen" + tag + " COMPLETE", summary);
+
+  if (!cfg.sync_dest.empty()) {
+    cerr << "\nSyncing to " << cfg.sync_dest << "..." << endl;
+    string rsync_cmd = "rsync -avz --progress --partial "
+                       + output_dir + "/ " + cfg.sync_dest;
+    int ret = std::system(rsync_cmd.c_str());
+    if (ret == 0) {
+      cerr << "Sync complete." << endl;
+      SendEmail("OmegaZero" + tag + " final sync COMPLETE",
+                "Synced " + output_dir + " to " + cfg.sync_dest);
+    } else {
+      cerr << "Sync FAILED (exit " << ret << ")" << endl;
+      SendEmail("OmegaZero" + tag + " final sync FAILED",
+                "rsync to " + cfg.sync_dest + " failed with exit code "
+                + std::to_string(ret));
+    }
+  }
 
   return 0;
 }
