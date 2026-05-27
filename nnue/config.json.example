@@ -7,8 +7,6 @@
   "output": "nnue/data",
   "email": "you@gmail.com",
   "name": "macbook",
-  "sync_dest": "user@laptop:~/OmegaZero/nnue/data/",
-  "sync_interval": 43200,
   "training": {
     "epochs": 200,
     "batch": 16384,

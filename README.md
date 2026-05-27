@@ -258,8 +258,6 @@ cp nnue/config.json.example nnue/config.json
 | `email` | Email address for notifications (see below) | `""` |
 | `name` | Machine identifier for email subjects (e.g. `epyc-1`) | `""` |
 | `gmail_app_password` | [Gmail app password](https://myaccount.google.com/apppasswords) for sending email | `""` |
-| `sync_dest` | rsync destination for background sync (see below) | `""` |
-| `sync_interval` | Seconds between syncs | 43200 (12h) |
 
 Then build and run:
 ```bash
@@ -267,7 +265,7 @@ make datagen
 ./scripts/run_datagen.sh
 ```
 
-The watchdog script launches `datagen_harness`, monitors it for crashes, syncs data periodically (if `sync_dest` is set), and automatically restarts on failure. Datagen output is logged to `datagen.log`. To stop, send SIGTERM to the watchdog or the datagen process — the harness saves partial results and the watchdog exits cleanly.
+The watchdog script launches `datagen_harness`, monitors it for crashes, and automatically restarts on failure. Datagen output is logged to `datagen.log`. To stop, send SIGTERM to the watchdog or the datagen process — the harness saves partial results and the watchdog exits cleanly.
 
 To run in the background on a server:
 ```bash
@@ -291,21 +289,21 @@ The system has three layers of crash protection:
 - **Per-game crash** — if a single game throws an exception, the worker logs it to `crash_log.txt`, emails the crash log entry, and continues to the next game
 - **Consecutive crash limit** — if 5 games crash in a row on one worker, all workers stop and the watchdog restarts the harness
 - **Worker fatal** — an unrecoverable worker-level exception stops all workers and the watchdog restarts
-- **Process crash** (SIGABRT, segfault) — the watchdog detects the missing process, writes a crash log, syncs data, emails the log, and restarts
+- **Process crash** (SIGABRT, segfault) — the watchdog detects the missing process, writes a crash log, emails the log, and restarts
 
 The watchdog caps at 10 automatic restarts. Set `WATCHDOG_POLL_INTERVAL` (env var, default 30s) to control check frequency.
 
 **Email notifications**
 
 When `email` is set in `nnue/config.json`, emails are sent at:
-- **Startup** and **completion** — run config and final summary
-- **Milestones** — every 10% completion
+- **Startup** (delayed until 10 games complete, includes ETA) and **completion** — run config and final summary
+- **Milestones** — every 10% completion (with updated ETA)
 - **Crashes** — crash log contents included in email body
 - **Shutdown** — progress summary on SIGTERM/SIGINT
 
-**Sync**
+**Retrieving data**
 
-Set `sync_dest` in `nnue/config.json` (e.g. `"user@laptop:~/OmegaZero/nnue/data/"`) to rsync data to a remote machine at the interval specified by `sync_interval` (default 12h) and on process exit. Crash logs are included in the sync.
+Use `rsync` to pull data from a remote server to your local machine when needed.
 
 **Step 2: Train the network**
 

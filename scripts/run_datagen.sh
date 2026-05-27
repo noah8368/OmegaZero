@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# Watchdog + sync for datagen. Monitors the datagen process, syncs data
-# periodically, and restarts on crash.
+# Watchdog for datagen. Monitors the datagen process and restarts on crash.
 #
 # Handles three exit scenarios:
-#   Exit 0:          Clean completion — sync and stop.
-#   Exit 2:          Worker fatal crash — harness already synced and emailed.
+#   Exit 0:          Clean completion — stop.
+#   Exit 2:          Worker fatal crash — harness already emailed.
 #                    Watchdog counts remaining games, restarts.
 #   Other / signal:  Process-level crash (SIGABRT, segfault). Watchdog writes
-#                    crash log, syncs, emails, restarts.
+#                    crash log, emails, restarts.
 #   SIGTERM/SIGINT:  Intentional stop — harness handles its own email.
-#                    Watchdog syncs and stops (does NOT restart).
+#                    Watchdog stops (does NOT restart).
 #
 # Usage:
 #   ./scripts/run_datagen.sh              # start datagen + watchdog
@@ -27,8 +26,6 @@ fi
 
 read_cfg() { python3 -c "import json; c=json.load(open('$CONFIG')); print(c.get('$1','$2'))" ; }
 
-DEST=$(read_cfg sync_dest "")
-INTERVAL=$(read_cfg sync_interval 43200)
 DATA_DIR=$(read_cfg output "nnue/data")
 EMAIL=$(read_cfg email "")
 NAME=$(read_cfg name "")
@@ -46,25 +43,6 @@ send_email() {
             --to "$EMAIL" \
             --subject "$subject" \
             --body "$body" 2>/dev/null || echo "  Email send failed"
-    fi
-}
-
-do_sync() {
-    if [[ -z "$DEST" ]]; then
-        return 0
-    fi
-    local ts
-    ts=$(date "+%Y-%m-%d %H:%M:%S")
-    echo "[$ts] Merging worker files..."
-    ./scripts/merge_workers.sh "$DATA_DIR" 2>&1 || echo "  Merge had warnings (non-fatal)"
-
-    echo "[$ts] Syncing $DATA_DIR → $DEST..."
-    if rsync -avz --progress --partial "$DATA_DIR/" "$DEST"; then
-        echo "[$ts] Sync complete."
-        return 0
-    else
-        echo "[$ts] Sync FAILED (rsync exit $?)."
-        return 1
     fi
 }
 
@@ -90,42 +68,6 @@ count_positions() {
     echo "$((train + val))"
 }
 
-get_eta() {
-    local positions=$1
-    local elapsed=$2
-    python3 -c "
-positions = $positions
-elapsed = $elapsed
-total_games = $TOTAL_GAMES
-if positions == 0 or elapsed == 0 or total_games == 0:
-    exit(0)
-est_games = positions / 17.0
-if est_games <= 0:
-    exit(0)
-rate = est_games / elapsed
-remaining = max(0, total_games - est_games)
-eta_sec = int(remaining / rate) if rate > 0 else 0
-s = eta_sec
-parts = []
-mo = s // (30*24*3600); s %= 30*24*3600
-wk = s // (7*24*3600); s %= 7*24*3600
-dy = s // (24*3600); s %= 24*3600
-hr = s // 3600; s %= 3600
-mn = s // 60; sc = s % 60
-if mo: parts.append(f'{mo}mo')
-if wk: parts.append(f'{wk}wk')
-if dy: parts.append(f'{dy}dy')
-if hr: parts.append(f'{hr}hr')
-if mn: parts.append(f'{mn}min')
-if sc or not parts: parts.append(f'{sc}s')
-from datetime import datetime, timedelta
-dur = ' '.join(parts)
-eta_date = (datetime.now() + timedelta(seconds=eta_sec)).strftime('%Y-%m-%d %H:%M:%S')
-print(f'Time remaining: {dur}')
-print(f'ETA: {eta_date}')
-" 2>/dev/null || true
-}
-
 write_crash_log() {
     local reason="${1:-unknown}"
     local ts
@@ -146,7 +88,7 @@ Type: process_crash
 Reason: $reason
 Games completed (all runs): $completed / $TOTAL_GAMES
 Positions generated (all runs): $positions
-Action: Watchdog syncing data and restarting
+Action: Watchdog restarting
 =================
 "
     echo "$entry" >> "$log_path"
@@ -191,8 +133,6 @@ echo "  Games: $GAMES"
 echo "  Workers: $WORKERS"
 echo "  Search time: ${ST}s/move"
 echo "  Output: $DATA_DIR"
-echo "  Sync dest: ${DEST:-(none)}"
-[[ -n "$DEST" ]] && echo "  Sync interval: $((INTERVAL / 3600))h $((INTERVAL % 3600 / 60))m"
 echo "  Email: ${EMAIL:-(none)}"
 echo "  Max restarts: $MAX_RESTARTS"
 echo "  Poll interval: ${POLL_INTERVAL}s"
@@ -201,10 +141,6 @@ echo "  Datagen PID: $DATAGEN_PID"
 echo ""
 echo "Logs: datagen.log  |  Kill watchdog: kill $$"
 echo ""
-
-sync_count=0
-last_sync_time=$(date +%s)
-watchdog_start_time=$(date +%s)
 
 while true; do
     # Check if datagen is still running
@@ -225,26 +161,24 @@ while true; do
         echo "[$ts] Datagen PID $DATAGEN_PID exited (status: ${exit_status:-missing})"
 
         if [[ "$exit_status" == "complete" ]]; then
-            echo "  Clean completion. Final sync..."
-            do_sync
+            echo "  Clean completion."
             echo "Watchdog exiting."
             exit 0
         fi
 
         if [[ "$exit_status" == "shutdown" ]]; then
-            echo "  Intentional stop (SIGTERM/SIGINT). Syncing and exiting..."
-            do_sync
+            echo "  Intentional stop (SIGTERM/SIGINT)."
             echo "Watchdog exiting."
             exit 0
         fi
 
         if [[ "$exit_status" == "restart" ]]; then
-            echo "  Worker fatal crash — harness already emailed and synced."
+            echo "  Worker fatal crash — harness already emailed."
         else
             echo "  Process crash (no exit status file — killed by signal)"
+            echo "  Merging worker files..."
+            ./scripts/merge_workers.sh "$DATA_DIR" 2>&1 || echo "  Merge had warnings (non-fatal)"
             crash_entry=$(write_crash_log "no .exit_status — killed by signal")
-            echo "  Syncing crash data..."
-            do_sync
             send_email \
                 "OmegaZero${tag} PROCESS CRASH — watchdog restarting" \
                 "$crash_entry"
@@ -257,8 +191,7 @@ while true; do
             send_email \
                 "OmegaZero${tag} WATCHDOG STOPPED — max restarts reached" \
                 "Datagen crashed $MAX_RESTARTS times. Manual intervention required.
-Exit status: ${exit_status:-missing}
-Data synced to: ${DEST:-(no sync dest)}"
+Exit status: ${exit_status:-missing}"
             exit 1
         fi
 
@@ -280,42 +213,7 @@ with open('$CONFIG', 'w') as f:
     json.dump(cfg, f, indent=2)
 "
         start_datagen
-        last_sync_time=$(date +%s)
         continue
-    fi
-
-    # Periodic sync while datagen is running
-    now=$(date +%s)
-    elapsed=$((now - last_sync_time))
-    if [[ "$elapsed" -ge "$INTERVAL" ]]; then
-        sync_count=$((sync_count + 1))
-        ts=$(date "+%Y-%m-%d %H:%M:%S")
-        echo ""
-        echo "[$ts] Periodic sync #$sync_count"
-        do_sync
-
-        positions=$(count_positions)
-        pct_line=""
-        eta_line=""
-        if [[ "$TOTAL_GAMES" -gt 0 ]]; then
-            est_games=$((positions * 100 / 15 / TOTAL_GAMES))
-            [[ "$est_games" -gt 100 ]] && est_games=100
-            pct_line="Estimated progress: ~${est_games}%"
-            wd_elapsed=$((now - watchdog_start_time))
-            eta_line=$(get_eta "$positions" "$wd_elapsed")
-        fi
-
-        body="Sync #$sync_count complete at $ts
-${NAME:+Machine: $NAME
-}Total positions: $positions
-$pct_line
-${eta_line:+$eta_line
-}Restarts so far: $restart_count"
-
-        send_email "OmegaZero${tag} sync #$sync_count — ${positions} positions" "$body"
-
-        last_sync_time=$now
-        echo ""
     fi
 
     sleep "$POLL_INTERVAL"

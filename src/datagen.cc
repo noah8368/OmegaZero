@@ -63,7 +63,6 @@ struct Config {
   float val_fraction = 0.1f;
   string email;
   string name;
-  string sync_dest;
 };
 
 static auto TrimQuotes(const string& s) -> string {
@@ -102,7 +101,6 @@ static auto LoadConfig(const string& path) -> Config {
     else if (key == "val_fraction") cfg.val_fraction = std::stof(val);
     else if (key == "email") cfg.email = val;
     else if (key == "name") cfg.name = val;
-    else if (key == "sync_dest") cfg.sync_dest = val;
   }
   return cfg;
 }
@@ -293,6 +291,8 @@ static std::chrono::high_resolution_clock::time_point g_start_time;
 static std::atomic<bool> g_startup_email_sent{false};
 static int g_num_workers = 1;
 static float g_search_time = 0.5f;
+constexpr int kMergeIntervalSeconds = 43200;
+static std::atomic<long long> g_last_merge_time{0};
 
 static auto SendEmail(const string& subject, const string& body) -> void {
   if (g_email.empty()) return;
@@ -537,6 +537,22 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
                   + "Output: " + g_output_dir_global);
       }
     }
+    {
+      auto now = std::chrono::system_clock::now();
+      long long now_s = std::chrono::duration_cast<std::chrono::seconds>(
+          now.time_since_epoch()).count();
+      long long last = g_last_merge_time.load();
+      if (now_s - last >= kMergeIntervalSeconds &&
+          g_last_merge_time.compare_exchange_strong(last, now_s)) {
+        train_out.flush();
+        val_out.flush();
+        string cmd = "./scripts/merge_workers.sh "
+                     + g_output_dir_global + " 2>/dev/null";
+        std::system(cmd.c_str());
+        std::lock_guard<std::mutex> lock(g_output_mutex);
+        cerr << "\n  [MERGE] Periodic merge complete" << endl;
+      }
+    }
     if (done % 100 == 0) {
       train_out.flush();
       val_out.flush();
@@ -614,6 +630,9 @@ auto main() -> int {
 
   g_total_games.store(total_games);
   g_output_dir_global = output_dir;
+  g_last_merge_time.store(
+      std::chrono::duration_cast<std::chrono::seconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count());
 
   cout << "Native NNUE data generator\n"
        << "  Games: " << total_games << "\n"
@@ -730,25 +749,6 @@ auto main() -> int {
   string tag = g_name.empty() ? "" : " [" + g_name + "]";
   if (!restarting) {
     SendEmail("OmegaZero datagen" + tag + " COMPLETE", summary);
-  }
-
-  if (!cfg.sync_dest.empty()) {
-    cerr << "\nSyncing to " << cfg.sync_dest << "..." << endl;
-    string rsync_cmd = "rsync -avz --progress --partial "
-                       + output_dir + "/ " + cfg.sync_dest;
-    int ret = std::system(rsync_cmd.c_str());
-    if (ret == 0) {
-      cerr << "Sync complete." << endl;
-      if (!restarting) {
-        SendEmail("OmegaZero" + tag + " final sync COMPLETE",
-                  "Synced " + output_dir + " to " + cfg.sync_dest);
-      }
-    } else {
-      cerr << "Sync FAILED (exit " << ret << ")" << endl;
-      SendEmail("OmegaZero" + tag + " final sync FAILED",
-                "rsync to " + cfg.sync_dest + " failed with exit code "
-                + std::to_string(ret));
-    }
   }
 
   if (restarting) {
