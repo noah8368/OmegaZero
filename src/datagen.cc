@@ -50,6 +50,7 @@ constexpr int kAdjudicateCount = 5;
 constexpr int kSampleInterval = 4;
 constexpr int kMaxAbsScore = 3000;
 constexpr int kMaxConsecutiveCrashes = 5;
+constexpr int kStartupEmailThreshold = 10;
 
 static const string kStartFen =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -288,6 +289,10 @@ static std::atomic<bool> g_milestone_70{false};
 static std::atomic<bool> g_milestone_80{false};
 static std::atomic<bool> g_milestone_90{false};
 static std::atomic<bool> g_milestone_100{false};
+static std::chrono::high_resolution_clock::time_point g_start_time;
+static std::atomic<bool> g_startup_email_sent{false};
+static int g_num_workers = 1;
+static float g_search_time = 0.5f;
 
 static auto SendEmail(const string& subject, const string& body) -> void {
   if (g_email.empty()) return;
@@ -297,6 +302,42 @@ static auto SendEmail(const string& subject, const string& body) -> void {
                " --body '" + body + "'"
                " 2>/dev/null";
   std::system(cmd.c_str());
+}
+
+static auto FormatDuration(int s) -> string {
+  if (s <= 0) return "0s";
+  string r;
+  int mo = s / (30*24*3600); s %= 30*24*3600;
+  int wk = s / (7*24*3600);  s %= 7*24*3600;
+  int dy = s / (24*3600);    s %= 24*3600;
+  int hr = s / 3600;         s %= 3600;
+  int mn = s / 60;           int sc = s % 60;
+  if (mo) r += std::to_string(mo) + "mo ";
+  if (wk) r += std::to_string(wk) + "wk ";
+  if (dy) r += std::to_string(dy) + "dy ";
+  if (hr) r += std::to_string(hr) + "hr ";
+  if (mn) r += std::to_string(mn) + "min ";
+  if (sc || r.empty()) r += std::to_string(sc) + "s";
+  while (!r.empty() && r.back() == ' ') r.pop_back();
+  return r;
+}
+
+static auto GetEtaString(int done, int total) -> string {
+  if (done <= 0) return "";
+  auto now = std::chrono::high_resolution_clock::now();
+  float elapsed = std::chrono::duration<float>(now - g_start_time).count();
+  if (elapsed <= 0) return "";
+  float rate = done / elapsed;
+  int remaining = total - done;
+  if (remaining <= 0) return "ETA: complete";
+  int eta_seconds = static_cast<int>(remaining / rate);
+  auto eta_time = std::chrono::system_clock::now()
+                  + std::chrono::seconds(eta_seconds);
+  std::time_t t = std::chrono::system_clock::to_time_t(eta_time);
+  char buf[64];
+  std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+  return "Time remaining: " + FormatDuration(eta_seconds) + "\n"
+       + "ETA: " + string(buf);
 }
 
 static auto WriteCrashLog(const string& crash_type, int worker_id,
@@ -360,6 +401,7 @@ static auto CheckMilestones(int done) -> void {
         string body = (g_name.empty() ? "" : "Machine: " + g_name + "\n")
                       + std::to_string(done) + "/" + std::to_string(total)
                       + " games done (" + std::to_string(threshold) + "%)\n"
+                      + GetEtaString(done, total) + "\n"
                       + "Output: " + g_output_dir_global;
         SendEmail(subject, body);
         std::lock_guard<std::mutex> lock(g_output_mutex);
@@ -481,6 +523,20 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
 
     int done = g_games_done.fetch_add(1) + 1;
     CheckMilestones(done);
+    if (!g_email.empty() && done >= kStartupEmailThreshold) {
+      bool expected = false;
+      if (g_startup_email_sent.compare_exchange_strong(expected, true)) {
+        string tag = g_name.empty() ? "" : " [" + g_name + "]";
+        int total = g_total_games.load();
+        SendEmail("OmegaZero" + tag + " datagen STARTED",
+                  (g_name.empty() ? "" : "Machine: " + g_name + "\n")
+                  + "Games: " + std::to_string(total) + "\n"
+                  + "Workers: " + std::to_string(g_num_workers) + "\n"
+                  + "Search time: " + std::to_string(g_search_time).substr(0, 4)
+                  + "s/move\n" + GetEtaString(done, total) + "\n"
+                  + "Output: " + g_output_dir_global);
+      }
+    }
     if (done % 100 == 0) {
       train_out.flush();
       val_out.flush();
@@ -574,17 +630,9 @@ auto main() -> int {
   std::signal(SIGTERM, SignalHandler);
   std::signal(SIGINT, SignalHandler);
 
-  if (!g_email.empty()) {
-    string tag = g_name.empty() ? "" : " [" + g_name + "]";
-    SendEmail("OmegaZero" + tag + " datagen STARTED",
-              (g_name.empty() ? "" : "Machine: " + g_name + "\n")
-              + "Games: " + std::to_string(total_games) + "\n"
-              + "Workers: " + std::to_string(num_workers) + "\n"
-              + "Search time: " + std::to_string(search_time).substr(0, 4) + "s/move\n"
-              + "Output: " + output_dir);
-  }
-
-  auto start = std::chrono::high_resolution_clock::now();
+  g_start_time = std::chrono::high_resolution_clock::now();
+  g_num_workers = num_workers;
+  g_search_time = search_time;
 
   vector<std::thread> threads;
   vector<WorkerStats> stats(num_workers);
@@ -616,7 +664,7 @@ auto main() -> int {
   }
 
   auto end = std::chrono::high_resolution_clock::now();
-  float elapsed = std::chrono::duration<float>(end - start).count();
+  float elapsed = std::chrono::duration<float>(end - g_start_time).count();
 
   int total_positions = 0, total_w = 0, total_b = 0, total_d = 0;
   for (const auto& s : stats) {

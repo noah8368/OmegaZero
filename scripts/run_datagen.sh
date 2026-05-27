@@ -90,6 +90,42 @@ count_positions() {
     echo "$((train + val))"
 }
 
+get_eta() {
+    local positions=$1
+    local elapsed=$2
+    python3 -c "
+positions = $positions
+elapsed = $elapsed
+total_games = $TOTAL_GAMES
+if positions == 0 or elapsed == 0 or total_games == 0:
+    exit(0)
+est_games = positions / 17.0
+if est_games <= 0:
+    exit(0)
+rate = est_games / elapsed
+remaining = max(0, total_games - est_games)
+eta_sec = int(remaining / rate) if rate > 0 else 0
+s = eta_sec
+parts = []
+mo = s // (30*24*3600); s %= 30*24*3600
+wk = s // (7*24*3600); s %= 7*24*3600
+dy = s // (24*3600); s %= 24*3600
+hr = s // 3600; s %= 3600
+mn = s // 60; sc = s % 60
+if mo: parts.append(f'{mo}mo')
+if wk: parts.append(f'{wk}wk')
+if dy: parts.append(f'{dy}dy')
+if hr: parts.append(f'{hr}hr')
+if mn: parts.append(f'{mn}min')
+if sc or not parts: parts.append(f'{sc}s')
+from datetime import datetime, timedelta
+dur = ' '.join(parts)
+eta_date = (datetime.now() + timedelta(seconds=eta_sec)).strftime('%Y-%m-%d %H:%M:%S')
+print(f'Time remaining: {dur}')
+print(f'ETA: {eta_date}')
+" 2>/dev/null || true
+}
+
 write_crash_log() {
     local reason="${1:-unknown}"
     local ts
@@ -168,6 +204,7 @@ echo ""
 
 sync_count=0
 last_sync_time=$(date +%s)
+watchdog_start_time=$(date +%s)
 
 while true; do
     # Check if datagen is still running
@@ -259,17 +296,21 @@ with open('$CONFIG', 'w') as f:
 
         positions=$(count_positions)
         pct_line=""
+        eta_line=""
         if [[ "$TOTAL_GAMES" -gt 0 ]]; then
             est_games=$((positions * 100 / 15 / TOTAL_GAMES))
             [[ "$est_games" -gt 100 ]] && est_games=100
             pct_line="Estimated progress: ~${est_games}%"
+            wd_elapsed=$((now - watchdog_start_time))
+            eta_line=$(get_eta "$positions" "$wd_elapsed")
         fi
 
         body="Sync #$sync_count complete at $ts
 ${NAME:+Machine: $NAME
 }Total positions: $positions
 $pct_line
-Restarts so far: $restart_count"
+${eta_line:+$eta_line
+}Restarts so far: $restart_count"
 
         send_email "OmegaZero${tag} sync #$sync_count — ${positions} positions" "$body"
 

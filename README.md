@@ -101,6 +101,7 @@ make              # Optimized engine binary → build/OmegaZero
 make debug        # Debug test harness (ASan, -O0) → build/test_harness
 make bench        # NPS benchmark harness (-O3) → build/bench_harness
 make clean        # Remove all build artifacts
+make datagen      # NNUE training data generation harness → build/datagen_harness
 make check-deps   # Verify g++, python3, and Boost are installed
 ```
 
@@ -171,9 +172,10 @@ python3 scripts/elo_test.py plot --input results
 Results are saved to `results/` by default:
 - `games.csv` — per-game results with running ELO estimates
 - `summary.csv` — win/draw/loss totals and ELO estimate per opponent level
-- `elo_convergence.png` — ELO estimate over games played (one line per level)
-- `wdl_by_level.png` — win/draw/loss bar chart by opponent strength
-- `elo_by_level.png` — ELO estimate by opponent strength with average line
+- `games_{elo}.pgn` — PGN files per Stockfish level
+- `version_history.csv` — cumulative results across versions (appended each run)
+- `version_nps_plot.png` — NPS comparison across engine versions
+- `version_elo_plot.png` — ELO estimates by Stockfish level and version
 
 #### Perft Testing
 
