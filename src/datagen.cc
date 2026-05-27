@@ -292,7 +292,9 @@ static std::atomic<bool> g_startup_email_sent{false};
 static int g_num_workers = 1;
 static float g_search_time = 0.5f;
 constexpr int kMergeIntervalSeconds = 43200;
+constexpr int kHeartbeatIntervalSeconds = 43200;
 static std::atomic<long long> g_last_merge_time{0};
+static std::atomic<long long> g_last_heartbeat_time{0};
 
 static auto SendEmail(const string& subject, const string& body) -> void {
   if (g_email.empty()) return;
@@ -554,16 +556,29 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
         std::lock_guard<std::mutex> lock(g_output_mutex);
         cerr << "\n  [MERGE] Periodic merge complete" << endl;
       }
+      long long last_hb = g_last_heartbeat_time.load();
+      if (now_s - last_hb >= kHeartbeatIntervalSeconds &&
+          g_last_heartbeat_time.compare_exchange_strong(last_hb, now_s)) {
+        int total = g_total_games.load();
+        int total_done = g_games_done.load();
+        string tag = g_name.empty() ? "" : " [" + g_name + "]";
+        string body = (g_name.empty() ? "" : "Machine: " + g_name + "\n")
+            + std::to_string(total_done) + "/" + std::to_string(total)
+            + " games done\n"
+            + GetEtaString(total_done, total) + "\n"
+            + "Output: " + g_output_dir_global;
+        SendEmail("OmegaZero" + tag + " heartbeat", body);
+        std::lock_guard<std::mutex> lock(g_output_mutex);
+        cerr << "  [HEARTBEAT] " << total_done << "/" << total
+             << " — email sent" << endl;
+      }
     }
     if (done % 100 == 0) {
       train_out.flush();
       val_out.flush();
       std::lock_guard<std::mutex> lock(g_output_mutex);
-      cerr << "\r  " << done << " games complete (" << stats.positions
-           << " positions from worker " << worker_id << ")" << std::flush;
-    } else if (done % 10 == 0) {
-      std::lock_guard<std::mutex> lock(g_output_mutex);
-      cerr << "\r  " << done << " games complete" << std::flush;
+      cerr << "  " << done << " games complete (" << stats.positions
+           << " positions from worker " << worker_id << ")" << endl;
     }
   }
   if (g_shutdown.load()) {
@@ -633,9 +648,10 @@ auto main() -> int {
 
   g_total_games.store(total_games);
   g_output_dir_global = output_dir;
-  g_last_merge_time.store(
-      std::chrono::duration_cast<std::chrono::seconds>(
-          std::chrono::system_clock::now().time_since_epoch()).count());
+  long long now_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count();
+  g_last_merge_time.store(now_epoch);
+  g_last_heartbeat_time.store(now_epoch);
 
   cout << "Native NNUE data generator\n"
        << "  Games: " << total_games << "\n"

@@ -265,12 +265,19 @@ make datagen
 ./scripts/run_datagen.sh
 ```
 
-The watchdog script launches `datagen_harness`, monitors it for crashes, and automatically restarts on failure. Datagen output is logged to `datagen.log`. To stop, send SIGTERM to the watchdog or the datagen process — the harness saves partial results and the watchdog exits cleanly.
+The watchdog script launches `datagen_harness`, monitors it for crashes, and automatically restarts on failure. It checks for already-running datagen processes on startup to prevent duplicate instances competing for CPU. Datagen output is logged to `datagen.log`.
 
 To run in the background on a server:
 ```bash
-nohup ./scripts/run_datagen.sh > watchdog.log 2>&1 &
+nohup ./scripts/run_datagen.sh > datagen.log 2>&1 &
 ```
+
+To gracefully shut down (e.g. before deploying an update):
+```bash
+./scripts/shutdown_datagen.sh
+```
+
+This stops the watchdog first, then sends SIGTERM to the harness. Workers finish their current game, flush data, merge worker files, and write metadata. Typically takes 30-60s.
 
 Quality filters are applied automatically: positions in check, mate scores, and tactical explosions (|score| > 3000cp) are skipped. Every 4th eligible position is sampled, and Zobrist hash deduplication removes near-duplicates within each worker. Games are adjudicated at 1000cp for 5 consecutive moves. The first 10 plies are skipped (opening theory), and each game begins with 8 random moves for opening diversity.
 
@@ -297,6 +304,7 @@ The watchdog caps at 10 automatic restarts. Set `WATCHDOG_POLL_INTERVAL` (env va
 
 When `email` is set in `nnue/config.json`, emails are sent at:
 - **Startup** (delayed until 10 games complete, includes ETA) and **completion** — run config and final summary
+- **Heartbeat** — every 12 hours with game count, position count, and updated ETA
 - **Milestones** — every 10% completion (with updated ETA)
 - **Crashes** — crash log contents included in email body
 - **Shutdown** — progress summary on SIGTERM/SIGINT

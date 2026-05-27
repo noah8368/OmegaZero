@@ -112,6 +112,15 @@ start_datagen() {
 
 restart_count=0
 
+# Check for already-running datagen_harness processes
+existing_pids=$(pgrep -f datagen_harness 2>/dev/null | grep -v "$$" || true)
+if [[ -n "$existing_pids" ]]; then
+    echo "ERROR: datagen_harness is already running (PIDs: $existing_pids)"
+    echo "Kill it first:  kill $existing_pids"
+    echo "Or attach:      $0 <PID>"
+    exit 1
+fi
+
 if [[ $# -ge 1 ]]; then
     DATAGEN_PID="$1"
     if ! kill -0 "$DATAGEN_PID" 2>/dev/null; then
