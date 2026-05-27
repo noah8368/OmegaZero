@@ -301,7 +301,8 @@ static auto SendEmail(const string& subject, const string& body) -> void {
                " --subject '" + subject + "'"
                " --body '" + body + "'"
                " 2>/dev/null";
-  (void)std::system(cmd.c_str());
+  int ret = std::system(cmd.c_str());
+  (void)ret;
 }
 
 static auto FormatDuration(int s) -> string {
@@ -548,7 +549,8 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
         val_out.flush();
         string cmd = "./scripts/merge_workers.sh "
                      + g_output_dir_global + " 2>/dev/null";
-        (void)std::system(cmd.c_str());
+        int ret = std::system(cmd.c_str());
+        (void)ret;
         std::lock_guard<std::mutex> lock(g_output_mutex);
         cerr << "\n  [MERGE] Periodic merge complete" << endl;
       }
@@ -626,7 +628,8 @@ auto main() -> int {
 
   // Create output directory tree
   string mkdir_cmd = "mkdir -p " + output_dir;
-  (void)std::system(mkdir_cmd.c_str());
+  int ret = std::system(mkdir_cmd.c_str());
+  (void)ret;
 
   g_total_games.store(total_games);
   g_output_dir_global = output_dir;
