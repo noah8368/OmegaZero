@@ -491,6 +491,11 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       continue;
     }
 
+    int see_val = kWorstEval;
+    if (move.captured_piece != kNA) {
+      see_val = board_->GetSee(move);
+    }
+
     try {
       board_->MakeMove(move);
     } catch (BadMove& e) {
@@ -508,7 +513,6 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       continue;
     }
 
-    int see_val = kWorstEval;
     if (ShouldSeePrune(move, depth, at_pv_node, gives_check, in_check,
                        see_val)) {
       board_->UnmakeMove(move);
@@ -525,9 +529,6 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
         && !gives_check && depth >= kMinReductionDepth) {
       bool should_reduce = (move.captured_piece == kNA);
       if (!should_reduce && move.captured_piece != kNA) {
-        if (see_val == kWorstEval) {
-          see_val = board_->GetSee(move);
-        }
         should_reduce = (see_val < 0);
       }
       if (should_reduce) {

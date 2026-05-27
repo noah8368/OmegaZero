@@ -145,7 +145,7 @@ class Engine {
                             int ply) -> bool;
   auto ShouldSeePrune(const Move& move, int depth, bool at_pv_node,
                        bool gives_check, bool in_check,
-                       int& see_val) -> bool;
+                       int see_val) -> bool;
   auto SearchMove(int alpha, int beta, int depth, int ply, int legal_moves,
                    bool at_pv_node, bool gives_check, const Move& move,
                    S8 player_to_move, int& see_val) -> int;
@@ -218,9 +218,7 @@ inline auto Engine::InEndgame() const -> bool {
 }
 
 inline auto Engine::IsKillerMove(const Move& move, int ply) const -> bool {
-  if (ply < 0 || ply >= kSearchLimit) {
-    throw invalid_argument("ply in Engine::IsKillerMove()");
-  }
+  if (ply < 0 || ply >= kSearchLimit) return false;
 
   return killer_moves_[ply].first == move || killer_moves_[ply].second == move;
 }
@@ -273,7 +271,7 @@ inline auto Engine::CheckSearchTime() -> void {
 }
 
 inline auto Engine::RecordKillerMove(const Move& move, int ply) -> void {
-  assert(ply >= 0 && ply < kSearchLimit);
+  if (ply < 0 || ply >= kSearchLimit) return;
   if (move != killer_moves_[ply].first && move != killer_moves_[ply].second) {
     killer_moves_[ply].second = killer_moves_[ply].first;
     killer_moves_[ply].first = move;
@@ -308,12 +306,11 @@ inline auto Engine::ShouldLateMovePrune(const Move& move,
 
 inline auto Engine::ShouldSeePrune(const Move& move, int depth,
                                    bool at_pv_node, bool gives_check,
-                                   bool in_check, int& see_val) -> bool {
+                                   bool in_check, int see_val) -> bool {
   if (at_pv_node || depth > kMaxSeePruningDepth || move.captured_piece == kNA
       || gives_check || in_check) {
     return false;
   }
-  see_val = board_->GetSee(move);
   return see_val < -depth * 100;
 }
 
