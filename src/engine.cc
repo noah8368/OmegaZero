@@ -145,6 +145,72 @@ auto Engine::GetBestMove() -> Move {
   return best_move;
 }
 
+auto Engine::GetBestMove(int& score_out) -> Move {
+  assert(!pos_history_.empty());
+  board_->ClearPawnTable();
+  for (auto& km : killer_moves_) km = {};
+  size_t saved_history_size = pos_history_.size();
+  Move best_move;
+  Move move;
+  board_->SavePos();
+  constexpr int kRootNodePly = 0;
+
+  auto fallback_start = high_resolution_clock::now();
+  vector<Move> fallback_moves = GenerateMoves();
+  for (const Move& m : fallback_moves) {
+    try {
+      board_->MakeMove(m);
+      best_move = m;
+      board_->UnmakeMove(m);
+      break;
+    } catch (BadMove&) {
+      continue;
+    }
+  }
+  auto fallback_end = high_resolution_clock::now();
+  float fallback_secs =
+      std::chrono::duration<float>(fallback_end - fallback_start).count();
+  search_time_ = std::max(0.01f, search_time_ - fallback_secs);
+
+  search_start_ = high_resolution_clock::now();
+  nodes_since_time_check_ = 0;
+#ifdef BENCHMARK
+  total_nodes_ = 0;
+#endif
+  int f = 0;
+  int search_depth = 1;
+  for (; search_depth <= kSearchLimit; ++search_depth) {
+    try {
+      f = MtdfSearch(f, search_depth, kRootNodePly, move);
+      if (move.moving_piece != kNA || move.castling_type != kNA) {
+        best_move = move;
+      }
+    } catch (OutOfTime& e) {
+      break;
+    }
+  }
+
+#ifdef BENCHMARK
+  {
+    search_depth =
+      (search_depth == kSearchLimit) ? kSearchLimit : search_depth - 1;
+    uint64_t nodes = total_nodes_ + nodes_since_time_check_;
+    float elapsed = duration_cast<duration<float>>(
+        high_resolution_clock::now() - search_start_).count();
+    uint64_t nps = elapsed > 0 ? static_cast<uint64_t>(nodes / elapsed) : 0;
+    std::cerr << "SEARCH DEPTH: " << search_depth
+              << "  NODES: " << nodes << "  NPS: " << nps << endl;
+  }
+#endif
+
+  score_out = f;
+  board_->ResetPos();
+  pos_history_.resize(saved_history_size);
+  assert(best_move.moving_piece != kNA || best_move.castling_type != kNA ||
+         GetGameStatus() == kPlayerCheckmated || GetGameStatus() == kDraw);
+  return best_move;
+}
+
 auto Engine::GetGameStatus() -> S8 {
   // Check for checks, checkmates, and draws.
   vector<Move> move_list = GenerateMoves();
@@ -425,6 +491,11 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       continue;
     }
 
+    int see_val = kWorstEval;
+    if (move.captured_piece != kNA) {
+      see_val = board_->GetSee(move);
+    }
+
     try {
       board_->MakeMove(move);
     } catch (BadMove& e) {
@@ -442,7 +513,6 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       continue;
     }
 
-    int see_val = kWorstEval;
     if (ShouldSeePrune(move, depth, at_pv_node, gives_check, in_check,
                        see_val)) {
       board_->UnmakeMove(move);
@@ -459,9 +529,6 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
         && !gives_check && depth >= kMinReductionDepth) {
       bool should_reduce = (move.captured_piece == kNA);
       if (!should_reduce && move.captured_piece != kNA) {
-        if (see_val == kWorstEval) {
-          see_val = board_->GetSee(move);
-        }
         should_reduce = (see_val < 0);
       }
       if (should_reduce) {

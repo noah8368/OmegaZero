@@ -1,0 +1,56 @@
+/* Noah Himed
+ *
+ * Define the NNUE evaluation network. Loads quantized weights from a binary
+ * file and performs integer-arithmetic inference using the HalfKP architecture.
+ *
+ * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
+ */
+
+#ifndef OMEGAZERO_SRC_NNUE_H_
+#define OMEGAZERO_SRC_NNUE_H_
+
+#include <cstdint>
+#include <memory>
+#include <string>
+
+#include "move.h"
+
+namespace omegazero {
+
+constexpr int kHalfKpSize = 40960;
+constexpr int kFtOutSize = 256;
+constexpr int kL2OutSize = 32;
+constexpr int kL3OutSize = 32;
+
+constexpr int kNumPieceTypesHalfKp = 10;
+constexpr int kFtScale = 127;
+constexpr int kHiddenScale = 64;
+constexpr int kOutputScale = kFtScale * kHiddenScale;  // 8128
+
+class NnueNetwork {
+ public:
+  auto Load(const std::string& path) -> bool;
+  auto IsLoaded() const -> bool { return loaded_; }
+
+  auto Forward(S8 white_king_sq, S8 black_king_sq,
+               const S8* piece_layout, const S8* player_layout,
+               S8 player_to_move) const -> int;
+
+ private:
+  bool loaded_ = false;
+
+  std::unique_ptr<int16_t[]> ft_weight_;   // [kFtOutSize][kHalfKpSize]
+  std::unique_ptr<int16_t[]> ft_bias_;     // [kFtOutSize]
+  std::unique_ptr<int8_t[]> l2_weight_;    // [kL2OutSize][kFtOutSize * 2]
+  std::unique_ptr<int32_t[]> l2_bias_;     // [kL2OutSize]
+  std::unique_ptr<int8_t[]> l3_weight_;    // [kL3OutSize][kL2OutSize]
+  std::unique_ptr<int32_t[]> l3_bias_;     // [kL3OutSize]
+  std::unique_ptr<int8_t[]> output_weight_; // [kL3OutSize]
+  int32_t output_bias_ = 0;
+};
+
+extern NnueNetwork g_nnue;
+
+}  // namespace omegazero
+
+#endif  // OMEGAZERO_SRC_NNUE_H_

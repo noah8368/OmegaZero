@@ -10,7 +10,6 @@
 - [Play Online](#play-online)
 - [Usage](#usage)
   - [Prerequisites](#prerequisites)
-  - [ELO Testing Dependencies](#elo-testing-dependencies)
   - [Building](#building)
   - [Playing a Game](#playing-a-game)
   - [UCI Mode](#uci-mode)
@@ -19,6 +18,7 @@
   - [Test Harness](#test-harness)
   - [Benchmarking](#benchmarking)
   - [Generating Move Tables](#generating-move-tables)
+  - [NNUE Training](#nnue-training)
 - [Implementation](#implementation)
   - [Board Representation](#board-representation)
   - [Move Generation](#move-generation)
@@ -26,12 +26,13 @@
   - [Search](#search)
   - [Opening Book](#opening-book)
   - [Evaluation](#evaluation)
+    - [NNUE Eval](#nnue-eval)
+    - [Handcrafted Eval](#handcrafted-eval)
 - [Performance](#performance)
   - [Changelog](#changelog)
   - [NPS Comparison](#nodes-per-second-nps-comparison)
   - [Stockfish ELO Comparison](#stockfish-elo-comparison)
   - [Example Games](#example-games)
-  - [Strengths and Weaknesses](#strengths-and-weaknesses)
 
 ### Project Summary
 
@@ -54,52 +55,43 @@ The bot runs the same engine described below, connected via the UCI protocol.
 
 #### Prerequisites
 
-The included `Makefile` supports both GNU/Linux and macOS. The [Boost library](https://www.boost.org/)
-is a requirement and should be installed locally before compilation. `python3` is
-also required to generate the move masks and magic bitboards used by the engine.
+The `Makefile` supports GNU/Linux and macOS. Install the core dependencies first, then add optional ones as needed.
 
-To verify all dependencies are satisfied before building, run:
+**Core (required to build and play)**
+
+| | Ubuntu | macOS ([Homebrew](https://brew.sh/)) |
+|---|---|---|
+| C++ / build tools | `sudo apt-get install g++ make` | Xcode Command Line Tools |
+| [Boost](https://www.boost.org/) | `sudo apt-get install libboost-all-dev` | `brew install boost` |
+| Python 3 | `sudo apt-get install python3` | pre-installed |
+
+Verify everything is in place:
 ```
 make check-deps
 ```
 
-On Ubuntu, install Boost via `apt-get`:
+**NNUE training** (datagen + training scripts)
 ```
-sudo apt-get install libboost-all-dev
-```
-
-On macOS, install Boost via [Homebrew](https://brew.sh/). If Homebrew isn't installed,
-follow the instructions on their site first, then run:
-```
-brew install boost
+pip3 install torch tqdm
 ```
 
-#### ELO Testing Dependencies
+**ELO testing** ([Stockfish](https://stockfishchess.org/) + [cutechess-cli](https://github.com/cutechess/cutechess) + [matplotlib](https://matplotlib.org/))
 
-To run automated ELO testing, the following additional tools are required:
+On Ubuntu:
+```
+sudo apt-get install stockfish cutechess qtbase5-dev cmake
+pip3 install matplotlib
+```
 
-- [Stockfish](https://stockfishchess.org/) — opponent engine
-- [Cute Chess](https://github.com/cutechess/cutechess) (`cutechess-cli`) — tournament manager
-- [matplotlib](https://matplotlib.org/) — plot generation (Python)
-
-On MacOS, install cutechess from source:
-
+On macOS (cutechess must be built from source):
 ```bash
 brew install stockfish qt cmake
 pip3 install matplotlib --break-system-packages
 
 cd ~/path/to/OmegaZero
 git clone https://github.com/cutechess/cutechess.git
-cd cutechess
-mkdir build && cd build
-cmake ..
-make -j8
-```
-
-On Ubuntu, install with `apt-get`:
-```
-sudo apt-get install stockfish cutechess qtbase5-dev cmake
-pip3 install matplotlib
+cd cutechess && mkdir build && cd build
+cmake .. && make -j8
 ```
 
 #### Building
@@ -109,6 +101,7 @@ make              # Optimized engine binary → build/OmegaZero
 make debug        # Debug test harness (ASan, -O0) → build/test_harness
 make bench        # NPS benchmark harness (-O3) → build/bench_harness
 make clean        # Remove all build artifacts
+make datagen      # NNUE training data generation harness → build/datagen_harness
 make check-deps   # Verify g++, python3, and Boost are installed
 ```
 
@@ -173,15 +166,16 @@ python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50 --st
 
 Regenerate plots and summary table from existing results:
 ```
-python3 scripts/elo_test.py plot --input elo_results
+python3 scripts/elo_test.py plot --input results
 ```
 
-Results are saved to `elo_results/` by default:
+Results are saved to `results/` by default:
 - `games.csv` — per-game results with running ELO estimates
 - `summary.csv` — win/draw/loss totals and ELO estimate per opponent level
-- `elo_convergence.png` — ELO estimate over games played (one line per level)
-- `wdl_by_level.png` — win/draw/loss bar chart by opponent strength
-- `elo_by_level.png` — ELO estimate by opponent strength with average line
+- `games_{elo}.pgn` — PGN files per Stockfish level
+- `version_history.csv` — cumulative results across versions (appended each run)
+- `version_nps_plot.png` — NPS comparison across engine versions
+- `version_elo_plot.png` — ELO estimates by Stockfish level and version
 
 #### Perft Testing
 
@@ -240,6 +234,118 @@ python3 scripts/mine_magics.py
 ```
 
 `make` will automatically regenerate these files if they are missing.
+
+#### NNUE Training
+
+Training the NNUE is a three-step process: generate self-play training data, train the network, then analyze the results.
+
+**Step 1: Generate training data**
+
+Build and run the native data generator, which plays OmegaZero against itself using direct engine calls (no UCI overhead). Each position's FEN, search score, and game outcome are recorded.
+
+All settings are read from `nnue/config.json`. Copy the example and edit it:
+```bash
+cp nnue/config.json.example nnue/config.json
+```
+
+| Field | Description | Default |
+|---|---|---|
+| `games` | Total self-play games | 100 |
+| `st` | Search time per move (seconds) | 0.5 |
+| `workers` | Parallel threads | 1 |
+| `output` | Output directory | `nnue/data` |
+| `val_fraction` | Fraction of games for validation | 0.1 |
+| `email` | Email address for notifications (see below) | `""` |
+| `name` | Machine identifier for email subjects (e.g. `epyc-1`) | `""` |
+| `gmail_app_password` | [Gmail app password](https://myaccount.google.com/apppasswords) for sending email | `""` |
+
+Then build and run:
+```bash
+make datagen
+./scripts/run_datagen.sh
+```
+
+The watchdog script launches `datagen_harness`, monitors it for crashes, and automatically restarts on failure. Datagen output is logged to `datagen.log`. To stop, send SIGTERM to the watchdog or the datagen process — the harness saves partial results and the watchdog exits cleanly.
+
+To run in the background on a server:
+```bash
+nohup ./scripts/run_datagen.sh > watchdog.log 2>&1 &
+```
+
+Quality filters are applied automatically: positions in check, mate scores, and tactical explosions (|score| > 3000cp) are skipped. Every 4th eligible position is sampled, and Zobrist hash deduplication removes near-duplicates within each worker. Games are adjudicated at 1000cp for 5 consecutive moves. The first 10 plies are skipped (opening theory), and each game begins with 8 random moves for opening diversity.
+
+Output (under a timestamped subdirectory, e.g. `nnue/data/2026-05-25_20-33-09_eaf5059/`):
+- `training_data.txt` — training positions
+- `validation_data.txt` — validation positions (from separate games to avoid contamination)
+- `metadata.txt` — generation parameters, timestamp, and git commit hash
+- `crash_log.txt` — structured crash entries (only if crashes occurred)
+
+For best results, aim for 100M+ positions.
+
+**Crash handling**
+
+The system has three layers of crash protection:
+
+- **Per-game crash** — if a single game throws an exception, the worker logs it to `crash_log.txt`, emails the crash log entry, and continues to the next game
+- **Consecutive crash limit** — if 5 games crash in a row on one worker, all workers stop and the watchdog restarts the harness
+- **Worker fatal** — an unrecoverable worker-level exception stops all workers and the watchdog restarts
+- **Process crash** (SIGABRT, segfault) — the watchdog detects the missing process, writes a crash log, emails the log, and restarts
+
+The watchdog caps at 10 automatic restarts. Set `WATCHDOG_POLL_INTERVAL` (env var, default 30s) to control check frequency.
+
+**Email notifications**
+
+When `email` is set in `nnue/config.json`, emails are sent at:
+- **Startup** (delayed until 10 games complete, includes ETA) and **completion** — run config and final summary
+- **Milestones** — every 10% completion (with updated ETA)
+- **Crashes** — crash log contents included in email body
+- **Shutdown** — progress summary on SIGTERM/SIGINT
+
+**Retrieving data**
+
+Use `rsync` to pull data from a remote server to your local machine when needed.
+
+**Step 2: Train the network**
+
+Training parameters are read from the `training` section of `nnue/config.json`:
+
+```bash
+python3 scripts/train_nnue.py
+```
+
+CLI args (e.g. `--epochs 300`) override config values for one-off experiments.
+
+| Field | Description | Default |
+|---|---|---|
+| `epochs` | Training epochs | 200 |
+| `batch` | Batch size | 16384 |
+| `lr` | Initial learning rate | 0.001 |
+| `wd` | Weight decay | 1e-6 |
+| `lmbda` | Score/result blend: `lmbda * sigmoid(score/400) + (1-lmbda) * result` | 0.7 |
+| `val_split` | Fraction of data for validation (if no separate val file) | 0.05 |
+| `save_every` | Save checkpoint every N epochs | 50 |
+| `data` | Training data path (auto-resolves latest run) | `nnue/data` |
+| `val_data` | Separate validation data file | auto-detected |
+| `output` | Model checkpoint directory | `nnue/model` |
+
+Outputs:
+- `nnue/nnue.bin` — quantized binary weights for C++ inference (always at the base)
+- `nnue/model/<run>/best.pt` — best PyTorch checkpoint (by validation loss)
+- `nnue/model/<run>/final.pt` — last epoch checkpoint
+
+**Step 3: Analyze data and model quality**
+
+```bash
+# Analyze the training data (score distributions, result balance, phase coverage)
+python3 scripts/plot_training.py data
+
+# Evaluate trained model (accuracy scatter, calibration, error analysis)
+python3 scripts/plot_training.py model
+```
+
+Plots are saved to `results/` with a `plot_metadata.json` recording the timestamp and git commit.
+
+**Iterative improvement:** After training an initial NNUE, generate new self-play data using the NNUE-equipped engine and retrain — each cycle produces stronger play.
 
 ### Implementation
 
@@ -309,6 +415,17 @@ The table below shows how each search feature contributes when stacked cumulativ
 | endgame  | 795k, d10   | 781k, d14 | 782k, d18 | 785k, d17 | 779k, d17 | 772k, d17 | 618k, d18 | 593k, d17 | 532k, d18 |
 | **Avg NPS** | **812k** | **641k** | **608k** | **825k** | **560k** | **475k** | **402k** | **413k** | **406k** |
 
+The table below shows how each search feature contributes when stacked cumulatively. Each column adds one feature on top of all previous ones.<sup>3</sup>
+
+*Search Feature Stacking Benchmark (5s/position)*
+| Position | No Features | + LMR | + NMP + History | + RFP | + SEE | + Futility | + LMP | + Countermove | + Hist LMR |
+|----------|-------------|-------|-----------------|-------|-------|------------|-------|---------------|------------|
+| opening  | 1084k, d6   | 997k, d8  | 906k, d12 | 911k, d11 | 537k, d12 | 508k, d14 | 431k, d14 | 472k, d14 | 512k, d13 |
+| midgame  | 838k, d5    | 617k, d6  | 569k, d6  | 1085k, d7 | 767k, d11 | 486k, d11 | 410k, d13 | 439k, d12 | 434k, d13 |
+| kiwipete | 532k, d4    | 173k, d3  | 174k, d3  | 518k, d5  | 157k, d5  | 134k, d5  | 148k, d6  | 148k, d6  | 145k, d6  |
+| endgame  | 795k, d10   | 781k, d14 | 782k, d18 | 785k, d17 | 779k, d17 | 772k, d17 | 618k, d18 | 593k, d17 | 532k, d18 |
+| **Avg NPS** | **812k** | **641k** | **608k** | **825k** | **560k** | **475k** | **402k** | **413k** | **406k** |
+
 #### Opening Book
 
 In the beginning of the game, the engine randomly picks an opening from an
@@ -317,6 +434,22 @@ opening book. This list of openings are provided from the text file,
 J.E.H.Shaw). Slight modifications have been made to the file to aid in parsing.
 
 #### Evaluation
+
+##### NNUE Eval
+
+OmegaZero uses an [NNUE](https://www.chessprogramming.org/NNUE) (Efficiently Updatable Neural Network) for position evaluation, trained on self-play data from the engine's own games.
+
+The NNUE architecture used is [HalfKP](https://www.chessprogramming.org/Stockfish_NNUE). The network takes a sparse input encoding of (king_square, piece_type, piece_square) features — 40,960 features per perspective (white king and black king), of which only ~30 are active in any given position.
+
+![NNUE Architecture](./figs/nnue_architecture.png "NNUE Architecture")
+
+The "efficiently updatable" property means that when a move is made, only the few changed features need to be added/removed from the hidden layer accumulator, rather than recomputing the entire input — making inference nearly free inside the search.
+
+Weights are quantized to `int16` (feature transformer) and `int8` (hidden layers) for fast integer arithmetic during inference. See [NNUE Training](#nnue-training) for how to generate training data and train the network.
+
+##### Handcrafted Eval
+
+If no NNUE weights file is found (at the default `nnue/nnue.bin` or the path specified via `--nnue`), the engine falls back to a handcrafted evaluation function.
 
 Following in the footsteps of [Fruit](https://www.chessprogramming.org/Fruit), OmegaZero follows a minimalist
 evaluation philosophy, with a "light" evaluation, which scores a board position

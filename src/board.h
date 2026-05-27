@@ -195,6 +195,9 @@ class Board {
   auto GetPieceOnSq(S8 sq) const -> S8;
   auto GetPlayerOnSq(S8 sq) const -> S8;
   auto GetPlayerToMove() const -> S8;
+  auto GetCastlingRight(S8 player, S8 side) const -> bool;
+
+  auto ToFen() const -> std::string;
 
   // Return an (almost) unique hash that represents the current board state.
   auto GetBoardHash() const -> U64;
@@ -445,6 +448,10 @@ inline auto Board::GetPlayerOnSq(S8 sq) const -> S8 {
 }
 
 inline auto Board::GetPlayerToMove() const -> S8 { return player_to_move_; }
+
+inline auto Board::GetCastlingRight(S8 player, S8 side) const -> bool {
+  return castling_rights_[player][side];
+}
 
 inline auto Board::GetBoardHash() const -> U64 { return board_hash_; }
 

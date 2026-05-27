@@ -12,7 +12,7 @@ Usage:
 Examples:
     python3 scripts/elo_test.py run --games 20 --st 0.5
     python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50
-    python3 scripts/elo_test.py plot --input elo_results
+    python3 scripts/elo_test.py plot --input results
 """
 
 import argparse
@@ -177,9 +177,11 @@ def run_matches(args):
         w.writeheader()
         w.writerows(summary_rows)
 
-    print(f"\nResults saved to {out}/")
+    version = get_version_tag()
+    print(f"\nResults saved to {out}/  [version: {version}]")
     print_summary(summary_rows)
-    generate_plots(out)
+    append_to_history(summary_rows, version, out)
+    generate_plots(out, version=version)
 
 
 def print_summary(rows):
@@ -211,107 +213,150 @@ def print_summary(rows):
     print(f"{'=' * 70}")
 
 
-def generate_plots(output_dir):
-    output_dir = Path(output_dir)
-    games_csv = output_dir / "games.csv"
-    summary_csv = output_dir / "summary.csv"
+def get_version_tag():
+    """Get a version tag from git (short hash + dirty flag)."""
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL
+        ).decode().strip()
+        dirty = subprocess.call(
+            ["git", "diff", "--quiet"],
+            stderr=subprocess.DEVNULL
+        ) != 0
+        return commit + ("-dirty" if dirty else "")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "unknown"
 
-    if not games_csv.exists() or not summary_csv.exists():
-        print("No CSV data found. Run matches first.")
-        return
+
+def append_to_history(summary_rows, version, output_dir):
+    """Append current run results to the version history CSV."""
+    history_csv = Path(output_dir) / "version_history.csv"
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    file_exists = history_csv.exists()
+    with open(history_csv, "a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=[
+            "timestamp", "version", "opponent_elo", "games",
+            "wins", "draws", "losses", "win_rate", "elo_estimate",
+        ])
+        if not file_exists:
+            w.writeheader()
+        for r in summary_rows:
+            total = int(r["games"])
+            win_rate = float(r["score_rate"])
+            w.writerow({
+                "timestamp": timestamp,
+                "version": version,
+                "opponent_elo": r["opponent_elo"],
+                "games": total,
+                "wins": r["wins"],
+                "draws": r["draws"],
+                "losses": r["losses"],
+                "win_rate": round(win_rate, 3),
+                "elo_estimate": r["elo_estimate"],
+            })
+    print(f"  Version history: {history_csv}")
+
+
+def generate_plots(output_dir, version=None):
+    output_dir = Path(output_dir)
+    history_csv = output_dir / "version_history.csv"
+    benchmark_csv = output_dir / "v4_benchmark.csv"
 
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        import numpy as np
     except ImportError:
         print("\nmatplotlib not installed — skipping plots.")
         print("Install with: pip3 install matplotlib")
         return
 
-    with open(games_csv) as f:
-        games = list(csv.DictReader(f))
-    with open(summary_csv) as f:
-        summary = list(csv.DictReader(f))
-
-    if not games or not summary:
-        print("No game data to plot.")
-        return
-
     print("\nGenerating plots...")
 
-    # --- Plot 1: Games vs running ELO estimate, one line per level ---
-    fig, ax = plt.subplots(figsize=(10, 6))
-    levels = sorted(set(g["opponent_elo"] for g in games))
+    # --- Plot 1: NPS by version (bar chart) ---
+    nps_data = {"v1": 197, "v2": 507, "v3": 498, "v4": 406}
+    if benchmark_csv.exists():
+        with open(benchmark_csv) as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row["Position"].lower() == "average":
+                    last_col = [k for k in row.keys() if "[kNPS]" in k][-1]
+                    nps_data["v4"] = int(row[last_col])
+                    break
 
-    for level in levels:
-        lg = [g for g in games if g["opponent_elo"] == level]
-        x = [int(g["level_game"]) for g in lg]
-        y = [float(g["running_elo"]) for g in lg]
-        ax.plot(x, y, marker=".", markersize=4, label=f"vs SF {level}")
+    versions = sorted(nps_data.keys(), key=lambda v: int(v[1:]))
+    nps_values = [nps_data[v] for v in versions]
 
-    ax.set_xlabel("Games Played at Level")
-    ax.set_ylabel("Estimated ELO")
-    ax.set_title("OmegaZero ELO Estimate Convergence")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    path = output_dir / "elo_convergence.png"
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-    print(f"  {path}")
+    fig, ax = plt.subplots(figsize=(8, 5))
+    colors = ["#1976D2", "#388E3C", "#F57C00", "#D32F2F"]
+    bars = ax.bar(versions, nps_values, color=colors[:len(versions)],
+                  edgecolor="none", width=0.6)
+    for bar, nps in zip(bars, nps_values):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 8,
+                f"{nps}k", ha="center", va="bottom", fontweight="bold", fontsize=11)
 
-    # --- Plot 2: W/D/L grouped bar chart per level ---
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    x_labels = [r["opponent_elo"] for r in summary]
-    w_vals = [int(r["wins"]) for r in summary]
-    d_vals = [int(r["draws"]) for r in summary]
-    l_vals = [int(r["losses"]) for r in summary]
-
-    x = list(range(len(x_labels)))
-    width = 0.25
-
-    ax.bar([i - width for i in x], w_vals, width, label="Wins", color="#4CAF50")
-    ax.bar(x, d_vals, width, label="Draws", color="#FFC107")
-    ax.bar([i + width for i in x], l_vals, width, label="Losses", color="#F44336")
-
-    ax.set_xlabel("Stockfish ELO Level")
-    ax.set_ylabel("Games")
-    ax.set_title("Win / Draw / Loss by Opponent Strength")
-    ax.set_xticks(x)
-    ax.set_xticklabels(x_labels)
-    ax.legend()
+    ax.set_xlabel("Version")
+    ax.set_ylabel("kNPS (thousands of nodes per second)")
+    ax.set_title("OmegaZero — Nodes Per Second by Version")
+    ax.set_ylim(0, max(nps_values) * 1.15)
     ax.grid(True, alpha=0.3, axis="y")
     fig.tight_layout()
-    path = output_dir / "wdl_by_level.png"
+    path = output_dir / "version_nps_plot.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
     print(f"  {path}")
 
-    # --- Plot 3: ELO estimate per opponent level ---
-    fig, ax = plt.subplots(figsize=(10, 6))
+    # --- Plot 2: ELO by version and Stockfish level (grouped bars) ---
+    if history_csv.exists():
+        with open(history_csv) as f:
+            history = list(csv.DictReader(f))
 
-    elos = [float(r["elo_estimate"]) for r in summary]
-    ax.plot(x_labels, elos, "o-", color="#2196F3", markersize=8, linewidth=2)
+        if history:
+            versions = []
+            seen = set()
+            for row in history:
+                v = row["version"]
+                if v not in seen:
+                    versions.append(v)
+                    seen.add(v)
 
-    if elos:
-        avg = sum(elos) / len(elos)
-        ax.axhline(
-            y=avg, color="#F44336", linestyle="--", alpha=0.7,
-            label=f"Average: {avg:.0f}",
-        )
+            levels = sorted(set(int(row["opponent_elo"]) for row in history))
 
-    ax.set_xlabel("Stockfish ELO Level")
-    ax.set_ylabel("OmegaZero Estimated ELO")
-    ax.set_title("ELO Estimate by Opponent Strength")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    path = output_dir / "elo_by_level.png"
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-    print(f"  {path}")
+            fig, ax = plt.subplots(figsize=(10, 6))
+            x = np.arange(len(levels))
+            width = 0.8 / max(1, len(versions))
+            colors = ["#1976D2", "#388E3C", "#F57C00", "#D32F2F", "#7B1FA2"]
+
+            for i, ver in enumerate(versions):
+                elos = []
+                for level in levels:
+                    matches = [r for r in history
+                               if r["version"] == ver
+                               and int(r["opponent_elo"]) == level]
+                    if matches:
+                        elos.append(float(matches[-1]["elo_estimate"]))
+                    else:
+                        elos.append(0)
+                offset = (i - len(versions) / 2 + 0.5) * width
+                ax.bar(x + offset, elos, width, label=ver,
+                       color=colors[i % len(colors)], alpha=0.85)
+
+            ax.set_xlabel("Stockfish Level")
+            ax.set_ylabel("Estimated ELO")
+            ax.set_title("OmegaZero — ELO Estimate by Stockfish Level and Version")
+            ax.set_xticks(x)
+            ax.set_xticklabels([f"SF {l}" for l in levels])
+            ax.legend(title="Version")
+            ax.grid(True, alpha=0.3, axis="y")
+            fig.tight_layout()
+            path = output_dir / "version_elo_plot.png"
+            fig.savefig(path, dpi=150)
+            plt.close(fig)
+            print(f"  {path}")
 
 
 def main():
@@ -347,14 +392,14 @@ def main():
         help="Fixed time per move in seconds (default: 0.1)",
     )
     run_p.add_argument(
-        "--output", default="elo_results",
-        help="Output directory (default: elo_results)",
+        "--output", default="results",
+        help="Output directory (default: results)",
     )
 
     plot_p = sub.add_parser("plot", help="Generate plots from existing results")
     plot_p.add_argument(
-        "--input", default="elo_results",
-        help="Directory with CSV results (default: elo_results)",
+        "--input", default="results",
+        help="Directory with CSV results (default: results)",
     )
 
     args = parser.parse_args()
@@ -362,11 +407,7 @@ def main():
     if args.command == "run":
         run_matches(args)
     elif args.command == "plot":
-        summary_csv = Path(args.input) / "summary.csv"
-        if summary_csv.exists():
-            with open(summary_csv) as f:
-                print_summary(list(csv.DictReader(f)))
-        generate_plots(args.input)
+        generate_plots(args.input, version=get_version_tag())
 
 
 if __name__ == "__main__":

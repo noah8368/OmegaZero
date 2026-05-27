@@ -13,6 +13,7 @@
 
 #include "game.h"
 #include "move.h"
+#include "nnue.h"
 #include "uci.h"
 
 using std::cout;
@@ -23,11 +24,13 @@ using std::string;
 using std::to_string;
 
 auto main(int argc, char* argv[]) -> int {
-  // Compute the default path for the opening book.
-  string opening_book_path(argv[0]);
+  // Compute default paths relative to the executable location.
+  string exe_dir(argv[0]);
   constexpr size_t kProgNameLen = 9;
-  opening_book_path.erase(opening_book_path.length() - kProgNameLen);
-  opening_book_path += "../p3ECO.txt";
+  exe_dir.erase(exe_dir.length() - kProgNameLen);
+
+  string opening_book_path = exe_dir + "../p3ECO.txt";
+  string nnue_path = exe_dir + "../nnue/nnue.bin";
 
   // Parse optional arguments for testing and specifying initial position.
   namespace prog_opt = boost::program_options;
@@ -51,6 +54,8 @@ auto main(int argc, char* argv[]) -> int {
       ("opening-book-path,o",
       prog_opt::value<string>(&opening_book_path),
       "Opening book file path")
+      ("nnue,n", prog_opt::value<string>(&nnue_path),
+      "NNUE weights file path")
       ("pgn", prog_opt::value<string>(&pgn_opponent),
       "Save game as PGN file, using the given opponent name")
       ("uci,u", "Run in UCI protocol mode");
@@ -61,6 +66,11 @@ auto main(int argc, char* argv[]) -> int {
   } catch (prog_opt::error& e) {
     cout << "ERROR: Parsing fault: " << e.what() << endl;
     return EINVAL;
+  }
+
+  if (!omegazero::g_nnue.Load(nnue_path)) {
+    cout << "WARNING: Could not load NNUE weights from " << nnue_path << endl;
+    cout << "Engine will not function correctly without NNUE weights." << endl;
   }
 
   if (var_map.count("uci")) {
