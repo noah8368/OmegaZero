@@ -262,7 +262,14 @@ cp nnue/config.json.example nnue/config.json
 Then build and run:
 ```bash
 make datagen
-./build/datagen_harness
+./scripts/run_datagen.sh
+```
+
+The watchdog script launches `datagen_harness`, monitors it for crashes, syncs data periodically (if `sync_dest` is set), and automatically restarts on failure. Datagen output is logged to `datagen.log`. To stop, send SIGTERM to the watchdog or the datagen process — the harness saves partial results and the watchdog exits cleanly.
+
+To run in the background on a server:
+```bash
+nohup ./scripts/run_datagen.sh > watchdog.log 2>&1 &
 ```
 
 Quality filters are applied automatically: positions in check, mate scores, and tactical explosions (|score| > 3000cp) are skipped. Every 4th eligible position is sampled, and Zobrist hash deduplication removes near-duplicates within each worker. Games are adjudicated at 1000cp for 5 consecutive moves. The first 10 plies are skipped (opening theory), and each game begins with 8 random moves for opening diversity.
@@ -271,27 +278,32 @@ Output (under a timestamped subdirectory, e.g. `nnue/data/2026-05-25_20-33-09_ea
 - `training_data.txt` — training positions
 - `validation_data.txt` — validation positions (from separate games to avoid contamination)
 - `metadata.txt` — generation parameters, timestamp, and git commit hash
+- `crash_log.txt` — structured crash entries (only if crashes occurred)
 
 For best results, aim for 100M+ positions.
 
+**Crash handling**
+
+The system has three layers of crash protection:
+
+- **Per-game crash** — if a single game throws an exception, the worker logs it to `crash_log.txt`, emails the crash log entry, and continues to the next game
+- **Consecutive crash limit** — if 5 games crash in a row on one worker, all workers stop and the watchdog restarts the harness
+- **Worker fatal** — an unrecoverable worker-level exception stops all workers and the watchdog restarts
+- **Process crash** (SIGABRT, segfault) — the watchdog detects the missing process, writes a crash log, syncs data, emails the log, and restarts
+
+The watchdog caps at 10 automatic restarts. Set `WATCHDOG_POLL_INTERVAL` (env var, default 30s) to control check frequency.
+
 **Email notifications**
 
-When `email` is set in `nnue/config.json`, the datagen harness sends emails at key lifecycle events:
-- **Startup** — run configuration (games, workers, search time, output dir)
-- **Milestones** — 25%, 50%, 75%, and 100% completion
-- **Crashes** — per-game or per-worker exceptions (the harness keeps running)
-- **Shutdown** — graceful save on SIGTERM/SIGINT with progress summary
-- **Completion** — final game/position counts and elapsed time
+When `email` is set in `nnue/config.json`, emails are sent at:
+- **Startup** and **completion** — run config and final summary
+- **Milestones** — every 10% completion
+- **Crashes** — crash log contents included in email body
+- **Shutdown** — progress summary on SIGTERM/SIGINT
 
-**Background sync**
+**Sync**
 
-For long-running server deployments, `scripts/sync_datagen.sh` rsyncs data to a remote machine on a schedule and sends email reports. Set `sync_dest` in `nnue/config.json`, then:
-
-```bash
-./scripts/sync_datagen.sh
-```
-
-It reads `sync_dest`, `sync_interval`, `email`, `name`, and `games` from the config.
+Set `sync_dest` in `nnue/config.json` (e.g. `"user@laptop:~/OmegaZero/nnue/data/"`) to rsync data to a remote machine at the interval specified by `sync_interval` (default 12h) and on process exit. Crash logs are included in the sync.
 
 **Step 2: Train the network**
 

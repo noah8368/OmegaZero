@@ -49,6 +49,7 @@ constexpr int kAdjudicateThreshold = 1000;
 constexpr int kAdjudicateCount = 5;
 constexpr int kSampleInterval = 4;
 constexpr int kMaxAbsScore = 3000;
+constexpr int kMaxConsecutiveCrashes = 5;
 
 static const string kStartFen =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -265,8 +266,10 @@ struct WorkerStats {
 };
 
 static std::mutex g_output_mutex;
+static std::mutex g_crash_log_mutex;
 static std::atomic<int> g_games_done{0};
 static std::atomic<bool> g_shutdown{false};
+static std::atomic<bool> g_restart_requested{false};
 
 static void SignalHandler(int /*sig*/) {
   g_shutdown.store(true);
@@ -294,6 +297,50 @@ static auto SendEmail(const string& subject, const string& body) -> void {
                " --body '" + body + "'"
                " 2>/dev/null";
   std::system(cmd.c_str());
+}
+
+static auto WriteCrashLog(const string& crash_type, int worker_id,
+                          int game, const string& error,
+                          const WorkerStats* stats) -> string {
+  string ts = GetTimestamp();
+  int total_done = g_games_done.load();
+  int total = g_total_games.load();
+
+  string entry = "=== CRASH LOG ===\n"
+      "Timestamp: " + ts + "\n"
+      "Type: " + crash_type + "\n"
+      "Worker: " + std::to_string(worker_id) + "\n";
+  if (game >= 0) {
+    entry += "Game: " + std::to_string(game) + "\n";
+  }
+  entry += "Error: " + error + "\n"
+      "Global progress: " + std::to_string(total_done) + "/" + std::to_string(total) + "\n";
+  if (stats) {
+    entry += "Worker games completed: " + std::to_string(stats->games) + "\n"
+        "Worker positions generated: " + std::to_string(stats->positions) + "\n";
+  }
+  entry += "=================\n\n";
+
+  {
+    std::lock_guard<std::mutex> lock(g_crash_log_mutex);
+    string path = g_output_dir_global + "/crash_log.txt";
+    std::ofstream out(path, std::ios::app);
+    if (out.is_open()) {
+      out << entry;
+      out.close();
+    }
+  }
+
+  return entry;
+}
+
+static auto WriteExitStatus(const string& status) -> void {
+  string path = g_output_dir_global + "/.exit_status";
+  std::ofstream out(path);
+  if (out.is_open()) {
+    out << status << "\n";
+    out.close();
+  }
 }
 
 static auto CheckMilestones(int done) -> void {
@@ -353,6 +400,7 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
   int val_start_game = static_cast<int>(num_games * (1.0f - validation_fraction));
   std::unordered_set<U64> seen_hashes;
   seen_hashes.reserve(num_games * 20);
+  int consecutive_crashes = 0;
 
   for (int g = 0; g < num_games && !g_shutdown.load(); ++g) {
     try {
@@ -375,34 +423,60 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
       if (result == kWhiteWin) stats.white_wins++;
       else if (result == kBlackWin) stats.black_wins++;
       else stats.draws++;
+      consecutive_crashes = 0;
     } catch (const std::exception& e) {
       {
         std::lock_guard<std::mutex> lock(g_output_mutex);
         cerr << "\nWorker " << worker_id << " game " << g
              << " crashed: " << e.what() << " — skipping" << endl;
       }
+      string log = WriteCrashLog("game_crash", worker_id, g, e.what(), &stats);
       string tag = g_name.empty() ? "" : " [" + g_name + "]";
       SendEmail("OmegaZero" + tag + " CRASH — worker "
-                + std::to_string(worker_id),
-                (g_name.empty() ? "" : "Machine: " + g_name + "\n")
-                + "Worker " + std::to_string(worker_id) + " game "
-                + std::to_string(g) + " crashed\n"
-                + "Error: " + e.what());
+                + std::to_string(worker_id), log);
       stats.games++;
+      if (++consecutive_crashes >= kMaxConsecutiveCrashes) {
+        string msg = std::to_string(kMaxConsecutiveCrashes)
+                     + " consecutive game crashes — escalating to restart";
+        {
+          std::lock_guard<std::mutex> lock(g_output_mutex);
+          cerr << "\nWorker " << worker_id << ": " << msg << endl;
+        }
+        string rlog = WriteCrashLog("consecutive_crash_limit", worker_id, g,
+                                    msg, &stats);
+        SendEmail("OmegaZero" + tag + " RESTART — worker "
+                  + std::to_string(worker_id) + " consecutive crashes", rlog);
+        g_restart_requested.store(true);
+        g_shutdown.store(true);
+        break;
+      }
     } catch (...) {
       {
         std::lock_guard<std::mutex> lock(g_output_mutex);
         cerr << "\nWorker " << worker_id << " game " << g
              << " crashed (unknown) — skipping" << endl;
       }
+      string log = WriteCrashLog("game_crash", worker_id, g,
+                                 "unknown exception", &stats);
       string tag = g_name.empty() ? "" : " [" + g_name + "]";
       SendEmail("OmegaZero" + tag + " CRASH — worker "
-                + std::to_string(worker_id),
-                (g_name.empty() ? "" : "Machine: " + g_name + "\n")
-                + "Worker " + std::to_string(worker_id) + " game "
-                + std::to_string(g) + " crashed\n"
-                + "Error: unknown exception");
+                + std::to_string(worker_id), log);
       stats.games++;
+      if (++consecutive_crashes >= kMaxConsecutiveCrashes) {
+        string msg = std::to_string(kMaxConsecutiveCrashes)
+                     + " consecutive game crashes — escalating to restart";
+        {
+          std::lock_guard<std::mutex> lock(g_output_mutex);
+          cerr << "\nWorker " << worker_id << ": " << msg << endl;
+        }
+        string rlog = WriteCrashLog("consecutive_crash_limit", worker_id, g,
+                                    msg, &stats);
+        SendEmail("OmegaZero" + tag + " RESTART — worker "
+                  + std::to_string(worker_id) + " consecutive crashes", rlog);
+        g_restart_requested.store(true);
+        g_shutdown.store(true);
+        break;
+      }
     }
 
     int done = g_games_done.fetch_add(1) + 1;
@@ -428,27 +502,30 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
   val_out.close();
 
  } catch (const std::exception& e) {
-    string tag = g_name.empty() ? "" : " [" + g_name + "]";
-    string msg = "Worker " + std::to_string(worker_id)
-                 + " fatal crash: " + e.what();
     {
       std::lock_guard<std::mutex> lock(g_output_mutex);
-      cerr << "\n" << msg << endl;
+      cerr << "\nWorker " << worker_id << " fatal crash: " << e.what()
+           << " — initiating restart" << endl;
     }
-    SendEmail("OmegaZero" + tag + " FATAL — worker "
-              + std::to_string(worker_id),
-              (g_name.empty() ? "" : "Machine: " + g_name + "\n") + msg);
+    string log = WriteCrashLog("worker_fatal", worker_id, -1, e.what(), &stats);
+    string tag = g_name.empty() ? "" : " [" + g_name + "]";
+    SendEmail("OmegaZero" + tag + " RESTART — worker "
+              + std::to_string(worker_id) + " fatal crash", log);
+    g_restart_requested.store(true);
+    g_shutdown.store(true);
  } catch (...) {
-    string tag = g_name.empty() ? "" : " [" + g_name + "]";
-    string msg = "Worker " + std::to_string(worker_id)
-                 + " fatal crash: unknown exception";
     {
       std::lock_guard<std::mutex> lock(g_output_mutex);
-      cerr << "\n" << msg << endl;
+      cerr << "\nWorker " << worker_id
+           << " fatal crash: unknown — initiating restart" << endl;
     }
-    SendEmail("OmegaZero" + tag + " FATAL — worker "
-              + std::to_string(worker_id),
-              (g_name.empty() ? "" : "Machine: " + g_name + "\n") + msg);
+    string log = WriteCrashLog("worker_fatal", worker_id, -1,
+                               "unknown exception", &stats);
+    string tag = g_name.empty() ? "" : " [" + g_name + "]";
+    SendEmail("OmegaZero" + tag + " RESTART — worker "
+              + std::to_string(worker_id) + " fatal crash", log);
+    g_restart_requested.store(true);
+    g_shutdown.store(true);
  }
 }
 
@@ -522,7 +599,9 @@ auto main() -> int {
 
   for (auto& t : threads) t.join();
 
-  if (g_shutdown.load()) {
+  bool restarting = g_restart_requested.load();
+  if (g_shutdown.load() && !restarting) {
+    WriteExitStatus("shutdown");
     cerr << "\nShutdown signal received — saving partial results..." << endl;
     string tag = g_name.empty() ? "" : " [" + g_name + "]";
     SendEmail("OmegaZero" + tag + " SHUTDOWN — partial save",
@@ -531,6 +610,9 @@ auto main() -> int {
               + std::to_string(g_games_done.load()) + "/" + std::to_string(total_games)
               + " games completed before shutdown.\n"
               + "Data flushed to: " + output_dir);
+  } else if (restarting) {
+    cerr << "\nWorker fatal crash — saving partial results for restart..."
+         << endl;
   }
 
   auto end = std::chrono::high_resolution_clock::now();
@@ -598,7 +680,9 @@ auto main() -> int {
        << "Metadata: " << output_dir << "/metadata.txt\n";
 
   string tag = g_name.empty() ? "" : " [" + g_name + "]";
-  SendEmail("OmegaZero datagen" + tag + " COMPLETE", summary);
+  if (!restarting) {
+    SendEmail("OmegaZero datagen" + tag + " COMPLETE", summary);
+  }
 
   if (!cfg.sync_dest.empty()) {
     cerr << "\nSyncing to " << cfg.sync_dest << "..." << endl;
@@ -607,8 +691,10 @@ auto main() -> int {
     int ret = std::system(rsync_cmd.c_str());
     if (ret == 0) {
       cerr << "Sync complete." << endl;
-      SendEmail("OmegaZero" + tag + " final sync COMPLETE",
-                "Synced " + output_dir + " to " + cfg.sync_dest);
+      if (!restarting) {
+        SendEmail("OmegaZero" + tag + " final sync COMPLETE",
+                  "Synced " + output_dir + " to " + cfg.sync_dest);
+      }
     } else {
       cerr << "Sync FAILED (exit " << ret << ")" << endl;
       SendEmail("OmegaZero" + tag + " final sync FAILED",
@@ -617,5 +703,12 @@ auto main() -> int {
     }
   }
 
+  if (restarting) {
+    WriteExitStatus("restart");
+    return 2;
+  }
+  if (!g_shutdown.load()) {
+    WriteExitStatus("complete");
+  }
   return 0;
 }
