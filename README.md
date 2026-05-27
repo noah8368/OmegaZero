@@ -407,11 +407,11 @@ The table below shows how each search feature contributes when stacked cumulativ
 *Search Feature Stacking Benchmark (5s/position)*
 | Position | No Features | + LMR | + NMP + History | + RFP | + SEE | + Futility | + LMP | + Countermove | + Hist LMR |
 |----------|-------------|-------|-----------------|-------|-------|------------|-------|---------------|------------|
-| opening  | 1084k, d6   | 997k, d8  | 906k, d12 | 911k, d11 | 636k, d10 | 598k, d11 | 406k, d13 | 414k, d15 | 517k, d13 |
-| midgame  | 838k, d5    | 617k, d6  | 569k, d6  | 1085k, d7 | 705k, d10 | 512k, d11 | 463k, d14 | 406k, d14 | 432k, d12 |
-| kiwipete | 532k, d4    | 173k, d3  | 174k, d3  | 518k, d5  | 309k, d7  | 217k, d9  | 183k, d7  | 183k, d7  | 233k, d8  |
-| endgame  | 795k, d10   | 781k, d14 | 782k, d18 | 785k, d17 | 782k, d15 | 795k, d17 | 705k, d17 | 758k, d16 | 678k, d15 |
-| **Avg NPS** | **812k** | **641k** | **608k** | **825k** | **608k** | **531k** | **439k** | **440k** | **465k** |
+| opening  | 1084k, d6   | 997k, d8  | 906k, d12 | 911k, d11 | 537k, d12 | 508k, d14 | 431k, d14 | 472k, d14 | 512k, d13 |
+| midgame  | 838k, d5    | 617k, d6  | 569k, d6  | 1085k, d7 | 767k, d11 | 486k, d11 | 410k, d13 | 439k, d12 | 434k, d13 |
+| kiwipete | 532k, d4    | 173k, d3  | 174k, d3  | 518k, d5  | 157k, d5  | 134k, d5  | 148k, d6  | 148k, d6  | 145k, d6  |
+| endgame  | 795k, d10   | 781k, d14 | 782k, d18 | 785k, d17 | 779k, d17 | 772k, d17 | 618k, d18 | 593k, d17 | 532k, d18 |
+| **Avg NPS** | **812k** | **641k** | **608k** | **825k** | **560k** | **475k** | **402k** | **413k** | **406k** |
 
 #### Opening Book
 

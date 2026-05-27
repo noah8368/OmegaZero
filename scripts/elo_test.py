@@ -278,7 +278,7 @@ def generate_plots(output_dir, version=None):
     print("\nGenerating plots...")
 
     # --- Plot 1: NPS by version (bar chart) ---
-    nps_data = {"v1": 197, "v2": 507, "v3": 498, "v4": 465}
+    nps_data = {"v1": 197, "v2": 507, "v3": 498, "v4": 406}
     if benchmark_csv.exists():
         with open(benchmark_csv) as f:
             reader = csv.DictReader(f)
