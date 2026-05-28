@@ -13,7 +13,6 @@
     "lr": 0.001,
     "wd": 1e-6,
     "lmbda": 0.7,
-    "val_split": 0.05,
-    "save_every": 50
+    "val_split": 0.05
   }
 }

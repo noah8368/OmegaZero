@@ -40,7 +40,7 @@ OmegaZero is a chess engine built from scratch which allows a user to play
 against an AI. The name "OmegaZero" is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), a program
 developed by [DeepMind](https://deepmind.com/) that was used to create one of the world's
 best Chess engines. The [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during
-development. Credit goes to [Bradon Hsu](https://github.com/2brandonh) for designing the
+development. Credit goes to [Brandon Hsu](https://github.com/2brandonh) for designing the
 logo for this project.
 
 ### Play Online
@@ -148,33 +148,40 @@ integration with chess GUIs and tournament managers. To launch in UCI mode:
 OmegaZero --uci
 ```
 
+#### Benchmarking
+
+The `scripts/benchmark.py` script runs the bench harness across four standard positions
+and records NPS, depth, and timing data.
+
+```
+python3 scripts/benchmark.py run              # default: 5s/position
+python3 scripts/benchmark.py run --st 10      # 10s/position for more stable results
+python3 scripts/benchmark.py plot             # regenerate plots from version_history.csv
+```
+
+Results are saved to `results/benchmarking/`:
+- `<run_dir>/results.csv` — per-position NPS, nodes, elapsed time, and depth
+- `<run_dir>/depths.csv` — depth reached per position
+- `version_history.csv` — cumulative NPS across all versions
+- `version_nps_plot.png` — NPS bar chart across versions
+
 #### ELO Testing
 
 The `scripts/elo_test.py` script automates ELO estimation by running OmegaZero
 against Stockfish at various strength levels via cutechess-cli. It records
 per-game results to CSV and generates summary tables and plots.
 
-Run matches (default: 20 games each at ELO 1320, 1500, 1700, 1900, 2100, 0.1s/move):
 ```
-python3 scripts/elo_test.py run
-```
-
-Customize the test:
-```
+python3 scripts/elo_test.py run                                                  # defaults: 20 games each at 1320,1500,1700,1900,2100, 0.1s/move
 python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50 --st 0.5
+python3 scripts/elo_test.py plot                                                 # regenerate plots from version_history.csv
 ```
 
-Regenerate plots and summary table from existing results:
-```
-python3 scripts/elo_test.py plot --input results
-```
-
-Results are saved to `results/` by default:
-- `games.csv` — per-game results with running ELO estimates
-- `summary.csv` — win/draw/loss totals and ELO estimate per opponent level
-- `games_{elo}.pgn` — PGN files per Stockfish level
-- `version_history.csv` — cumulative results across versions (appended each run)
-- `version_nps_plot.png` — NPS comparison across engine versions
+Results are saved to `results/elo_testing/`:
+- `<run_dir>/games.csv` — per-game results with running ELO estimates
+- `<run_dir>/summary.csv` — win/draw/loss totals and ELO estimate per opponent level
+- `<run_dir>/games_{elo}.pgn` — PGN files per Stockfish level
+- `version_history.csv` — cumulative results across all versions
 - `version_elo_plot.png` — ELO estimates by Stockfish level and version
 
 #### Perft Testing
@@ -203,15 +210,6 @@ and self-play crash detection:
 ```
 make debug
 ./build/test_harness
-```
-
-#### Benchmarking
-
-The bench harness measures search speed (nodes per second) across four
-positions (opening, midgame, complex midgame, endgame) at 5s each:
-```
-make bench
-./build/bench_harness
 ```
 
 #### Generating Move Tables
@@ -331,14 +329,15 @@ CLI args (e.g. `--epochs 300`) override config values for one-off experiments. I
 | `wd` | Weight decay | 1e-6 |
 | `lmbda` | Score/result blend: `lmbda * sigmoid(score/400) + (1-lmbda) * result` | 0.7 |
 | `val_split` | Fraction of data for validation (if no separate val file) | 0.05 |
-| `save_every` | Save checkpoint every N epochs | 50 |
 | `data` | Training data path (file or directory; auto-resolves latest run, prefers `.bin` over `.txt`) | `nnue/data` |
 | `val_data` | Separate validation data file | auto-detected |
 | `output` | Model checkpoint directory | `nnue/model` |
 
-Outputs:
-- `nnue/nnue.bin` — quantized binary weights for C++ inference (always at the base)
+Outputs (run directories are named `<timestamp>_<hash>_<N>_pos`):
+- `nnue/nnue.bin` — quantized binary weights for C++ inference (always kept up to date)
+- `nnue/model/<run>/best.bin` — quantized binary weights for this run
 - `nnue/model/<run>/best.pt` — best PyTorch checkpoint (by validation loss)
+- `nnue/model/<run>/epoch_N.pt` — per-epoch checkpoints
 - `nnue/model/<run>/final.pt` — last epoch checkpoint
 
 **Step 3: Analyze data and model quality**
@@ -477,21 +476,22 @@ the formula found [here](https://www.chessprogramming.org/Tapered_Eval#Implement
 - **v2** — Persistent TT, eliminated double move gen (2.7x NPS), check extensions, LMR fix
 - **v3** — Exponential passed pawn bonus, rook-behind-passer fix, piece mobility, Toga/Fruit king safety
 - **v4** — Full search tuning: NMP, history heuristic, RFP, SEE, futility pruning, LMP, countermove heuristic, history-aware LMR
-- **v5** — NNUE evaluation (HalfKP), self-play training pipeline, handcrafted eval fallback
 
 #### Nodes Per Second (NPS) Comparison
 
-NPS (nodes per second) is measured by the bench harness, averaging across four positions
+NPS (nodes per second) is measured by `scripts/benchmark.py`, averaging across four positions
 (opening, midgame, complex midgame, endgame) at 5s/position. See
-[Benchmarking](#benchmarking) for details.
+[Benchmarking](#benchmarking) for details. History is tracked in
+`results/benchmarking/version_history.csv`.
 
 ![NPS by Version](./figs/version_nps_plot.png "Nodes Per Second by Version")
 
 #### Stockfish ELO Comparison
 
 ELO was estimated by running OmegaZero against Stockfish at various `UCI_Elo`
-levels using cutechess-cli (20 games per level, 5s/move). See
-[ELO Testing](#elo-testing) for details.
+levels using cutechess-cli (20 games per level, 0.1s/move). See
+[ELO Testing](#elo-testing) for details. History is tracked in
+`results/elo_testing/version_history.csv`.
 
 ![ELO by Version](./figs/version_elo_plot.png "ELO by Stockfish Level and Version")
 

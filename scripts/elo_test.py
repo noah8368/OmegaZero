@@ -5,25 +5,31 @@ ELO testing suite for OmegaZero.
 Runs matches against Stockfish via cutechess-cli, records results to CSV,
 and generates plots and summary tables.
 
+Results are saved to nnue/results/elo_testing/<run_dir>/.
+
 Usage:
     python3 scripts/elo_test.py run [options]
-    python3 scripts/elo_test.py plot [--input DIR]
+    python3 scripts/elo_test.py plot
 
 Examples:
     python3 scripts/elo_test.py run --games 20 --st 0.5
     python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50
-    python3 scripts/elo_test.py plot --input results
+    python3 scripts/elo_test.py plot
 """
 
 import argparse
 import csv
 import math
-import os
 import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+RESULTS_BASE = REPO_ROOT / "results" / "elo_testing"
 
 
 def elo_diff(score_rate):
@@ -31,8 +37,37 @@ def elo_diff(score_rate):
     return -400 * math.log10(1.0 / score_rate - 1.0)
 
 
+def get_version_tag():
+    try:
+        tags = subprocess.check_output(
+            ["git", "tag", "--points-at", "HEAD"],
+            stderr=subprocess.DEVNULL, cwd=REPO_ROOT,
+        ).decode().strip().splitlines()
+        if tags:
+            return tags[0]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL, cwd=REPO_ROOT,
+        ).decode().strip()
+        return commit
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "unknown"
+
+
+def get_run_dir_name():
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    tag = get_version_tag()
+    return f"{ts}_{tag}"
+
+
 def run_matches(args):
-    engine = Path(args.engine).resolve()
+    engine = Path(args.engine)
+    if not engine.is_absolute():
+        engine = REPO_ROOT / engine
+    engine = engine.resolve()
     if not engine.exists():
         sys.exit(f"Engine not found: {engine}\nRun 'make' first.")
 
@@ -40,11 +75,9 @@ def run_matches(args):
     if not Path(sf).exists() and not shutil.which(sf):
         sys.exit(f"Stockfish not found: {sf}\nInstall: brew install stockfish")
 
-    script_dir = Path(__file__).resolve().parent
-    project_root = script_dir.parent
     cutechess = args.cutechess
     if cutechess is None:
-        local_build = project_root / "cutechess" / "build" / "cutechess-cli"
+        local_build = REPO_ROOT / "cutechess" / "build" / "cutechess-cli"
         if local_build.exists():
             cutechess = str(local_build)
         elif shutil.which("cutechess-cli"):
@@ -58,8 +91,9 @@ def run_matches(args):
     elif not Path(cutechess).exists() and not shutil.which(cutechess):
         sys.exit(f"cutechess-cli not found: {cutechess}")
 
-    out = Path(args.output)
-    out.mkdir(parents=True, exist_ok=True)
+    run_name = get_run_dir_name()
+    run_dir = RESULTS_BASE / run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     levels = [int(x) for x in args.elo_levels.split(",")]
     all_games = []
@@ -81,7 +115,7 @@ def run_matches(args):
                 f"option.UCI_Elo={opp_elo}",
             "-each", f"st={args.st}", "timemargin=500",
             "-rounds", str(args.games),
-            "-pgnout", str(out / f"games_{opp_elo}.pgn"),
+            "-pgnout", str(run_dir / f"games_{opp_elo}.pgn"),
             "-recover",
             "-repeat",
         ]
@@ -159,7 +193,7 @@ def run_matches(args):
                 "elo_estimate": round(est, 1),
             })
 
-    games_csv = out / "games.csv"
+    games_csv = run_dir / "games.csv"
     with open(games_csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=[
             "game", "level_game", "opponent_elo", "omega_color",
@@ -168,7 +202,7 @@ def run_matches(args):
         w.writeheader()
         w.writerows(all_games)
 
-    summary_csv = out / "summary.csv"
+    summary_csv = run_dir / "summary.csv"
     with open(summary_csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=[
             "opponent_elo", "games", "wins", "draws", "losses",
@@ -178,10 +212,10 @@ def run_matches(args):
         w.writerows(summary_rows)
 
     version = get_version_tag()
-    print(f"\nResults saved to {out}/  [version: {version}]")
+    print(f"\nResults saved to {run_dir}/  [version: {version}]")
     print_summary(summary_rows)
-    append_to_history(summary_rows, version, out)
-    generate_plots(out, version=version)
+    append_to_history(summary_rows, version)
+    generate_plots(version)
 
 
 def print_summary(rows):
@@ -213,26 +247,9 @@ def print_summary(rows):
     print(f"{'=' * 70}")
 
 
-def get_version_tag():
-    """Get a version tag from git (short hash + dirty flag)."""
-    try:
-        commit = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            stderr=subprocess.DEVNULL
-        ).decode().strip()
-        dirty = subprocess.call(
-            ["git", "diff", "--quiet"],
-            stderr=subprocess.DEVNULL
-        ) != 0
-        return commit + ("-dirty" if dirty else "")
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return "unknown"
-
-
-def append_to_history(summary_rows, version, output_dir):
-    """Append current run results to the version history CSV."""
-    history_csv = Path(output_dir) / "version_history.csv"
-    from datetime import datetime
+def append_to_history(summary_rows, version):
+    RESULTS_BASE.mkdir(parents=True, exist_ok=True)
+    history_csv = RESULTS_BASE / "version_history.csv"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     file_exists = history_csv.exists()
@@ -260,11 +277,15 @@ def append_to_history(summary_rows, version, output_dir):
     print(f"  Version history: {history_csv}")
 
 
-def generate_plots(output_dir, version=None):
-    output_dir = Path(output_dir)
-    history_csv = output_dir / "version_history.csv"
-    benchmark_csv = output_dir / "v4_benchmark.csv"
+def load_history():
+    history_csv = RESULTS_BASE / "version_history.csv"
+    if not history_csv.exists():
+        return []
+    with open(history_csv) as f:
+        return list(csv.DictReader(f))
 
+
+def generate_plots(current_version=None):
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -272,91 +293,65 @@ def generate_plots(output_dir, version=None):
         import numpy as np
     except ImportError:
         print("\nmatplotlib not installed — skipping plots.")
-        print("Install with: pip3 install matplotlib")
+        return
+
+    history = load_history()
+    if not history:
+        print("No history data for plots.")
         return
 
     print("\nGenerating plots...")
 
-    # --- Plot 1: NPS by version (bar chart) ---
-    nps_data = {"v1": 197, "v2": 507, "v3": 498, "v4": 406}
-    if benchmark_csv.exists():
-        with open(benchmark_csv) as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if row["Position"].lower() == "average":
-                    last_col = [k for k in row.keys() if "[kNPS]" in k][-1]
-                    nps_data["v4"] = int(row[last_col])
-                    break
+    versions = []
+    seen = set()
+    for row in history:
+        v = row["version"]
+        if v not in seen:
+            versions.append(v)
+            seen.add(v)
 
-    versions = sorted(nps_data.keys(), key=lambda v: int(v[1:]))
-    nps_values = [nps_data[v] for v in versions]
+    levels = sorted(set(int(row["opponent_elo"]) for row in history))
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    colors = ["#1976D2", "#388E3C", "#F57C00", "#D32F2F"]
-    bars = ax.bar(versions, nps_values, color=colors[:len(versions)],
-                  edgecolor="none", width=0.6)
-    for bar, nps in zip(bars, nps_values):
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 8,
-                f"{nps}k", ha="center", va="bottom", fontweight="bold", fontsize=11)
+    RESULTS_BASE.mkdir(parents=True, exist_ok=True)
 
-    ax.set_xlabel("Version")
-    ax.set_ylabel("kNPS (thousands of nodes per second)")
-    ax.set_title("OmegaZero — Nodes Per Second by Version")
-    ax.set_ylim(0, max(nps_values) * 1.15)
+    # --- ELO by version and Stockfish level (grouped bars) ---
+    fig, ax = plt.subplots(figsize=(max(10, len(versions) * 1.5), 6))
+    x = np.arange(len(levels))
+    width = 0.8 / max(1, len(versions))
+    palette = ["#1976D2", "#388E3C", "#F57C00", "#D32F2F", "#7B1FA2",
+               "#00838F", "#6A1B9A", "#E64A19"]
+
+    for i, ver in enumerate(versions):
+        elos = []
+        for level in levels:
+            matches = [r for r in history
+                       if r["version"] == ver
+                       and int(r["opponent_elo"]) == level]
+            if matches:
+                elos.append(float(matches[-1]["elo_estimate"]))
+            else:
+                elos.append(0)
+        offset = (i - len(versions) / 2 + 0.5) * width
+        color = palette[i % len(palette)]
+        label = ver
+        if current_version and ver == current_version:
+            label = f"{ver} (current)"
+        ax.bar(x + offset, elos, width, label=label, color=color, alpha=0.85)
+
+    ax.set_xlabel("Stockfish Level")
+    ax.set_ylabel("Estimated ELO")
+    ax.set_title("OmegaZero — ELO Estimate by Stockfish Level and Version")
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"SF {l}" for l in levels])
+    ax.legend(title="Version")
     ax.grid(True, alpha=0.3, axis="y")
     fig.tight_layout()
-    path = output_dir / "version_nps_plot.png"
-    fig.savefig(path, dpi=150)
+
+    plot_path = RESULTS_BASE / "version_elo_plot.png"
+    fig.savefig(plot_path, dpi=150)
     plt.close(fig)
-    print(f"  {path}")
+    print(f"  ELO plot: {plot_path}")
 
-    # --- Plot 2: ELO by version and Stockfish level (grouped bars) ---
-    if history_csv.exists():
-        with open(history_csv) as f:
-            history = list(csv.DictReader(f))
-
-        if history:
-            versions = []
-            seen = set()
-            for row in history:
-                v = row["version"]
-                if v not in seen:
-                    versions.append(v)
-                    seen.add(v)
-
-            levels = sorted(set(int(row["opponent_elo"]) for row in history))
-
-            fig, ax = plt.subplots(figsize=(10, 6))
-            x = np.arange(len(levels))
-            width = 0.8 / max(1, len(versions))
-            colors = ["#1976D2", "#388E3C", "#F57C00", "#D32F2F", "#7B1FA2"]
-
-            for i, ver in enumerate(versions):
-                elos = []
-                for level in levels:
-                    matches = [r for r in history
-                               if r["version"] == ver
-                               and int(r["opponent_elo"]) == level]
-                    if matches:
-                        elos.append(float(matches[-1]["elo_estimate"]))
-                    else:
-                        elos.append(0)
-                offset = (i - len(versions) / 2 + 0.5) * width
-                ax.bar(x + offset, elos, width, label=ver,
-                       color=colors[i % len(colors)], alpha=0.85)
-
-            ax.set_xlabel("Stockfish Level")
-            ax.set_ylabel("Estimated ELO")
-            ax.set_title("OmegaZero — ELO Estimate by Stockfish Level and Version")
-            ax.set_xticks(x)
-            ax.set_xticklabels([f"SF {l}" for l in levels])
-            ax.legend(title="Version")
-            ax.grid(True, alpha=0.3, axis="y")
-            fig.tight_layout()
-            path = output_dir / "version_elo_plot.png"
-            fig.savefig(path, dpi=150)
-            plt.close(fig)
-            print(f"  {path}")
 
 
 def main():
@@ -377,7 +372,7 @@ def main():
     )
     run_p.add_argument(
         "--cutechess", default=None,
-        help="Path to cutechess-cli (default: auto-detect from cutechess/build/ or PATH)",
+        help="Path to cutechess-cli (default: auto-detect)",
     )
     run_p.add_argument(
         "--elo-levels", default="1320,1500,1700,1900,2100",
@@ -391,23 +386,15 @@ def main():
         "--st", default="0.1",
         help="Fixed time per move in seconds (default: 0.1)",
     )
-    run_p.add_argument(
-        "--output", default="results",
-        help="Output directory (default: results)",
-    )
 
-    plot_p = sub.add_parser("plot", help="Generate plots from existing results")
-    plot_p.add_argument(
-        "--input", default="results",
-        help="Directory with CSV results (default: results)",
-    )
+    sub.add_parser("plot", help="Regenerate plots from version_history.csv")
 
     args = parser.parse_args()
 
     if args.command == "run":
         run_matches(args)
     elif args.command == "plot":
-        generate_plots(args.input, version=get_version_tag())
+        generate_plots(current_version=get_version_tag())
 
 
 if __name__ == "__main__":

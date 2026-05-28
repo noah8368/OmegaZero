@@ -18,7 +18,10 @@
 
 set -uo pipefail
 
-CONFIG="nnue/config.json"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+CONFIG="$REPO_ROOT/nnue/config.json"
 if [[ ! -f "$CONFIG" ]]; then
     echo "Error: $CONFIG not found."
     exit 1
@@ -26,7 +29,7 @@ fi
 
 read_cfg() { python3 -c "import json; c=json.load(open('$CONFIG')); print(c.get('$1','$2'))" ; }
 
-DATA_DIR=$(read_cfg output "nnue/data")
+DATA_DIR=$(read_cfg output "$REPO_ROOT/nnue/data")
 EMAIL=$(read_cfg email "")
 NAME=$(read_cfg name "")
 TOTAL_GAMES=$(read_cfg games 0)
@@ -39,7 +42,7 @@ tag="${NAME:+ [$NAME]}"
 send_email() {
     local subject="$1" body="$2"
     if [[ -n "$EMAIL" ]]; then
-        python3 scripts/send_email.py \
+        python3 "$SCRIPT_DIR/send_email.py" \
             --to "$EMAIL" \
             --subject "$subject" \
             --body "$body" 2>/dev/null || echo "  Email send failed"
@@ -95,7 +98,7 @@ Action: Watchdog restarting
     echo "$entry"
 }
 
-DATAGEN_BIN="./build/datagen_harness"
+DATAGEN_BIN="$REPO_ROOT/build/datagen_harness"
 
 start_datagen() {
     if [[ ! -x "$DATAGEN_BIN" ]]; then
@@ -103,7 +106,7 @@ start_datagen() {
         exit 1
     fi
     echo "Starting datagen harness..."
-    "$DATAGEN_BIN" >> datagen.log 2>&1 &
+    "$DATAGEN_BIN" >> "$REPO_ROOT/datagen.log" 2>&1 &
     DATAGEN_PID=$!
     echo "  PID: $DATAGEN_PID"
 }
@@ -148,7 +151,7 @@ echo "  Poll interval: ${POLL_INTERVAL}s"
 echo "  Watchdog PID: $$"
 echo "  Datagen PID: $DATAGEN_PID"
 echo ""
-echo "Logs: datagen.log  |  Kill watchdog: kill $$"
+echo "Logs: $REPO_ROOT/datagen.log  |  Kill watchdog: kill $$"
 echo ""
 
 while true; do
@@ -186,7 +189,7 @@ while true; do
         else
             echo "  Process crash (no exit status file — killed by signal)"
             echo "  Merging worker files..."
-            ./scripts/merge_workers.sh "$DATA_DIR" 2>&1 || echo "  Merge had warnings (non-fatal)"
+            "$SCRIPT_DIR/merge_workers.sh" "$DATA_DIR" 2>&1 || echo "  Merge had warnings (non-fatal)"
             crash_entry=$(write_crash_log "no .exit_status — killed by signal")
             send_email \
                 "OmegaZero${tag} PROCESS CRASH — watchdog restarting" \

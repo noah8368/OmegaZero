@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import os
+import shutil
 import struct
 import sys
 import time
@@ -663,8 +664,19 @@ def train(args):
         optimizer, step_size=max(1, args.epochs // 4), gamma=0.5
     )
 
+    def format_pos_count(n):
+        if n >= 1_000_000:
+            v = n / 1_000_000
+            return f"{v:.1f}M" if v != int(v) else f"{int(v)}M"
+        if n >= 1_000:
+            v = n / 1_000
+            return f"{v:.0f}k" if v >= 10 else f"{v:.1f}k"
+        return str(n)
+
     run_tag = get_run_tag()
-    out_dir = Path(args.output) / run_tag
+    pos_tag = format_pos_count(train_size)
+    run_name = f"{run_tag}_{pos_tag}_pos"
+    out_dir = Path(args.output) / run_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     best_val_loss = float("inf")
@@ -680,9 +692,6 @@ def train(args):
         train_count = 0
 
         for batch_idx, batch in enumerate(train_loader):
-            if epoch == 1 and batch_idx % 10 == 0:
-                print(f"  batch {batch_idx}/{len(train_loader)}", flush=True)
-
             if collate is binary_collate:
                 w_idx, w_off, b_idx, b_off, score, result, stm = batch
                 w_idx = w_idx.to(device)
@@ -771,8 +780,7 @@ def train(args):
             f"train={train_loss:.6f}  val={val_loss:.6f}  lr={lr:.2e}{improved}"
         )
 
-        if epoch % args.save_every == 0:
-            torch.save(model.state_dict(), out_dir / f"epoch_{epoch}.pt")
+        torch.save(model.state_dict(), out_dir / f"epoch_{epoch}.pt")
 
     # Save final model
     torch.save(model.state_dict(), out_dir / "final.pt")
@@ -780,13 +788,17 @@ def train(args):
     model.load_state_dict(torch.load(out_dir / "best.pt", weights_only=True))
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
-    weights_dir = repo_root / "nnue"
-    weights_dir.mkdir(parents=True, exist_ok=True)
-    export_path = weights_dir / "nnue.bin"
+
+    export_path = out_dir / "best.bin"
     export_quantized(model, export_path)
 
+    canonical_path = repo_root / "nnue" / "nnue.bin"
+    canonical_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(export_path, canonical_path)
+    print(f"  Copied to {canonical_path}")
+
     model.to(device)
-    plot_dir = repo_root / "results" / "nnue_training" / run_tag
+    plot_dir = repo_root / "results" / "nnue_training" / run_name
     generate_plots(train_losses, val_losses, plot_dir,
                    model, val_loader, device, args.lmbda)
 
@@ -794,6 +806,7 @@ def train(args):
     print(f"  Best validation loss: {best_val_loss:.6f}")
     print(f"  PyTorch checkpoints: {out_dir}")
     print(f"  Quantized weights: {export_path}")
+    print(f"  Active weights: {canonical_path}")
 
 
 # --------------------------------------------------------------------------- #
@@ -848,8 +861,8 @@ def export_quantized(model, path):
     model.cpu()
     sd = model.state_dict()
 
-    ft_w = quantize_i16(sd["feature_transform.weight"], FT_WEIGHT_SCALE)
-    ft_b = quantize_i16(sd["feature_transform.bias"], FT_BIAS_SCALE)
+    ft_w = quantize_i16(sd["ft.weight"].t(), FT_WEIGHT_SCALE)
+    ft_b = quantize_i16(sd["ft_bias"], FT_BIAS_SCALE)
     l2_w = quantize_i8(sd["l2.weight"], HIDDEN_WEIGHT_SCALE)
     l2_b = quantize_i32(sd["l2.bias"], HIDDEN_BIAS_SCALE)
     l3_w = quantize_i8(sd["l3.weight"], HIDDEN_WEIGHT_SCALE)
@@ -891,20 +904,27 @@ def load_config():
 def main():
     cfg = load_config()
     t = cfg.get("training", {})
+    repo_root = str(Path(__file__).resolve().parent.parent)
+
+    def resolve_default(key, fallback):
+        val = t.get(key, fallback)
+        if val and not os.path.isabs(val):
+            return os.path.join(repo_root, val)
+        return val
 
     parser = argparse.ArgumentParser(
         description="Train an NNUE evaluation network for OmegaZero"
     )
     parser.add_argument(
-        "--data", default=t.get("data", "nnue/data"),
+        "--data", default=resolve_default("data", "nnue/data"),
         help="Path to training data file or directory (auto-resolves latest run)",
     )
     parser.add_argument(
-        "--val-data", default=t.get("val_data"),
+        "--val-data", default=resolve_default("val_data", None),
         help="Path to separate validation data file (from different games, avoids contamination)",
     )
     parser.add_argument(
-        "--output", default=t.get("output", "nnue/model"),
+        "--output", default=resolve_default("output", "nnue/model"),
         help="Output directory for model checkpoints (default: nnue/model)",
     )
     parser.add_argument(
@@ -930,10 +950,6 @@ def main():
     parser.add_argument(
         "--val-split", type=float, default=t.get("val_split", 0.05),
         help="Fraction of data for validation (default: 0.05)",
-    )
-    parser.add_argument(
-        "--save-every", type=int, default=t.get("save_every", 50),
-        help="Save checkpoint every N epochs (default: 50)",
     )
     parser.add_argument(
         "--device", default=t.get("device"),

@@ -8,15 +8,18 @@
 
 set -euo pipefail
 
-CONFIG="nnue/config.json"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+CONFIG="$REPO_ROOT/nnue/config.json"
 
 if [[ $# -ge 1 ]]; then
     DATA_DIR="$1"
 else
     if [[ -f "$CONFIG" ]]; then
-        DATA_DIR=$(python3 -c "import json; print(json.load(open('$CONFIG')).get('output','nnue/data'))")
+        DATA_DIR=$(python3 -c "import json; print(json.load(open('$CONFIG')).get('output','$REPO_ROOT/nnue/data'))")
     else
-        DATA_DIR="nnue/data"
+        DATA_DIR="$REPO_ROOT/nnue/data"
     fi
 fi
 
