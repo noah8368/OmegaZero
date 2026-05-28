@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Combine training and validation data from all datagen runs into a single
-# directory. Automatically merges unmerged worker files first, skipping any
-# run that's actively in progress. Safe to re-run — overwrites the combined
-# files each time.
+# Combine training and validation data from all datagen runs into the
+# combined/ directory. Merges unmerged worker files first, skipping any
+# run that's actively in progress.
+#
+# New run data is merged into the existing combined file with deduplication,
+# so it's safe to re-run — no data is lost and no duplicates are added.
+# After a run's data is merged, its directory is left intact (not deleted).
 #
 # Usage:
 #   ./scripts/combine_runs.sh                  # default: nnue/data
@@ -70,47 +73,62 @@ if [[ $merged_runs -eq 0 && $skipped_runs -eq 0 ]]; then
 fi
 
 echo ""
-echo "=== Combining all runs ==="
+echo "=== Combining into $COMBINED/ ==="
 
 mkdir -p "$COMBINED"
 train_out="$COMBINED/training_data.txt"
 val_out="$COMBINED/validation_data.txt"
 
-train_tmp=$(mktemp)
-val_tmp=$(mktemp)
-trap 'rm -f "$train_tmp" "$val_tmp"' EXIT
+touch "$train_out" "$val_out"
 
-# Preserve existing combined data as the base
-[[ -f "$train_out" ]] && cat "$train_out" > "$train_tmp"
-[[ -f "$val_out" ]] && cat "$val_out" > "$val_tmp"
+train_before=$(wc -l < "$train_out" | tr -d ' ')
+val_before=$(wc -l < "$val_out" | tr -d ' ')
 
-new_train=0
-new_val=0
+run_count=0
 
 for run_dir in "$DATA_DIR"/*/; do
     [[ "$(basename "$run_dir")" == "combined" ]] && continue
+    [[ -d "$run_dir" ]] || continue
+
+    name="$(basename "$run_dir")"
+    added_train=0
+    added_val=0
 
     if [[ -f "$run_dir/training_data.txt" ]]; then
-        count=$(wc -l < "$run_dir/training_data.txt")
-        new_train=$((new_train + count))
-        cat "$run_dir/training_data.txt" >> "$train_tmp"
+        before=$(wc -l < "$train_out" | tr -d ' ')
+        sort -u "$train_out" "$run_dir/training_data.txt" > "$train_out.tmp"
+        mv "$train_out.tmp" "$train_out"
+        after=$(wc -l < "$train_out" | tr -d ' ')
+        added_train=$((after - before))
     fi
 
     if [[ -f "$run_dir/validation_data.txt" ]]; then
-        count=$(wc -l < "$run_dir/validation_data.txt")
-        new_val=$((new_val + count))
-        cat "$run_dir/validation_data.txt" >> "$val_tmp"
+        before=$(wc -l < "$val_out" | tr -d ' ')
+        sort -u "$val_out" "$run_dir/validation_data.txt" > "$val_out.tmp"
+        mv "$val_out.tmp" "$val_out"
+        after=$(wc -l < "$val_out" | tr -d ' ')
+        added_val=$((after - before))
     fi
+
+    total_added=$((added_train + added_val))
+    if [[ $total_added -gt 0 ]]; then
+        printf "  %-30s +%'d train  +%'d val (new unique)\n" "$name" "$added_train" "$added_val"
+    else
+        printf "  %-30s (no new data)\n" "$name"
+    fi
+    run_count=$((run_count + 1))
 done
 
-mv "$train_tmp" "$train_out"
-mv "$val_tmp" "$val_out"
+train_after=$(wc -l < "$train_out" | tr -d ' ')
+val_after=$(wc -l < "$val_out" | tr -d ' ')
+grand_total=$((train_after + val_after))
 
-train_total=$(wc -l < "$train_out")
-val_total=$(wc -l < "$val_out")
-total=$((train_total + val_total))
+echo ""
+printf "Training:   %'d → %'d (+%'d new unique)\n" "$train_before" "$train_after" $((train_after - train_before))
+printf "Validation: %'d → %'d (+%'d new unique)\n" "$val_before" "$val_after" $((val_before - val_before))
+printf "Total:      %'d positions\n" "$grand_total"
 
-echo "Combined into: $COMBINED/"
-echo "  Existing + new training:   $train_total positions (+$new_train new)"
-echo "  Existing + new validation: $val_total positions (+$new_val new)"
-echo "  Total:      $total positions"
+if [[ $grand_total -gt 0 ]]; then
+    pct=$(awk "BEGIN { printf \"%.1f\", ($grand_total / 102000000.0) * 100 }")
+    printf "Progress:   %s%% of 102M target\n" "$pct"
+fi
