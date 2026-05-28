@@ -383,7 +383,7 @@ def main():
         help="Games per level (default: 20)",
     )
     run_p.add_argument(
-        "--st", default="0.1",
+        "--st", default="5",
         help="Fixed time per move in seconds (default: 0.1)",
     )
 
