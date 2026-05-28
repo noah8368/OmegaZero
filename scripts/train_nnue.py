@@ -558,25 +558,31 @@ def get_run_tag():
 
 
 def resolve_latest_data(base_dir):
-    """Find the latest timestamped subdir under base_dir and return training data path.
+    """Find training data under base_dir.
 
-    Prefers .bin (binary) over .txt (text) when both exist.
+    Priority: combined/ > latest timestamped subdir > base_dir itself.
+    Always returns .txt so the caller's staleness check can re-preprocess
+    the .bin if the .txt has been updated.
     """
     base = Path(base_dir)
     if not base.is_dir():
         return base_dir
 
     def find_data(directory):
-        bin_path = directory / "training_data.bin"
-        if bin_path.exists():
-            return str(bin_path)
         txt_path = directory / "training_data.txt"
         if txt_path.exists():
             return str(txt_path)
+        bin_path = directory / "training_data.bin"
+        if bin_path.exists():
+            return str(bin_path)
         return None
 
+    combined = find_data(base / "combined")
+    if combined:
+        return combined
+
     subdirs = sorted(
-        [d for d in base.iterdir() if d.is_dir()],
+        [d for d in base.iterdir() if d.is_dir() and d.name != "combined"],
         key=lambda d: d.name,
         reverse=True,
     )
@@ -602,7 +608,15 @@ def train(args):
         data_path = resolve_latest_data(data_path)
         print(f"Resolved data: {data_path}")
 
-    if data_path.endswith(".txt"):
+    if data_path.endswith(".bin"):
+        txt_path = data_path[:-4] + ".txt"
+        if Path(txt_path).exists() and \
+                Path(txt_path).stat().st_mtime > Path(data_path).stat().st_mtime:
+            print(f"Source .txt is newer than .bin — re-preprocessing...")
+            preprocess_to_binary(txt_path, data_path)
+        else:
+            print(f"Using binary: {data_path}")
+    elif data_path.endswith(".txt"):
         bin_path = data_path[:-4] + ".bin"
         if not Path(bin_path).exists() or \
                 Path(data_path).stat().st_mtime > Path(bin_path).stat().st_mtime:

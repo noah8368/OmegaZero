@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -52,12 +53,18 @@ def get_metadata():
 
 
 def resolve_latest_data(base_dir):
-    """Find the latest timestamped subdir under base_dir and return training_data.txt path."""
+    """Find training data under base_dir.
+
+    Priority: combined/ > latest timestamped subdir > base_dir itself.
+    """
     base = Path(base_dir)
     if not base.is_dir():
         return base_dir
+    combined = base / "combined" / "training_data.txt"
+    if combined.exists():
+        return str(combined)
     subdirs = sorted(
-        [d for d in base.iterdir() if d.is_dir()],
+        [d for d in base.iterdir() if d.is_dir() and d.name != "combined"],
         key=lambda d: d.name,
         reverse=True,
     )
@@ -418,6 +425,13 @@ def plot_model(args):
 
 
 def main():
+    repo_root = str(Path(__file__).resolve().parent.parent)
+
+    def resolve_path(val):
+        if val and not os.path.isabs(val):
+            return os.path.join(repo_root, val)
+        return val
+
     parser = argparse.ArgumentParser(
         description="Generate analysis plots for NNUE training data and models"
     )
@@ -426,11 +440,11 @@ def main():
     # data subcommand
     data_parser = subparsers.add_parser("data", help="Analyze raw training data")
     data_parser.add_argument(
-        "--input", default="nnue/data",
+        "--input", default=resolve_path("nnue/data"),
         help="Path to training data file or directory (auto-resolves latest run)",
     )
     data_parser.add_argument(
-        "--output", default="results/train_dataset_plots",
+        "--output", default=resolve_path("results/train_dataset_plots"),
         help="Output directory for plots (default: results/train_dataset_plots)",
     )
 
@@ -449,7 +463,7 @@ def main():
         help="Batch size for evaluation (default: 4096)",
     )
     model_parser.add_argument(
-        "--output", default="results/model_plots",
+        "--output", default=resolve_path("results/model_plots"),
         help="Output directory for plots (default: results/model_plots)",
     )
 

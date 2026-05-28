@@ -307,9 +307,16 @@ When `email` is set in `nnue/config.json`, emails are sent at:
 - **Crashes** — crash log contents included in email body
 - **Shutdown** — progress summary on SIGTERM/SIGINT
 
-**Retrieving data**
+**Retrieving and combining data**
 
-Use `rsync` to pull data from a remote server to your local machine when needed.
+Pull data from a remote server and combine it locally:
+```bash
+./scripts/sync_from_server.sh      # rsync run directories (excludes combined/)
+./scripts/combine_runs.sh          # merge new runs into combined/ with dedup
+./scripts/dataset_size.sh          # show position counts per run + progress
+```
+
+`combine_runs.sh` is idempotent — it deduplicates via `sort -u`, so re-running adds zero duplicates. `sync_from_server.sh` excludes `combined/` to prevent overwriting locally-combined data.
 
 **Step 2: Train the network**
 
@@ -319,7 +326,7 @@ Training parameters are read from the `training` section of `nnue/config.json`:
 python3 scripts/train_nnue.py --data nnue/data/combined/training_data.txt --epochs 100 --batch 4096 --val-split 0.1
 ```
 
-CLI args (e.g. `--epochs 300`) override config values for one-off experiments. If given a `.txt` file, the script automatically converts it to a memory-mapped binary format (`.bin`) on first run for efficient training at scale.
+CLI args (e.g. `--epochs 300`) override config values for one-off experiments. The script automatically manages binary preprocessing: `.txt` files are converted to a memory-mapped `.bin` format on first run, and the `.bin` is automatically re-generated whenever the `.txt` is newer (e.g. after combining new data).
 
 | Field | Description | Default |
 |---|---|---|
@@ -329,7 +336,7 @@ CLI args (e.g. `--epochs 300`) override config values for one-off experiments. I
 | `wd` | Weight decay | 1e-6 |
 | `lmbda` | Score/result blend: `lmbda * sigmoid(score/400) + (1-lmbda) * result` | 0.7 |
 | `val_split` | Fraction of data for validation (if no separate val file) | 0.05 |
-| `data` | Training data path (file or directory; auto-resolves latest run, prefers `.bin` over `.txt`) | `nnue/data` |
+| `data` | Training data path (file or directory). When a directory, resolves to `combined/` first, then latest timestamped run. When pointing to a `.bin`, checks for a newer `.txt` and re-preprocesses if needed. | `nnue/data` |
 | `val_data` | Separate validation data file | auto-detected |
 | `output` | Model checkpoint directory | `nnue/model` |
 
