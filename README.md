@@ -341,11 +341,16 @@ CLI args (e.g. `--epochs 300`) override config values for one-off experiments. T
 | `output` | Model checkpoint directory | `nnue/model` |
 
 Outputs (run directories are named `<timestamp>_<hash>_<N>_pos`):
-- `nnue/nnue.bin` — quantized binary weights for C++ inference (always kept up to date)
 - `nnue/model/<run>/best.bin` — quantized binary weights for this run
 - `nnue/model/<run>/best.pt` — best PyTorch checkpoint (by validation loss)
 - `nnue/model/<run>/epoch_N.pt` — per-epoch checkpoints
 - `nnue/model/<run>/final.pt` — last epoch checkpoint
+
+To use the trained weights, copy them manually:
+```bash
+cp nnue/model/<run>/best.bin nnue/nnue.bin
+make
+```
 
 **Step 3: Analyze data and model quality**
 

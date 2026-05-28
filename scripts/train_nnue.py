@@ -807,9 +807,7 @@ def train(args):
     export_quantized(model, export_path)
 
     canonical_path = repo_root / "nnue" / "nnue.bin"
-    canonical_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(export_path, canonical_path)
-    print(f"  Copied to {canonical_path}")
+    print(f"  To use these weights: cp {export_path} {canonical_path}")
 
     model.to(device)
     plot_dir = repo_root / "results" / "nnue_training" / run_name
@@ -820,7 +818,6 @@ def train(args):
     print(f"  Best validation loss: {best_val_loss:.6f}")
     print(f"  PyTorch checkpoints: {out_dir}")
     print(f"  Quantized weights: {export_path}")
-    print(f"  Active weights: {canonical_path}")
 
 
 # --------------------------------------------------------------------------- #
