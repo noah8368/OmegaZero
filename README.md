@@ -318,10 +318,10 @@ Use `rsync` to pull data from a remote server to your local machine when needed.
 Training parameters are read from the `training` section of `nnue/config.json`:
 
 ```bash
-python3 scripts/train_nnue.py
+python3 scripts/train_nnue.py --data nnue/data/combined/training_data.txt --epochs 100 --batch 4096 --val-split 0.1
 ```
 
-CLI args (e.g. `--epochs 300`) override config values for one-off experiments.
+CLI args (e.g. `--epochs 300`) override config values for one-off experiments. If given a `.txt` file, the script automatically converts it to a memory-mapped binary format (`.bin`) on first run for efficient training at scale.
 
 | Field | Description | Default |
 |---|---|---|
@@ -332,7 +332,7 @@ CLI args (e.g. `--epochs 300`) override config values for one-off experiments.
 | `lmbda` | Score/result blend: `lmbda * sigmoid(score/400) + (1-lmbda) * result` | 0.7 |
 | `val_split` | Fraction of data for validation (if no separate val file) | 0.05 |
 | `save_every` | Save checkpoint every N epochs | 50 |
-| `data` | Training data path (auto-resolves latest run) | `nnue/data` |
+| `data` | Training data path (file or directory; auto-resolves latest run, prefers `.bin` over `.txt`) | `nnue/data` |
 | `val_data` | Separate validation data file | auto-detected |
 | `output` | Model checkpoint directory | `nnue/model` |
 

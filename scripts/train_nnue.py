@@ -224,30 +224,41 @@ class BinaryNnueDataset(Dataset):
 
     def __getitem__(self, idx):
         record = self.data[idx]
-
         nw = int(record["num_white"])
         nb = int(record["num_black"])
+        return (record["white_indices"][:nw].copy(),
+                record["black_indices"][:nb].copy(),
+                float(record["score"]),
+                float(record["result"]) / 2.0,
+                float(record["stm"]))
 
-        white_indices = torch.from_numpy(
-            record["white_indices"][:nw].astype(np.int64)
-        )
-        black_indices = torch.from_numpy(
-            record["black_indices"][:nb].astype(np.int64)
-        )
 
-        white_tensor = torch.zeros(HALFKP_SIZE, dtype=torch.float32)
-        black_tensor = torch.zeros(HALFKP_SIZE, dtype=torch.float32)
-        white_tensor[white_indices] = 1.0
-        black_tensor[black_indices] = 1.0
+def binary_collate(batch):
+    """Pack sparse indices for EmbeddingBag — no dense tensors needed."""
+    white_indices = []
+    black_indices = []
+    white_offsets = [0]
+    black_offsets = [0]
+    scores = []
+    results = []
+    stms = []
 
-        score = float(record["score"])
-        result = float(record["result"]) / 2.0
-        stm = float(record["stm"])
+    for wf, bf, score, result, stm in batch:
+        white_indices.append(torch.from_numpy(wf.astype(np.int64)))
+        black_indices.append(torch.from_numpy(bf.astype(np.int64)))
+        white_offsets.append(white_offsets[-1] + len(wf))
+        black_offsets.append(black_offsets[-1] + len(bf))
+        scores.append(score)
+        results.append(result)
+        stms.append(stm)
 
-        return white_tensor, black_tensor, \
-               torch.tensor(score, dtype=torch.float32), \
-               torch.tensor(result, dtype=torch.float32), \
-               torch.tensor(stm, dtype=torch.float32)
+    return (torch.cat(white_indices),
+            torch.tensor(white_offsets[:-1], dtype=torch.long),
+            torch.cat(black_indices),
+            torch.tensor(black_offsets[:-1], dtype=torch.long),
+            torch.tensor(scores, dtype=torch.float32),
+            torch.tensor(results, dtype=torch.float32),
+            torch.tensor(stms, dtype=torch.float32))
 
 
 def load_dataset(path):
@@ -329,7 +340,7 @@ class NnueNetwork(nn.Module):
 
     Architecture:
         white_input (40960) --+
-                              +--> feature_transform (shared) --> ClippedReLU
+                              +--> feature_transform (shared EmbeddingBag) --> ClippedReLU
         black_input (40960) --+
 
         Concat(white_accum, black_accum) based on side to move
@@ -340,7 +351,8 @@ class NnueNetwork(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.feature_transform = nn.Linear(HALFKP_SIZE, L1_SIZE)
+        self.ft = nn.EmbeddingBag(HALFKP_SIZE, L1_SIZE, mode="sum")
+        self.ft_bias = nn.Parameter(torch.zeros(L1_SIZE))
         self.l2 = nn.Linear(L1_SIZE * 2, L2_SIZE)
         self.l3 = nn.Linear(L2_SIZE, L3_SIZE)
         self.output = nn.Linear(L3_SIZE, 1)
@@ -349,8 +361,7 @@ class NnueNetwork(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        nn.init.kaiming_normal_(self.feature_transform.weight, nonlinearity="relu")
-        nn.init.zeros_(self.feature_transform.bias)
+        nn.init.kaiming_normal_(self.ft.weight, nonlinearity="relu")
         nn.init.kaiming_normal_(self.l2.weight, nonlinearity="relu")
         nn.init.zeros_(self.l2.bias)
         nn.init.kaiming_normal_(self.l3.weight, nonlinearity="relu")
@@ -358,24 +369,11 @@ class NnueNetwork(nn.Module):
         nn.init.xavier_normal_(self.output.weight)
         nn.init.zeros_(self.output.bias)
 
-    def forward(self, white_features, black_features, stm):
-        """Forward pass.
+    def forward(self, white_idx, white_off, black_idx, black_off, stm):
+        white_accum = self.clipped_relu(self.ft(white_idx, white_off) + self.ft_bias)
+        black_accum = self.clipped_relu(self.ft(black_idx, black_off) + self.ft_bias)
 
-        Args:
-            white_features: (batch, 40960) sparse binary input
-            black_features: (batch, 40960) sparse binary input
-            stm: (batch,) side to move, 1.0 = white, 0.0 = black
-
-        Returns:
-            (batch, 1) raw evaluation output (pre-sigmoid)
-        """
-        white_accum = self.clipped_relu(self.feature_transform(white_features))
-        black_accum = self.clipped_relu(self.feature_transform(black_features))
-
-        # Concatenate with side-to-move's perspective first.
-        # When white to move: [white_accum, black_accum]
-        # When black to move: [black_accum, white_accum]
-        stm_expanded = stm.unsqueeze(1)  # (batch, 1)
+        stm_expanded = stm.unsqueeze(1)
         stm_first = stm_expanded * white_accum + (1 - stm_expanded) * black_accum
         stm_second = stm_expanded * black_accum + (1 - stm_expanded) * white_accum
         combined = torch.cat([stm_first, stm_second], dim=1)
@@ -431,18 +429,29 @@ def generate_plots(train_losses, val_losses, plot_dir,
     all_results = []
     all_material = []
     with torch.no_grad():
-        for wf, bf, score, result, stm in val_loader:
-            wf = wf.to(device)
-            bf = bf.to(device)
-            stm = stm.to(device)
+        for batch in val_loader:
+            if len(batch) == 7:
+                w_idx, w_off, b_idx, b_off, score, result, stm = batch
+                w_idx = w_idx.to(device)
+                w_off = w_off.to(device)
+                b_idx = b_idx.to(device)
+                b_off = b_off.to(device)
+                stm = stm.to(device)
+                pred = model(w_idx, w_off, b_idx, b_off, stm).squeeze(1)
+                num_features = len(w_idx) / max(len(w_off), 1)
+                all_material.extend([num_features] * len(w_off))
+            else:
+                wf, bf, score, result, stm = batch
+                wf = wf.to(device)
+                bf = bf.to(device)
+                stm = stm.to(device)
+                pred = model(wf, bf, stm).squeeze(1)
+                all_material.extend(wf.sum(dim=1).tolist())
 
-            pred = model(wf, bf, stm).squeeze(1)
             pred_cp = pred * SCORE_SCALE
             all_predicted.extend(pred_cp.cpu().tolist())
             all_actual.extend(score.tolist())
             all_results.extend(result.tolist())
-            material = wf.sum(dim=1)
-            all_material.extend(material.tolist())
 
     # Score accuracy: predicted vs actual
     fig, ax = plt.subplots(figsize=(8, 8))
@@ -581,9 +590,10 @@ def resolve_latest_data(base_dir):
 
 
 def train(args):
-    device = torch.device("mps" if torch.backends.mps.is_available()
-                          else "cuda" if torch.cuda.is_available()
-                          else "cpu")
+    if args.device:
+        device = torch.device(args.device)
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
     data_path = args.data
@@ -633,13 +643,15 @@ def train(args):
         )
         print(f"Training: {train_size}  Validation: {val_size} (random split)")
 
+    pin = (device.type == "cuda")
+    collate = binary_collate if isinstance(dataset, BinaryNnueDataset) else None
     train_loader = DataLoader(
         train_set, batch_size=args.batch, shuffle=True,
-        num_workers=0, pin_memory=(device.type != "cpu"),
+        num_workers=0, pin_memory=pin, collate_fn=collate,
     )
     val_loader = DataLoader(
         val_set, batch_size=args.batch, shuffle=False,
-        num_workers=0, pin_memory=(device.type != "cpu"),
+        num_workers=0, pin_memory=pin, collate_fn=collate,
     )
 
     model = NnueNetwork().to(device)
@@ -667,14 +679,31 @@ def train(args):
         train_loss_sum = 0.0
         train_count = 0
 
-        for wf, bf, score, result, stm in train_loader:
-            wf = wf.to(device)
-            bf = bf.to(device)
-            score = score.to(device)
-            result = result.to(device)
-            stm = stm.to(device)
+        for batch_idx, batch in enumerate(train_loader):
+            if epoch == 1 and batch_idx % 10 == 0:
+                print(f"  batch {batch_idx}/{len(train_loader)}", flush=True)
 
-            pred = model(wf, bf, stm).squeeze(1)
+            if collate is binary_collate:
+                w_idx, w_off, b_idx, b_off, score, result, stm = batch
+                w_idx = w_idx.to(device)
+                w_off = w_off.to(device)
+                b_idx = b_idx.to(device)
+                b_off = b_off.to(device)
+                score = score.to(device)
+                result = result.to(device)
+                stm = stm.to(device)
+                pred = model(w_idx, w_off, b_idx, b_off, stm).squeeze(1)
+                batch_size = len(w_off)
+            else:
+                wf, bf, score, result, stm = batch
+                wf = wf.to(device)
+                bf = bf.to(device)
+                score = score.to(device)
+                result = result.to(device)
+                stm = stm.to(device)
+                pred = model(wf, bf, stm).squeeze(1)
+                batch_size = wf.size(0)
+
             pred_sigmoid = torch.sigmoid(pred)
             target = compute_target(score, result, args.lmbda)
 
@@ -684,8 +713,8 @@ def train(args):
             loss.backward()
             optimizer.step()
 
-            train_loss_sum += loss.item() * wf.size(0)
-            train_count += wf.size(0)
+            train_loss_sum += loss.item() * batch_size
+            train_count += batch_size
 
         scheduler.step()
         train_loss = train_loss_sum / train_count
@@ -696,20 +725,34 @@ def train(args):
         val_count = 0
 
         with torch.no_grad():
-            for wf, bf, score, result, stm in val_loader:
-                wf = wf.to(device)
-                bf = bf.to(device)
-                score = score.to(device)
-                result = result.to(device)
-                stm = stm.to(device)
+            for batch in val_loader:
+                if collate is binary_collate:
+                    w_idx, w_off, b_idx, b_off, score, result, stm = batch
+                    w_idx = w_idx.to(device)
+                    w_off = w_off.to(device)
+                    b_idx = b_idx.to(device)
+                    b_off = b_off.to(device)
+                    score = score.to(device)
+                    result = result.to(device)
+                    stm = stm.to(device)
+                    pred = model(w_idx, w_off, b_idx, b_off, stm).squeeze(1)
+                    batch_size = len(w_off)
+                else:
+                    wf, bf, score, result, stm = batch
+                    wf = wf.to(device)
+                    bf = bf.to(device)
+                    score = score.to(device)
+                    result = result.to(device)
+                    stm = stm.to(device)
+                    pred = model(wf, bf, stm).squeeze(1)
+                    batch_size = wf.size(0)
 
-                pred = model(wf, bf, stm).squeeze(1)
                 pred_sigmoid = torch.sigmoid(pred)
                 target = compute_target(score, result, args.lmbda)
                 loss = F.mse_loss(pred_sigmoid, target)
 
-                val_loss_sum += loss.item() * wf.size(0)
-                val_count += wf.size(0)
+                val_loss_sum += loss.item() * batch_size
+                val_count += batch_size
 
         val_loss = val_loss_sum / val_count
         lr = optimizer.param_groups[0]["lr"]
@@ -891,6 +934,10 @@ def main():
     parser.add_argument(
         "--save-every", type=int, default=t.get("save_every", 50),
         help="Save checkpoint every N epochs (default: 50)",
+    )
+    parser.add_argument(
+        "--device", default=t.get("device"),
+        help="Device: cpu, mps, or cuda (default: auto-detect)",
     )
     args = parser.parse_args()
 
