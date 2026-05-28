@@ -23,6 +23,7 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -42,6 +43,7 @@ HALFKP_SIZE = NUM_KING_SQUARES * NUM_PIECE_TYPES * NUM_PIECE_SQUARES  # 40960
 L1_SIZE = 256
 L2_SIZE = 32
 L3_SIZE = 32
+MAX_FEATURES = 32
 
 # Piece chars to piece index (from white's perspective).
 # Friendly: P=0 N=1 B=2 R=3 Q=4, Enemy: p=5 n=6 b=7 r=8 q=9
@@ -193,6 +195,122 @@ class NnueDataset(Dataset):
         return white_tensor, black_tensor, torch.tensor(score, dtype=torch.float32), \
                torch.tensor(result, dtype=torch.float32), \
                torch.tensor(stm, dtype=torch.float32)
+
+
+RECORD_DTYPE = np.dtype([
+    ("num_white", np.uint8),
+    ("white_indices", np.uint16, (MAX_FEATURES,)),
+    ("num_black", np.uint8),
+    ("black_indices", np.uint16, (MAX_FEATURES,)),
+    ("score", np.int16),
+    ("result", np.uint8),
+    ("stm", np.uint8),
+])
+
+
+class BinaryNnueDataset(Dataset):
+    """Memory-mapped binary dataset. Scales to 100M+ positions without OOM."""
+
+    def __init__(self, path):
+        file_size = os.path.getsize(path)
+        self.num_records = file_size // RECORD_DTYPE.itemsize
+        self.data = np.memmap(
+            path, dtype=RECORD_DTYPE, mode="r", shape=(self.num_records,)
+        )
+        print(f"Loaded {self.num_records:,} positions from {path} (memory-mapped)")
+
+    def __len__(self):
+        return self.num_records
+
+    def __getitem__(self, idx):
+        record = self.data[idx]
+
+        nw = int(record["num_white"])
+        nb = int(record["num_black"])
+
+        white_indices = torch.from_numpy(
+            record["white_indices"][:nw].astype(np.int64)
+        )
+        black_indices = torch.from_numpy(
+            record["black_indices"][:nb].astype(np.int64)
+        )
+
+        white_tensor = torch.zeros(HALFKP_SIZE, dtype=torch.float32)
+        black_tensor = torch.zeros(HALFKP_SIZE, dtype=torch.float32)
+        white_tensor[white_indices] = 1.0
+        black_tensor[black_indices] = 1.0
+
+        score = float(record["score"])
+        result = float(record["result"]) / 2.0
+        stm = float(record["stm"])
+
+        return white_tensor, black_tensor, \
+               torch.tensor(score, dtype=torch.float32), \
+               torch.tensor(result, dtype=torch.float32), \
+               torch.tensor(stm, dtype=torch.float32)
+
+
+def load_dataset(path):
+    """Load a dataset from either .bin (binary) or .txt (text) format."""
+    if path.endswith(".bin"):
+        return BinaryNnueDataset(path)
+    return NnueDataset(path)
+
+
+def preprocess_to_binary(txt_path, bin_path):
+    """Convert a text training file to binary format for memory-mapped loading."""
+    print(f"Counting positions in {txt_path}...")
+    num_lines = 0
+    with open(txt_path) as f:
+        for line in f:
+            if line.strip():
+                num_lines += 1
+    print(f"  {num_lines:,} positions")
+
+    data = np.memmap(bin_path, dtype=RECORD_DTYPE, mode="w+", shape=(num_lines,))
+
+    print("Converting to binary format...")
+    idx = 0
+    skipped = 0
+    with open(txt_path) as f:
+        for line in tqdm(f, total=num_lines, desc="Processing", unit="pos"):
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(" | ")
+            if len(parts) != 3:
+                skipped += 1
+                continue
+
+            fen = parts[0].strip()
+            score = float(parts[1].strip())
+            result = float(parts[2].strip())
+            fen_parts = fen.split()
+            stm_is_white = (fen_parts[1] == "w") if len(fen_parts) > 1 else True
+
+            wf, bf = fen_to_halfkp(fen)
+            if len(wf) > MAX_FEATURES or len(bf) > MAX_FEATURES:
+                skipped += 1
+                continue
+
+            record = data[idx]
+            record["num_white"] = len(wf)
+            record["white_indices"][:len(wf)] = wf
+            record["num_black"] = len(bf)
+            record["black_indices"][:len(bf)] = bf
+            record["score"] = int(np.clip(score, -32768, 32767))
+            record["result"] = round(result * 2)
+            record["stm"] = 1 if stm_is_white else 0
+            idx += 1
+
+    data.flush()
+
+    if idx < num_lines:
+        with open(bin_path, "r+b") as f:
+            f.truncate(idx * RECORD_DTYPE.itemsize)
+
+    file_size = os.path.getsize(bin_path)
+    print(f"  Preprocessed: {idx:,} positions ({skipped:,} skipped, {file_size / 1024 / 1024:.1f} MB)")
 
 
 # --------------------------------------------------------------------------- #
@@ -430,22 +548,35 @@ def get_run_tag():
 
 
 def resolve_latest_data(base_dir):
-    """Find the latest timestamped subdir under base_dir and return training_data.txt path."""
+    """Find the latest timestamped subdir under base_dir and return training data path.
+
+    Prefers .bin (binary) over .txt (text) when both exist.
+    """
     base = Path(base_dir)
     if not base.is_dir():
         return base_dir
+
+    def find_data(directory):
+        bin_path = directory / "training_data.bin"
+        if bin_path.exists():
+            return str(bin_path)
+        txt_path = directory / "training_data.txt"
+        if txt_path.exists():
+            return str(txt_path)
+        return None
+
     subdirs = sorted(
         [d for d in base.iterdir() if d.is_dir()],
         key=lambda d: d.name,
         reverse=True,
     )
     if subdirs:
-        candidate = subdirs[0] / "training_data.txt"
-        if candidate.exists():
-            return str(candidate)
-    fallback = base / "training_data.txt"
-    if fallback.exists():
-        return str(fallback)
+        result = find_data(subdirs[0])
+        if result:
+            return result
+    fallback = find_data(base)
+    if fallback:
+        return fallback
     return base_dir
 
 
@@ -460,20 +591,34 @@ def train(args):
         data_path = resolve_latest_data(data_path)
         print(f"Resolved data: {data_path}")
 
+    if data_path.endswith(".txt"):
+        bin_path = data_path[:-4] + ".bin"
+        if not Path(bin_path).exists() or \
+                Path(data_path).stat().st_mtime > Path(bin_path).stat().st_mtime:
+            print("Preprocessing text data to binary format...")
+            preprocess_to_binary(data_path, bin_path)
+        else:
+            print(f"Using cached binary: {bin_path}")
+        data_path = bin_path
+
     val_data_path = args.val_data
     if val_data_path is None:
         candidate = Path(data_path).parent / "validation_data.txt"
-        if candidate.exists():
+        if candidate.exists() and candidate.stat().st_size > 0:
             val_data_path = str(candidate)
             print(f"Auto-detected validation data: {val_data_path}")
+        candidate_bin = Path(data_path).parent / "validation_data.bin"
+        if candidate_bin.exists() and candidate_bin.stat().st_size > 0:
+            val_data_path = str(candidate_bin)
+            print(f"Auto-detected validation data: {val_data_path}")
 
-    dataset = NnueDataset(data_path)
+    dataset = load_dataset(data_path)
     if len(dataset) == 0:
         sys.exit("No training data found.")
 
     if val_data_path:
         train_set = dataset
-        val_set = NnueDataset(val_data_path)
+        val_set = load_dataset(val_data_path)
         if len(val_set) == 0:
             sys.exit("No validation data found.")
         train_size = len(train_set)

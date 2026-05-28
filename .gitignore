@@ -9,6 +9,11 @@ results
 .DS_Store
 nnue/*
 !nnue/config.json.example
+!nnue/data/
+nnue/data/*
+!nnue/data/combined/
+nnue/data/combined/*
+!nnue/data/combined/*.txt
 config.json
 datagen.log
 scripts/ssh_hetzner.sh
