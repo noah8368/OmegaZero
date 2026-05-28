@@ -421,8 +421,6 @@ Moves are put in the following order:
 
 The [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA) is used to order captures in Quiescence Search, with all quiets placed after, unordered.  
 
-Each column in the table below shows the cumulative effect of adding one more search feature on top of all previous ones. kNPS = thousands of nodes per second; depth = search depth reached.
-
 The table below shows how each search feature contributes when stacked cumulatively. Each column adds one feature on top of all previous ones.<sup>3</sup>
 
 *Search Feature Stacking Benchmark (5s/position)*
