@@ -18,14 +18,14 @@
 namespace omegazero {
 
 constexpr int kHalfKpSize = 40960;
-constexpr int kFtOutSize = 256;
+constexpr int kAccumSize = 256;
 constexpr int kL2OutSize = 32;
 constexpr int kL3OutSize = 32;
 
 constexpr int kNumPieceTypesHalfKp = 10;
-constexpr int kFtScale = 127;
+constexpr int kActivationScale = 127;
 constexpr int kHiddenScale = 64;
-constexpr int kOutputScale = kFtScale * kHiddenScale;  // 8128
+constexpr int kOutputScale = kActivationScale * kHiddenScale;  // 8128
 
 class NnueNetwork {
  public:
@@ -47,14 +47,14 @@ class NnueNetwork {
   auto AddFeature(int halfkp_idx, int16_t* accum) const -> void;
   auto RemoveFeature(int halfkp_idx, int16_t* accum) const -> void;
 
-  auto GetFtBias() const -> const int16_t* { return ft_bias_.get(); }
+  auto GetAccumBias() const -> const int16_t* { return accum_bias_.get(); }
 
  private:
   bool loaded_ = false;
 
-  std::unique_ptr<int16_t[]> ft_weight_;   // [kHalfKpSize][kFtOutSize] (transposed at load)
-  std::unique_ptr<int16_t[]> ft_bias_;     // [kFtOutSize]
-  std::unique_ptr<int8_t[]> l2_weight_;    // [kL2OutSize][kFtOutSize * 2]
+  std::unique_ptr<int16_t[]> accum_weight_;   // [kHalfKpSize][kAccumSize] (transposed at load)
+  std::unique_ptr<int16_t[]> accum_bias_;     // [kAccumSize]
+  std::unique_ptr<int8_t[]> l2_weight_;    // [kL2OutSize][kAccumSize * 2]
   std::unique_ptr<int32_t[]> l2_bias_;     // [kL2OutSize]
   std::unique_ptr<int8_t[]> l3_weight_;    // [kL3OutSize][kL2OutSize]
   std::unique_ptr<int32_t[]> l3_bias_;     // [kL3OutSize]

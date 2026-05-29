@@ -16,11 +16,21 @@
 
 namespace omegazero {
 
+using std::cerr;
+using std::endl;
+using std::ifstream;
+using std::ios;
+using std::string;
+
 NnueNetwork g_nnue;
 
 static inline int Clamp(int val, int lo, int hi) {
-  if (val < lo) return lo;
-  if (val > hi) return hi;
+  if (val < lo) {
+    return lo;
+  }
+  if (val > hi) {
+    return hi;
+  }
   return val;
 }
 
@@ -29,46 +39,50 @@ static int HalfKpIndex(S8 king_sq, int piece_index, S8 piece_sq) {
          piece_index * kNumSq + piece_sq;
 }
 
-auto NnueNetwork::Load(const std::string& path) -> bool {
-  std::ifstream f(path, std::ios::binary);
-  if (!f.is_open()) return false;
+auto NnueNetwork::Load(const string& path) -> bool {
+  ifstream f(path, ios::binary);
+  if (!f.is_open()) {
+    return false;
+  }
 
   char magic[4];
   f.read(magic, 4);
-  if (std::memcmp(magic, "OZNN", 4) != 0) {
-    std::cerr << "NNUE: invalid magic in " << path << std::endl;
+  if (memcmp(magic, "OZNN", 4) != 0) {
+    cerr << "NNUE: invalid magic in " << path << endl;
     return false;
   }
 
   int32_t dims[4];
   f.read(reinterpret_cast<char*>(dims), sizeof(dims));
-  if (dims[0] != kHalfKpSize || dims[1] != kFtOutSize ||
+  if (dims[0] != kHalfKpSize || dims[1] != kAccumSize ||
       dims[2] != kL2OutSize || dims[3] != kL3OutSize) {
-    std::cerr << "NNUE: architecture mismatch in " << path << std::endl;
+    cerr << "NNUE: architecture mismatch in " << path << endl;
     return false;
   }
 
-  auto ft_raw = std::make_unique<int16_t[]>(kFtOutSize * kHalfKpSize);
-  ft_weight_ = std::make_unique<int16_t[]>(kHalfKpSize * kFtOutSize);
-  ft_bias_ = std::make_unique<int16_t[]>(kFtOutSize);
-  l2_weight_ = std::make_unique<int8_t[]>(kL2OutSize * kFtOutSize * 2);
+  auto raw_weight = std::make_unique<int16_t[]>(kAccumSize * kHalfKpSize);
+  accum_weight_ = std::make_unique<int16_t[]>(kHalfKpSize * kAccumSize);
+  accum_bias_ = std::make_unique<int16_t[]>(kAccumSize);
+  l2_weight_ = std::make_unique<int8_t[]>(kL2OutSize * kAccumSize * 2);
   l2_bias_ = std::make_unique<int32_t[]>(kL2OutSize);
   l3_weight_ = std::make_unique<int8_t[]>(kL3OutSize * kL2OutSize);
   l3_bias_ = std::make_unique<int32_t[]>(kL3OutSize);
   output_weight_ = std::make_unique<int8_t[]>(kL3OutSize);
 
-  f.read(reinterpret_cast<char*>(ft_raw.get()),
-         kFtOutSize * kHalfKpSize * sizeof(int16_t));
-  f.read(reinterpret_cast<char*>(ft_bias_.get()),
-         kFtOutSize * sizeof(int16_t));
+  f.read(reinterpret_cast<char*>(raw_weight.get()),
+         kAccumSize * kHalfKpSize * sizeof(int16_t));
+  f.read(reinterpret_cast<char*>(accum_bias_.get()),
+         kAccumSize * sizeof(int16_t));
 
-  // Transpose ft_weight from [kFtOutSize][kHalfKpSize] to [kHalfKpSize][kFtOutSize]
+  // Transpose accum_weight from [kAccumSize][kHalfKpSize] to [kHalfKpSize][kAccumSize]
   // so each feature's weights are contiguous in memory.
-  for (int j = 0; j < kFtOutSize; ++j)
-    for (int idx = 0; idx < kHalfKpSize; ++idx)
-      ft_weight_[idx * kFtOutSize + j] = ft_raw[j * kHalfKpSize + idx];
+  for (int accum_idx = 0; accum_idx < kAccumSize; ++accum_idx) {
+    for (int feature_idx = 0; feature_idx < kHalfKpSize; ++feature_idx) {
+      accum_weight_[feature_idx * kAccumSize + accum_idx] = raw_weight[accum_idx * kHalfKpSize + feature_idx];
+    }
+  }
   f.read(reinterpret_cast<char*>(l2_weight_.get()),
-         kL2OutSize * kFtOutSize * 2 * sizeof(int8_t));
+         kL2OutSize * kAccumSize * 2 * sizeof(int8_t));
   f.read(reinterpret_cast<char*>(l2_bias_.get()),
          kL2OutSize * sizeof(int32_t));
   f.read(reinterpret_cast<char*>(l3_weight_.get()),
@@ -80,7 +94,7 @@ auto NnueNetwork::Load(const std::string& path) -> bool {
   f.read(reinterpret_cast<char*>(&output_bias_), sizeof(int32_t));
 
   if (!f) {
-    std::cerr << "NNUE: truncated file " << path << std::endl;
+    cerr << "NNUE: truncated file " << path << endl;
     loaded_ = false;
     return false;
   }
@@ -92,8 +106,8 @@ auto NnueNetwork::Load(const std::string& path) -> bool {
 auto NnueNetwork::Forward(S8 white_king_sq, S8 black_king_sq,
                            const S8* piece_layout, const S8* player_layout,
                            S8 player_to_move) const -> int {
-  int16_t white_accum[kFtOutSize];
-  int16_t black_accum[kFtOutSize];
+  int16_t white_accum[kAccumSize];
+  int16_t black_accum[kAccumSize];
   ComputeAccumulator(white_king_sq, kWhite, piece_layout, player_layout,
                      white_accum);
   ComputeAccumulator(black_king_sq, kBlack, piece_layout, player_layout,
@@ -105,7 +119,7 @@ auto NnueNetwork::ComputeAccumulator(S8 king_sq, S8 perspective,
                                      const S8* piece_layout,
                                      const S8* player_layout,
                                      int16_t* accum) const -> void {
-  std::memcpy(accum, ft_bias_.get(), kFtOutSize * sizeof(int16_t));
+  memcpy(accum, accum_bias_.get(), kAccumSize * sizeof(int16_t));
 
   S8 mapped_king = (perspective == kBlack) ? static_cast<S8>(king_sq ^ 56)
                                            : king_sq;
@@ -113,28 +127,33 @@ auto NnueNetwork::ComputeAccumulator(S8 king_sq, S8 perspective,
   for (S8 sq = 0; sq < kNumSq; ++sq) {
     S8 piece = piece_layout[sq];
     S8 player = player_layout[sq];
-    if (piece == kNA || piece == kKing) continue;
+    if (piece == kNA || piece == kKing) {
+      continue;
+    }
 
     S8 mapped_sq = (perspective == kBlack) ? static_cast<S8>(sq ^ 56) : sq;
     int pi = (player == perspective) ? piece : piece + 5;
     int idx = HalfKpIndex(mapped_king, pi, mapped_sq);
 
-    const int16_t* row = &ft_weight_[idx * kFtOutSize];
-    for (int j = 0; j < kFtOutSize; ++j)
-      accum[j] += row[j];
+    const int16_t* row = &accum_weight_[idx * kAccumSize];
+    for (int accum_idx = 0; accum_idx < kAccumSize; ++accum_idx) {
+      accum[accum_idx] += row[accum_idx];
+    }
   }
 }
 
 auto NnueNetwork::AddFeature(int halfkp_idx, int16_t* accum) const -> void {
-  const int16_t* row = &ft_weight_[halfkp_idx * kFtOutSize];
-  for (int j = 0; j < kFtOutSize; ++j)
-    accum[j] += row[j];
+  const int16_t* row = &accum_weight_[halfkp_idx * kAccumSize];
+  for (int accum_idx = 0; accum_idx < kAccumSize; ++accum_idx) {
+    accum[accum_idx] += row[accum_idx];
+  }
 }
 
 auto NnueNetwork::RemoveFeature(int halfkp_idx, int16_t* accum) const -> void {
-  const int16_t* row = &ft_weight_[halfkp_idx * kFtOutSize];
-  for (int j = 0; j < kFtOutSize; ++j)
-    accum[j] -= row[j];
+  const int16_t* row = &accum_weight_[halfkp_idx * kAccumSize];
+  for (int accum_idx = 0; accum_idx < kAccumSize; ++accum_idx) {
+    accum[accum_idx] -= row[accum_idx];
+  }
 }
 
 auto NnueNetwork::ForwardFromAccumulators(const int16_t* white_accum,
@@ -143,34 +162,37 @@ auto NnueNetwork::ForwardFromAccumulators(const int16_t* white_accum,
   const int16_t* first = (player_to_move == kWhite) ? white_accum : black_accum;
   const int16_t* second = (player_to_move == kWhite) ? black_accum : white_accum;
 
-  int8_t concat[kFtOutSize * 2];
-  for (int j = 0; j < kFtOutSize; ++j) {
-    concat[j] = static_cast<int8_t>(Clamp(first[j], 0, 127));
-    concat[kFtOutSize + j] = static_cast<int8_t>(Clamp(second[j], 0, 127));
+  int8_t concat[kAccumSize * 2];
+  for (int accum_idx = 0; accum_idx < kAccumSize; ++accum_idx) {
+    concat[accum_idx] = static_cast<int8_t>(Clamp(first[accum_idx], 0, 127));
+    concat[kAccumSize + accum_idx] = static_cast<int8_t>(Clamp(second[accum_idx], 0, 127));
   }
 
   int8_t l2_out[kL2OutSize];
-  for (int i = 0; i < kL2OutSize; ++i) {
-    int32_t sum = l2_bias_[i];
-    const int8_t* row = &l2_weight_[i * kFtOutSize * 2];
-    for (int j = 0; j < kFtOutSize * 2; ++j)
-      sum += static_cast<int32_t>(row[j]) * static_cast<int32_t>(concat[j]);
-    l2_out[i] = static_cast<int8_t>(Clamp(sum / kHiddenScale, 0, kFtScale));
+  for (int neuron_idx = 0; neuron_idx < kL2OutSize; ++neuron_idx) {
+    int32_t sum = l2_bias_[neuron_idx];
+    const int8_t* row = &l2_weight_[neuron_idx * kAccumSize * 2];
+    for (int input_idx = 0; input_idx < kAccumSize * 2; ++input_idx) {
+      sum += static_cast<int32_t>(row[input_idx]) * static_cast<int32_t>(concat[input_idx]);
+    }
+    l2_out[neuron_idx] = static_cast<int8_t>(Clamp(sum / kHiddenScale, 0, kActivationScale));
   }
 
   int8_t l3_out[kL3OutSize];
-  for (int i = 0; i < kL3OutSize; ++i) {
-    int32_t sum = l3_bias_[i];
-    const int8_t* row = &l3_weight_[i * kL2OutSize];
-    for (int j = 0; j < kL2OutSize; ++j)
-      sum += static_cast<int32_t>(row[j]) * static_cast<int32_t>(l2_out[j]);
-    l3_out[i] = static_cast<int8_t>(Clamp(sum / kHiddenScale, 0, kFtScale));
+  for (int neuron_idx = 0; neuron_idx < kL3OutSize; ++neuron_idx) {
+    int32_t sum = l3_bias_[neuron_idx];
+    const int8_t* row = &l3_weight_[neuron_idx * kL2OutSize];
+    for (int input_idx = 0; input_idx < kL2OutSize; ++input_idx) {
+      sum += static_cast<int32_t>(row[input_idx]) * static_cast<int32_t>(l2_out[input_idx]);
+    }
+    l3_out[neuron_idx] = static_cast<int8_t>(Clamp(sum / kHiddenScale, 0, kActivationScale));
   }
 
   int32_t output = output_bias_;
-  for (int i = 0; i < kL3OutSize; ++i)
-    output += static_cast<int32_t>(output_weight_[i]) *
-              static_cast<int32_t>(l3_out[i]);
+  for (int neuron_idx = 0; neuron_idx < kL3OutSize; ++neuron_idx) {
+    output += static_cast<int32_t>(output_weight_[neuron_idx]) *
+              static_cast<int32_t>(l3_out[neuron_idx]);
+  }
 
   return static_cast<int>(static_cast<int64_t>(output) * 400 / kOutputScale);
 }

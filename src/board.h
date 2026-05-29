@@ -335,12 +335,12 @@ class Board {
   U64 black_to_move_rand_num_;
 
   // NNUE accumulators for incremental updates.
-  int16_t accum_[kNumPlayers][kFtOutSize];
+  int16_t accum_[kNumPlayers][kAccumSize];
   struct AccumEntry {
-    int16_t data[kNumPlayers][kFtOutSize];
+    int16_t data[kNumPlayers][kAccumSize];
   };
   std::vector<AccumEntry> accum_stack_;
-  int16_t saved_accum_[kNumPlayers][kFtOutSize];
+  int16_t saved_accum_[kNumPlayers][kAccumSize];
 };
 
 // Implement public inline non-member functions.
