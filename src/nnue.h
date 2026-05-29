@@ -36,10 +36,23 @@ class NnueNetwork {
                const S8* piece_layout, const S8* player_layout,
                S8 player_to_move) const -> int;
 
+  auto ForwardFromAccumulators(const int16_t* white_accum,
+                               const int16_t* black_accum,
+                               S8 player_to_move) const -> int;
+
+  auto ComputeAccumulator(S8 king_sq, S8 perspective,
+                          const S8* piece_layout, const S8* player_layout,
+                          int16_t* accum) const -> void;
+
+  auto AddFeature(int halfkp_idx, int16_t* accum) const -> void;
+  auto RemoveFeature(int halfkp_idx, int16_t* accum) const -> void;
+
+  auto GetFtBias() const -> const int16_t* { return ft_bias_.get(); }
+
  private:
   bool loaded_ = false;
 
-  std::unique_ptr<int16_t[]> ft_weight_;   // [kFtOutSize][kHalfKpSize]
+  std::unique_ptr<int16_t[]> ft_weight_;   // [kHalfKpSize][kFtOutSize] (transposed at load)
   std::unique_ptr<int16_t[]> ft_bias_;     // [kFtOutSize]
   std::unique_ptr<int8_t[]> l2_weight_;    // [kL2OutSize][kFtOutSize * 2]
   std::unique_ptr<int32_t[]> l2_bias_;     // [kL2OutSize]

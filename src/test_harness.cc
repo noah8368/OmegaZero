@@ -23,6 +23,7 @@
 #include "board.h"
 #include "engine.h"
 #include "move.h"
+#include "nnue.h"
 
 namespace omegazero {
 
@@ -388,7 +389,6 @@ bool RunSelfPlay(int num_games, float search_time, const string& out_dir) {
   return true;
 }
 
-
 #ifdef BENCHMARK
 // ---- NPS Benchmark ----
 // Searches a set of positions for a fixed duration and reports average NPS.
@@ -409,22 +409,27 @@ void RunNpsBench(float search_time) {
   uint64_t total_nodes = 0;
   double total_elapsed = 0;
 
+  cout << "position,nodes,elapsed_s,nps" << endl;
+
   for (const auto& pos : kBenchPositions) {
     Board board(pos.fen);
     Engine engine(&board, 'w', search_time);
     engine.AddPosToHistory();
 
     auto start = std::chrono::high_resolution_clock::now();
-    engine.GetBestMove();
+    {
+      SuppressCout suppress;
+      engine.GetBestMove();
+    }
     auto end = std::chrono::high_resolution_clock::now();
 
     double elapsed = std::chrono::duration<double>(end - start).count();
     uint64_t nodes = engine.GetTotalNodes();
     uint64_t nps = elapsed > 0 ? static_cast<uint64_t>(nodes / elapsed) : 0;
 
-    cout << "  " << pos.name << ": " << nodes << " nodes in "
-         << std::fixed << std::setprecision(2) << elapsed << "s"
-         << " (" << nps << " NPS)" << endl;
+    cout << pos.name << "," << nodes << ","
+         << std::fixed << std::setprecision(4) << elapsed << ","
+         << nps << endl;
 
     total_nodes += nodes;
     total_elapsed += elapsed;
@@ -432,7 +437,7 @@ void RunNpsBench(float search_time) {
 
   uint64_t avg_nps = total_elapsed > 0
       ? static_cast<uint64_t>(total_nodes / total_elapsed) : 0;
-  cout << "  Average: " << avg_nps << " NPS" << endl;
+  cout << "average,0,0," << avg_nps << endl;
 }
 #endif
 
@@ -457,16 +462,15 @@ int debug(const string& out_dir) {
 }
 
 #ifdef BENCHMARK
-int benchmark() {
-  cout << "=== NPS Benchmark (5s/position) ===" << endl;
-  RunNpsBench(5.0f);
-  return EXIT_SUCCESS;
+int benchmark(float search_time) {
+  RunNpsBench(search_time);
+  std::_Exit(EXIT_SUCCESS);
 }
 #endif
 
 }  // namespace omegazero
 
-auto main(int, char* argv[]) -> int {
+auto main(int argc, char* argv[]) -> int {
   using namespace omegazero;
 
   // Derive output directory from the executable path so files land next to the
@@ -477,8 +481,19 @@ auto main(int, char* argv[]) -> int {
                                          : "./";
 
 #ifdef BENCHMARK
-  return benchmark();
+  {
+    string nnue_path = out_dir + "../nnue/nnue.bin";
+    if (g_nnue.Load(nnue_path)) {
+      std::cerr << "NNUE: loaded " << nnue_path << std::endl;
+    } else {
+      std::cerr << "NNUE: not found, using HCE" << std::endl;
+    }
+  }
+  float search_time = 5.0f;
+  if (argc > 1) search_time = std::atof(argv[1]);
+  return benchmark(search_time);
 #else
+  (void)argc;
   return debug(out_dir);
 #endif
 }

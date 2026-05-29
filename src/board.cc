@@ -58,6 +58,7 @@ Board::Board(const string& init_pos) {
   // Set the piece positions, castling rights, and player to move.
   InitBoardPos(init_pos);
   InitHash();
+  InitAccumulators();
 }
 
 auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
@@ -207,10 +208,8 @@ auto Board::DoublePawnPushLegal(S8 file) const -> bool {
 
 auto Board::Evaluate() -> int {
   if (g_nnue.IsLoaded()) {
-    S8 white_king_sq = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kWhite]);
-    S8 black_king_sq = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kBlack]);
-    return g_nnue.Forward(white_king_sq, black_king_sq,
-                          piece_layout_, player_layout_, player_to_move_);
+    return g_nnue.ForwardFromAccumulators(accum_[kWhite], accum_[kBlack],
+                                          player_to_move_);
   }
 
   // Handcrafted eval fallback (used when no NNUE weights are loaded).
@@ -404,6 +403,11 @@ auto Board::ResetPos() -> void {
 
   board_hash_ = saved_pos_info_.board_hash;
   pawn_hash_ = saved_pos_info_.pawn_hash;
+
+  if (g_nnue.IsLoaded()) {
+    std::memcpy(accum_, saved_accum_, sizeof(accum_));
+    accum_stack_.clear();
+  }
 }
 
 auto Board::SavePos() -> void {
@@ -437,10 +441,16 @@ auto Board::SavePos() -> void {
 
   saved_pos_info_.board_hash = board_hash_;
   saved_pos_info_.pawn_hash = pawn_hash_;
+
+  if (g_nnue.IsLoaded()) {
+    std::memcpy(saved_accum_, accum_, sizeof(accum_));
+  }
 }
 
 auto Board::MakeMove(const Move& move) -> void {
   assert(move.moving_piece != kNA || move.castling_type != kNA);
+  if (g_nnue.IsLoaded()) PushAccumulators();
+
   if (move.castling_type == kNA) {
     MakeNonCastlingMove(move);
   } else if (move.castling_type == kQueenSide) {
@@ -465,6 +475,13 @@ auto Board::MakeMove(const Move& move) -> void {
       MovePiece(kKing, kSqE8, kSqG8);
       castling_status_[kBlack] = true;
     }
+  }
+
+  if (g_nnue.IsLoaded()) {
+    if (move.castling_type == kNA)
+      UpdateAccumNonCastling(move);
+    else
+      UpdateAccumCastling(move);
   }
 
   // Update the en passent target square and the board hash to reflect a
@@ -608,6 +625,8 @@ auto Board::UnmakeMove(const Move& move) -> void {
         black_kingside_castling_rights_history_.top();
   }
   black_kingside_castling_rights_history_.pop();
+
+  if (g_nnue.IsLoaded()) PopAccumulators();
 }
 
 // Assume the last made move was a null move with MakeNullMove().
@@ -1021,6 +1040,119 @@ auto Board::InitHash() -> void {
   if (player_to_move_ == kBlack) {
     board_hash_ ^= black_to_move_rand_num_;
   }
+}
+
+auto Board::InitAccumulators() -> void {
+  if (!g_nnue.IsLoaded()) return;
+  S8 wk = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kWhite]);
+  S8 bk = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kBlack]);
+  g_nnue.ComputeAccumulator(wk, kWhite, piece_layout_, player_layout_,
+                            accum_[kWhite]);
+  g_nnue.ComputeAccumulator(bk, kBlack, piece_layout_, player_layout_,
+                            accum_[kBlack]);
+  accum_stack_.clear();
+  accum_stack_.reserve(128);
+}
+
+auto Board::PushAccumulators() -> void {
+  AccumEntry entry;
+  std::memcpy(entry.data, accum_, sizeof(accum_));
+  accum_stack_.push_back(entry);
+}
+
+auto Board::PopAccumulators() -> void {
+  std::memcpy(accum_, accum_stack_.back().data, sizeof(accum_));
+  accum_stack_.pop_back();
+}
+
+static int HalfKpIdx(S8 king_sq, S8 perspective, S8 piece, S8 player, S8 sq) {
+  S8 mapped_king = (perspective == kBlack) ? static_cast<S8>(king_sq ^ 56)
+                                           : king_sq;
+  S8 mapped_sq = (perspective == kBlack) ? static_cast<S8>(sq ^ 56) : sq;
+  int pi = (player == perspective) ? piece : piece + 5;
+  return mapped_king * (kNumPieceTypesHalfKp * kNumSq) + pi * kNumSq + mapped_sq;
+}
+
+auto Board::UpdateAccumNonCastling(const Move& move) -> void {
+  S8 wk = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kWhite]);
+  S8 bk = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kBlack]);
+  S8 mover = GetOtherPlayer(player_to_move_);
+
+  if (move.moving_piece == kKing) {
+    // King moved — recompute that side's accumulator entirely.
+    g_nnue.ComputeAccumulator(
+        (mover == kWhite) ? wk : bk, mover,
+        piece_layout_, player_layout_, accum_[mover]);
+
+    // Other side: only update if there was a capture.
+    S8 other = player_to_move_;
+    if (move.captured_piece != kNA && move.captured_piece != kKing) {
+      S8 ok = (other == kWhite) ? wk : bk;
+      int old_idx = HalfKpIdx(ok, other, move.captured_piece, mover,
+                               move.target_sq);
+      g_nnue.RemoveFeature(old_idx, accum_[other]);
+    }
+    return;
+  }
+
+  for (S8 persp = kWhite; persp <= kBlack; ++persp) {
+    S8 pk = (persp == kWhite) ? wk : bk;
+
+    // Handle capture: remove captured piece's feature.
+    if (move.captured_piece != kNA) {
+      if (move.is_ep) {
+        S8 target_file = GetFileFromSq(move.target_sq);
+        S8 ep_sq = (mover == kWhite)
+            ? GetSqFromRankFile(kRank5, target_file)
+            : GetSqFromRankFile(kRank4, target_file);
+        int cap_idx = HalfKpIdx(pk, persp, kPawn, GetOtherPlayer(mover), ep_sq);
+        g_nnue.RemoveFeature(cap_idx, accum_[persp]);
+      } else {
+        int cap_idx = HalfKpIdx(pk, persp, move.captured_piece,
+                                 GetOtherPlayer(mover), move.target_sq);
+        g_nnue.RemoveFeature(cap_idx, accum_[persp]);
+      }
+    }
+
+    // Remove moving piece from start square.
+    int old_idx = HalfKpIdx(pk, persp, move.moving_piece, mover, move.start_sq);
+    g_nnue.RemoveFeature(old_idx, accum_[persp]);
+
+    // Add piece at target square (possibly promoted).
+    S8 placed_piece = (move.promoted_to_piece != kNA)
+        ? move.promoted_to_piece : move.moving_piece;
+    int new_idx = HalfKpIdx(pk, persp, placed_piece, mover, move.target_sq);
+    g_nnue.AddFeature(new_idx, accum_[persp]);
+  }
+}
+
+auto Board::UpdateAccumCastling(const Move& move) -> void {
+  // King moved — recompute that side's accumulator.
+  S8 mover = GetOtherPlayer(player_to_move_);
+  S8 wk = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kWhite]);
+  S8 bk = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kBlack]);
+
+  g_nnue.ComputeAccumulator(
+      (mover == kWhite) ? wk : bk, mover,
+      piece_layout_, player_layout_, accum_[mover]);
+
+  // Other side: rook moved, update incrementally.
+  S8 other = player_to_move_;
+  S8 ok = (other == kWhite) ? wk : bk;
+
+  S8 rook_from, rook_to;
+  if (move.castling_type == kQueenSide) {
+    rook_from = (mover == kWhite) ? kSqA1 : kSqA8;
+    rook_to = (mover == kWhite) ? kSqD1 : kSqD8;
+  } else {
+    rook_from = (mover == kWhite) ? kSqH1 : kSqH8;
+    rook_to = (mover == kWhite) ? kSqF1 : kSqF8;
+  }
+
+  int old_idx = HalfKpIdx(ok, other, kRook, mover, rook_from);
+  int new_idx = HalfKpIdx(ok, other, kRook, mover, rook_to);
+  g_nnue.RemoveFeature(old_idx, accum_[other]);
+  g_nnue.AddFeature(new_idx, accum_[other]);
 }
 
 auto Board::ToFen() const -> string {

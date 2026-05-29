@@ -15,8 +15,10 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "move.h"
+#include "nnue.h"
 #include "pawn_table.h"
 
 namespace omegazero {
@@ -253,6 +255,11 @@ class Board {
 
   auto AddPiece(S8 piece_type, S8 player, S8 sq) -> void;
   auto InitHash() -> void;
+  auto InitAccumulators() -> void;
+  auto PushAccumulators() -> void;
+  auto PopAccumulators() -> void;
+  auto UpdateAccumNonCastling(const Move& move) -> void;
+  auto UpdateAccumCastling(const Move& move) -> void;
   // Parse a FEN string to initialize the board state.
   auto InitBoardPos(const std::string& init_pos) -> void;
   auto MakeNonCastlingMove(const Move& move) -> void;
@@ -326,6 +333,14 @@ class Board {
   U64 ep_file_rand_nums_[kNumFiles];
   U64 piece_rand_nums_[kNumPieceTypes][kNumSq];
   U64 black_to_move_rand_num_;
+
+  // NNUE accumulators for incremental updates.
+  int16_t accum_[kNumPlayers][kFtOutSize];
+  struct AccumEntry {
+    int16_t data[kNumPlayers][kFtOutSize];
+  };
+  std::vector<AccumEntry> accum_stack_;
+  int16_t saved_accum_[kNumPlayers][kFtOutSize];
 };
 
 // Implement public inline non-member functions.

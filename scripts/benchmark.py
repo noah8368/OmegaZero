@@ -79,29 +79,20 @@ def run_benchmark(args):
 
     results_csv = run_dir / "results.csv"
     with open(results_csv, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["position", "nodes", "elapsed_s", "nps", "depth"])
+        w = csv.DictWriter(f, fieldnames=["position", "nodes", "elapsed_s", "nps"])
         w.writeheader()
         w.writerows(rows)
-
-    depth_csv = run_dir / "depths.csv"
-    with open(depth_csv, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["position", "depth"])
-        w.writeheader()
-        for row in rows:
-            if row["position"] != "average":
-                w.writerow({"position": row["position"], "depth": row["depth"]})
 
     avg_row = next((r for r in rows if r["position"] == "average"), None)
     avg_nps = int(avg_row["nps"]) if avg_row else 0
     avg_knps = avg_nps // 1000
 
     print(f"\nResults for {run_name}:")
-    print(f"  {'Position':<12} {'NPS':>10} {'Depth':>6}")
-    print(f"  {'-'*12} {'-'*10} {'-'*6}")
+    print(f"  {'Position':<12} {'NPS':>10}")
+    print(f"  {'-'*12} {'-'*10}")
     for row in rows:
-        nps_str = f"{int(row['nps']):,}" if row["position"] != "average" else f"{int(row['nps']):,}"
-        depth_str = row["depth"] if row["position"] != "average" else "-"
-        print(f"  {row['position']:<12} {nps_str:>10} {depth_str:>6}")
+        nps_str = f"{int(row['nps']):,}"
+        print(f"  {row['position']:<12} {nps_str:>10}")
     print(f"\n  Average NPS: {avg_knps}k")
 
     version = get_version_tag()
@@ -120,10 +111,8 @@ def append_to_history(version, avg_knps, rows):
     with open(history_csv, "a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=[
             "timestamp", "version", "avg_knps",
-            "opening_nps", "opening_depth",
-            "midgame_nps", "midgame_depth",
-            "kiwipete_nps", "kiwipete_depth",
-            "endgame_nps", "endgame_depth",
+            "opening_nps", "midgame_nps",
+            "kiwipete_nps", "endgame_nps",
         ])
         if not file_exists:
             w.writeheader()
@@ -134,7 +123,6 @@ def append_to_history(version, avg_knps, rows):
             if pos == "average":
                 continue
             row_data[f"{pos}_nps"] = r["nps"]
-            row_data[f"{pos}_depth"] = r["depth"]
         w.writerow(row_data)
 
     print(f"  Version history: {history_csv}")
