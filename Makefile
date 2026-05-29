@@ -4,7 +4,7 @@ UNAME_S := $(shell uname -s)
 # Compiler flags common to all platforms and build types.
 # Note: -lboost_program_options is a linker flag and belongs only in link steps;
 # moved out of FLAGS so it isn't passed during compilation.
-FLAGS = -march=native -pedantic -std=c++17 -Wall -Werror -Wextra -Wshadow
+FLAGS = -march=native -pedantic -std=c++17 -Wall -Werror -Wextra -Wshadow -MMD -MP
 
 # -O3 instead of -Ofast: drops -ffast-math, which can silently break
 # floating-point behavior. The remaining flags are safe on both platforms.
@@ -73,6 +73,8 @@ src/masks.cc :
 	python3 scripts/generate_masks.py
 src/magics.cc :
 	python3 scripts/mine_magics.py
+
+-include build/play/*.d build/debug/*.d build/bench/*.d build/datagen/*.d
 
 .PHONY: check-deps
 check-deps:

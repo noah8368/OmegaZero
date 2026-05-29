@@ -375,8 +375,8 @@ def main():
         help="Path to cutechess-cli (default: auto-detect)",
     )
     run_p.add_argument(
-        "--elo-levels", default="1320,1500,1700,1900,2100",
-        help="Comma-separated opponent ELO levels (default: 1320,1500,1700,1900,2100)",
+        "--elo-levels", default="1320,1700,2100",
+        help="Comma-separated opponent ELO levels (default: 1320,1700,2100)",
     )
     run_p.add_argument(
         "--games", type=int, default=20,
@@ -384,7 +384,7 @@ def main():
     )
     run_p.add_argument(
         "--st", default="5",
-        help="Fixed time per move in seconds (default: 0.1)",
+        help="Fixed time per move in seconds (default: 5)",
     )
 
     sub.add_parser("plot", help="Regenerate plots from version_history.csv")
