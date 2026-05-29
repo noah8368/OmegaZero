@@ -121,9 +121,6 @@ auto Engine::GetBestMove() -> Move {
     }
   }
 
-  // Report search depth, node count, and nodes/sec for performance profiling.
-  // total_nodes_ accumulates in batches of 4096 via CheckSearchTime();
-  // nodes_since_time_check_ holds the remainder that hasn't hit the threshold.
 #ifdef BENCHMARK
   {
     search_depth =

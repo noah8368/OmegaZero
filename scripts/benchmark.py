@@ -13,6 +13,7 @@ Usage:
 import argparse
 import csv
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -61,75 +62,88 @@ def run_benchmark(args):
     print(f"Running benchmark ({args.st}s/position)...")
     proc = subprocess.run(
         [str(BENCH_BIN), str(args.st)],
-        capture_output=True, text=True, cwd=REPO_ROOT,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=REPO_ROOT,
     )
+
+    if proc.stderr:
+        print(proc.stderr, end="")
 
     if proc.returncode != 0:
         print(f"Benchmark failed (exit {proc.returncode})")
-        if proc.stderr:
-            print(proc.stderr)
         sys.exit(1)
 
     lines = proc.stdout.strip().splitlines()
     if not lines:
         sys.exit("No output from benchmark")
 
+    depths = []
+    for line in proc.stderr.splitlines():
+        m = re.match(r"SEARCH DEPTH:\s+(\d+)", line)
+        if m:
+            depths.append(int(m.group(1)))
+
     reader = csv.DictReader(lines)
     rows = list(reader)
 
-    results_csv = run_dir / "results.csv"
-    with open(results_csv, "w", newline="") as f:
+    position_names = [r["position"] for r in rows if r["position"] != "average"]
+    for i, name in enumerate(position_names):
+        if i < len(depths):
+            rows[i]["depth"] = depths[i]
+        else:
+            rows[i]["depth"] = 0
+    for r in rows:
+        r.setdefault("depth", 0)
+
+    nps_csv = run_dir / "nps.csv"
+    with open(nps_csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["position", "nodes", "elapsed_s", "nps"])
         w.writeheader()
-        w.writerows(rows)
+        for r in rows:
+            w.writerow({k: r[k] for k in ["position", "nodes", "elapsed_s", "nps"]})
+
+    depths_csv = run_dir / "depths.csv"
+    with open(depths_csv, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["position", "depth"])
+        w.writeheader()
+        for i, name in enumerate(position_names):
+            w.writerow({"position": name, "depth": depths[i] if i < len(depths) else 0})
 
     avg_row = next((r for r in rows if r["position"] == "average"), None)
     avg_nps = int(avg_row["nps"]) if avg_row else 0
     avg_knps = avg_nps // 1000
 
     print(f"\nResults for {run_name}:")
-    print(f"  {'Position':<12} {'NPS':>10}")
-    print(f"  {'-'*12} {'-'*10}")
+    print(f"  {'Position':<12} {'Depth':>6} {'NPS':>10}")
+    print(f"  {'-'*12} {'-'*6} {'-'*10}")
     for row in rows:
         nps_str = f"{int(row['nps']):,}"
-        print(f"  {row['position']:<12} {nps_str:>10}")
+        print(f"  {row['position']:<12} {row['depth']:>6} {nps_str:>10}")
     print(f"\n  Average NPS: {avg_knps}k")
 
     version = get_version_tag()
-    append_to_history(version, avg_knps, rows)
+    append_to_history(version, avg_knps)
     generate_plots(version)
 
     print(f"\n  Results saved to: {run_dir}")
 
 
-def append_to_history(version, avg_knps, rows):
+def append_to_history(version, avg_knps):
     RESULTS_BASE.mkdir(parents=True, exist_ok=True)
-    history_csv = RESULTS_BASE / "version_history.csv"
+    history_csv = RESULTS_BASE / "version_nps_history.csv"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     file_exists = history_csv.exists()
     with open(history_csv, "a", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=[
-            "timestamp", "version", "avg_knps",
-            "opening_nps", "midgame_nps",
-            "kiwipete_nps", "endgame_nps",
-        ])
+        w = csv.DictWriter(f, fieldnames=["timestamp", "version", "avg_knps"])
         if not file_exists:
             w.writeheader()
-
-        row_data = {"timestamp": timestamp, "version": version, "avg_knps": avg_knps}
-        for r in rows:
-            pos = r["position"]
-            if pos == "average":
-                continue
-            row_data[f"{pos}_nps"] = r["nps"]
-        w.writerow(row_data)
+        w.writerow({"timestamp": timestamp, "version": version, "avg_knps": avg_knps})
 
     print(f"  Version history: {history_csv}")
 
 
 def load_history():
-    history_csv = RESULTS_BASE / "version_history.csv"
+    history_csv = RESULTS_BASE / "version_nps_history.csv"
     if not history_csv.exists():
         return []
     with open(history_csv) as f:
@@ -199,7 +213,7 @@ def main():
         help="Search time per position in seconds (default: 5.0)",
     )
 
-    sub.add_parser("plot", help="Regenerate plots from version_history.csv")
+    sub.add_parser("plot", help="Regenerate plots from version_nps_history.csv")
 
     args = parser.parse_args()
 

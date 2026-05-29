@@ -48,6 +48,7 @@ Board::Board(const string& init_pos) {
     }
   }
   ep_target_sq_ = kNA;
+  halfmove_clock_ = kNA;
   // Initialize player to move as White in case the FEN string doesn't specify.
   player_to_move_ = kWhite;
 
