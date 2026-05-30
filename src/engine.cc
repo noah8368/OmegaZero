@@ -433,8 +433,9 @@ auto Engine::StoreTtEntry(int best_eval, int orig_alpha, int beta, int depth,
 
 auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
                            int ply, bool null_move_allowed) -> int {
-  assert(ply >= 0 && ply < kSearchLimit);
-  assert(alpha < beta);
+  if (ply >= kSearchLimit) {
+    return board_->Evaluate();
+  }
   CheckSearchTime();
 
   int orig_alpha = alpha;

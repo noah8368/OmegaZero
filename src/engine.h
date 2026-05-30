@@ -45,7 +45,7 @@ enum GameStatus : S8 {
 };
 
 constexpr int kRanOutOfTime = 2;
-constexpr int kSearchLimit = 50;
+constexpr int kSearchLimit = 128;
 
 constexpr int kBestEval = INT32_MAX;
 constexpr int kNeutralEval = -25;
