@@ -437,6 +437,9 @@ auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
     throw BadMove("invalid kingside castling request");
   }
 
+  move.moving_piece =
+      isupper(user_cmd[0]) ? GetPieceType(user_cmd[0]) : kPawn;
+
   string cmd = user_cmd;
   for (char& ch : cmd) ch = tolower(ch);
 
@@ -612,6 +615,19 @@ auto Game::AddStartSqToMove(Move& move, S8 start_rank, S8 start_file,
       }
     }
 
+    if (!capture_indicated) {
+      S8 behind_rank =
+          player_to_move == kWhite ? target_rank - 1 : target_rank + 1;
+      if (behind_rank >= kRank1 && behind_rank <= kRank8) {
+        S8 behind = GetSqFromRankFile(behind_rank, target_file);
+        if (board_.GetPieceOnSq(behind) == kPawn &&
+            board_.GetPlayerOnSq(behind) == player_to_move) {
+          move.start_sq = behind;
+          return;
+        }
+      }
+    }
+
     // Clear off pieces on or off the same file as the ending position
     // depending on if the pawn move captures a piece or not.
     S8 other_player = GetOtherPlayer(player_to_move);
@@ -714,7 +730,6 @@ auto Game::InterpAlgNotation(const string& user_cmd, Move& move, S8& start_rank,
     throw BadMove("bad command formatting");
   }
 
-  move.moving_piece = GetPieceType(user_cmd[0]);
   switch (cmd_len) {
     // Handle the case of unambiguous pawn move without capture (ex: e4).
     case 2:
