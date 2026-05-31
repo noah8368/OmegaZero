@@ -49,12 +49,20 @@ bench : build/bench $(BENCH_OBJECTS)
 	$(CC) -o build/bench_harness $(BENCH_OBJECTS) $(FLAGS) $(OPT_FLAGS) -DBENCHMARK $(LINK_FLAGS)
 datagen : build/datagen $(DATAGEN_OBJECTS)
 	$(CC) -o build/datagen_harness $(DATAGEN_OBJECTS) $(FLAGS) $(OPT_FLAGS) -lpthread
+build/play/magics.o: src/magics.cc
+	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/play/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS)
+build/debug/magics.o: src/magics.cc
+	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/debug/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(DEBUG_FLAGS)
+build/bench/magics.o: src/magics.cc
+	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/bench/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS) -DBENCHMARK
+build/datagen/magics.o: src/magics.cc
+	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/datagen/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS) -DNDEBUG
 
