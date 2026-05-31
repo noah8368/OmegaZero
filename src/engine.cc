@@ -666,8 +666,9 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
     // node.
     if (move == hash_move) {
       ordered_moves.push_back(move);
+    } else if (move.promoted_to_piece != kNA) {
+      high_see_capture_pairs.emplace_back(move, kPieceVals[move.promoted_to_piece] - kPieceVals[kPawn]);
     } else if (move.captured_piece != kNA) {
-      // Use the SEE heuristic to order captures.
       see_val = board_->GetSee(move);
       if (see_val >= 0) {
         high_see_capture_pairs.emplace_back(move, see_val);
@@ -856,7 +857,7 @@ auto Engine::AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
             continue;
           }
         } else if (target_rank == kRank8) {
-          for (S8 piece = kKnight; piece <= kQueen; ++piece) {
+          for (S8 piece = kQueen; piece >= kKnight; --piece) {
             move.promoted_to_piece = piece;
             move_list.push_back(move);
           }
@@ -870,7 +871,7 @@ auto Engine::AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
             continue;
           }
         } else if (target_rank == kRank1) {
-          for (S8 piece = kKnight; piece <= kQueen; ++piece) {
+          for (S8 piece = kQueen; piece >= kKnight; --piece) {
             move.promoted_to_piece = piece;
             move_list.push_back(move);
           }

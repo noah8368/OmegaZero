@@ -58,7 +58,9 @@ auto main(int argc, char* argv[]) -> int {
       "NNUE weights file path")
       ("pgn", prog_opt::value<string>(&pgn_opponent),
       "Save game as PGN file, using the given opponent name")
-      ("uci,u", "Run in UCI protocol mode");
+      ("uci,u", "Run in UCI protocol mode")
+      ("hce", "Use handcrafted eval instead of NNUE")
+      ("light-theme", "Use piece symbols for light terminal backgrounds");
   prog_opt::variables_map var_map;
   try {
     prog_opt::store(prog_opt::parse_command_line(argc, argv, desc), var_map);
@@ -68,9 +70,10 @@ auto main(int argc, char* argv[]) -> int {
     return EINVAL;
   }
 
-  if (!omegazero::g_nnue.Load(nnue_path)) {
-    cout << "WARNING: Could not load NNUE weights from " << nnue_path << endl;
-    cout << "Engine will not function correctly without NNUE weights." << endl;
+  if (var_map.count("hce")) {
+    cout << "Using HCE." << endl;
+  } else if (!omegazero::g_nnue.Load(nnue_path)) {
+    cout << "WARNING: NNUE weights not found. Using HCE instead." << endl;
   }
 
   if (var_map.count("uci")) {
@@ -82,8 +85,9 @@ auto main(int argc, char* argv[]) -> int {
   try {
     bool on_opening =
         init_pos == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    bool light_theme = var_map.count("light-theme") > 0;
     omegazero::Game game(init_pos, opening_book_path, player_side, search_time,
-                         on_opening);
+                         on_opening, light_theme);
     if (var_map.count("depth")) {
       // Output perft results.
       game.Test(depth);

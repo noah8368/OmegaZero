@@ -114,6 +114,16 @@ OmegaZero -p [SIDE] -t [TIME]
 where `[SIDE]` is the side the user would like to play. This may be `w` for
 White, `b` for Black, or `r` for a random selection. `[TIME]` is the amount of time (in seconds) to give the engine during play. This defaults to `5s`.
 
+To use the handcrafted eval instead of NNUE, add `--hce`:
+```
+OmegaZero --hce -p w -t 5
+```
+
+The board display defaults to dark terminal backgrounds (filled glyphs = white pieces). If using a light terminal, add `--light-theme`:
+```
+OmegaZero --light-theme -p w
+```
+
 To start from a custom position, add `-i` with a [FEN](https://www.chessprogramming.org/Forsyth-Edwards_Notation) string. Use `w` or `b` in the FEN to set which side moves first:
 ```
 OmegaZero -i "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1" -p w -t 5  # white to move
@@ -414,7 +424,7 @@ of a set of heuristics to perform move ordering in `Engine::OrderMoves()` in
 order to increase the number of [Beta-Cutoffs](https://www.chessprogramming.org/Beta-Cutoff) during alpha-beta pruning.
 Moves are put in the following order:
 1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
-2. Good captures (SEE value >= 0) ordered by [SEE Heuristic](https://www.chessprogramming.org/Static_Exchange_Evaluation)
+2. Promotions (scored by promoted piece value minus pawn value) and good captures (SEE value >= 0), ordered together by score
 3. Two [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
 4. All other quiet moves, ordered by [History Heuristic](https://www.chessprogramming.org/History_Heuristic) and [Countermove Heuristic](https://www.chessprogramming.org/Countermove_Heuristic)
 5. Bad captures (SEE value < 0) ordered by SEE Heuristic

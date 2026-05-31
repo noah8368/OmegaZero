@@ -71,25 +71,41 @@ auto GetPieceType(char piece_ch) -> S8 {
 }
 
 Game::Game(const string& init_pos, const string& opening_book_path,
-           char player_side, float search_time, bool on_opening)
+           char player_side, float search_time, bool on_opening,
+           bool light_theme)
     : board_(init_pos), engine_(&board_, player_side, search_time) {
   game_active_ = true;
   on_opening_ = on_opening;
   search_time_ = search_time;
   turn_num_ = 1;
   winner_ = kNA;
-  piece_symbols_[kWhite][kPawn] = "♙";
-  piece_symbols_[kWhite][kKnight] = "♘";
-  piece_symbols_[kWhite][kBishop] = "♗";
-  piece_symbols_[kWhite][kRook] = "♖";
-  piece_symbols_[kWhite][kQueen] = "♕";
-  piece_symbols_[kWhite][kKing] = "♔";
-  piece_symbols_[kBlack][kPawn] = "♟";
-  piece_symbols_[kBlack][kKnight] = "♞";
-  piece_symbols_[kBlack][kBishop] = "♝";
-  piece_symbols_[kBlack][kRook] = "♜";
-  piece_symbols_[kBlack][kQueen] = "♛";
-  piece_symbols_[kBlack][kKing] = "♚";
+  if (light_theme) {
+    piece_symbols_[kWhite][kPawn] = "♙";
+    piece_symbols_[kWhite][kKnight] = "♘";
+    piece_symbols_[kWhite][kBishop] = "♗";
+    piece_symbols_[kWhite][kRook] = "♖";
+    piece_symbols_[kWhite][kQueen] = "♕";
+    piece_symbols_[kWhite][kKing] = "♔";
+    piece_symbols_[kBlack][kPawn] = "♟";
+    piece_symbols_[kBlack][kKnight] = "♞";
+    piece_symbols_[kBlack][kBishop] = "♝";
+    piece_symbols_[kBlack][kRook] = "♜";
+    piece_symbols_[kBlack][kQueen] = "♛";
+    piece_symbols_[kBlack][kKing] = "♚";
+  } else {
+    piece_symbols_[kWhite][kPawn] = "♟";
+    piece_symbols_[kWhite][kKnight] = "♞";
+    piece_symbols_[kWhite][kBishop] = "♝";
+    piece_symbols_[kWhite][kRook] = "♜";
+    piece_symbols_[kWhite][kQueen] = "♛";
+    piece_symbols_[kWhite][kKing] = "♚";
+    piece_symbols_[kBlack][kPawn] = "♙";
+    piece_symbols_[kBlack][kKnight] = "♘";
+    piece_symbols_[kBlack][kBishop] = "♗";
+    piece_symbols_[kBlack][kRook] = "♖";
+    piece_symbols_[kBlack][kQueen] = "♕";
+    piece_symbols_[kBlack][kKing] = "♔";
+  }
 
   // Initialize the opening book with the opening book text file.
   ifstream opening_book_f(opening_book_path);
@@ -441,7 +457,9 @@ auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
       isupper(user_cmd[0]) ? GetPieceType(user_cmd[0]) : kPawn;
 
   string cmd = user_cmd;
-  for (char& ch : cmd) ch = tolower(ch);
+  for (char& ch : cmd) {
+    ch = tolower(ch);
+  }
 
   bool capture_indicated = false;
   S8 start_rank = kNA;
@@ -663,7 +681,11 @@ auto Game::DisplayBoard() const -> void {
   S8 piece;
   S8 player;
   S8 sq;
-  for (S8 rank = kRank8; rank >= kRank1; --rank) {
+  bool flipped = engine_.GetUserSide() == kBlack;
+  S8 rank_start = flipped ? kRank1 : kRank8;
+  S8 rank_end = flipped ? kRank8 : kRank1;
+  S8 rank_step = flipped ? 1 : -1;
+  for (S8 rank = rank_start; rank != rank_end + rank_step; rank += rank_step) {
     cout << rank + 1 << " ";
     for (S8 file = kFileA; file <= kFileH; ++file) {
       sq = GetSqFromRankFile(rank, file);

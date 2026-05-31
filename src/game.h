@@ -37,7 +37,8 @@ auto GetPieceType(char piece_ch) -> S8;
 class Game {
  public:
   Game(const string& init_pos, const string& opening_book_path,
-       char player_side, float search_time, bool on_opening = true);
+       char player_side, float search_time, bool on_opening = true,
+       bool light_theme = false);
 
   auto IsActive() const -> bool;
   auto GetOpeningMove(Move& opening_move) -> bool;
