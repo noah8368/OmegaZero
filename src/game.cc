@@ -454,7 +454,7 @@ auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
   }
 
   move.moving_piece =
-      isupper(user_cmd[0]) ? GetPieceType(user_cmd[0]) : kPawn;
+      isupper(user_cmd[0]) ? GetPieceType(user_cmd[0]) : static_cast<S8>(kPawn);
 
   string cmd = user_cmd;
   for (char& ch : cmd) {
