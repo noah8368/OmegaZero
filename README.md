@@ -399,10 +399,7 @@ unmade if they are found to do this.
 
 A custom hash table was used to implement the [Transposition Table](https://www.chessprogramming.org/Transposition_Table).
 The [Zobrist Hashing](https://www.chessprogramming.org/Zobrist_Hashing) 
-algorithm was used to hash board states. This technique has an expected collision
-rate of one in 2^32 ≈ 4.29 billion. Relatively little can be done
-to mitigate this risk, and as such is a known and unavoidable bug with this
-implementation. The Transposition Table is [two-tiered](https://www.chessprogramming.org/Transposition_Table#Two-tier_System), using the
+algorithm was used to hash board states. Hash moves retrieved from the table are validated against the current board state before use, guarding against rare hash collisions that could otherwise cause the engine to apply an illegal move. The Transposition Table is [two-tiered](https://www.chessprogramming.org/Transposition_Table#Two-tier_System), using the
 "Always Replace" and "Depth-Preferred" replacement schemes in parallel.
 
 #### Search

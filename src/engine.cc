@@ -326,6 +326,20 @@ auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
   return g;
 }
 
+auto Engine::ValidateTtMove(const Move& move) const -> bool {
+  if (move.moving_piece == kNA && move.castling_type == kNA) {
+    return false;
+  }
+  if (move.castling_type != kNA) {
+    return true;
+  }
+  if (!SqOnBoard(move.start_sq)) {
+    return false;
+  }
+  return board_->GetPieceOnSq(move.start_sq) == move.moving_piece &&
+         board_->GetPlayerOnSq(move.start_sq) == board_->GetPlayerToMove();
+}
+
 auto Engine::ProbeTt(Move& pv_move, int& alpha, int& beta, int depth,
                      int& result) -> bool {
   int stored_eval;
@@ -334,7 +348,11 @@ auto Engine::ProbeTt(Move& pv_move, int& alpha, int& beta, int depth,
     return false;
   }
   if (node_type == kPvNode) {
-    pv_move = transposition_table_.GetHashMove(board_);
+    Move hash_move = transposition_table_.GetHashMove(board_);
+    if (!ValidateTtMove(hash_move)) {
+      return false;
+    }
+    pv_move = hash_move;
     result = stored_eval;
     return true;
   }
@@ -345,7 +363,7 @@ auto Engine::ProbeTt(Move& pv_move, int& alpha, int& beta, int depth,
   }
   if (alpha >= beta) {
     Move hash_move = transposition_table_.GetHashMove(board_);
-    if (hash_move.moving_piece != kNA || hash_move.castling_type != kNA) {
+    if (ValidateTtMove(hash_move)) {
       pv_move = hash_move;
     }
     result = stored_eval;

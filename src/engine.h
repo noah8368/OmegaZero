@@ -106,6 +106,7 @@ class Engine {
   // Computes best evaluation resulting from a legal move for the moving
   // player by searching the tree of possible moves using the Negamax
   // algorithm.
+  auto ValidateTtMove(const Move& move) const -> bool;
   auto MtdfSearch(int f, int d, int ply, Move& best_move) -> int;
   auto NegamaxSearch(int alpha, int beta, int depth, int ply,
                      bool null_move_allowed) -> int;
