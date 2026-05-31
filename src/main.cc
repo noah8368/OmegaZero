@@ -70,14 +70,16 @@ auto main(int argc, char* argv[]) -> int {
     return EINVAL;
   }
 
+  bool uci_mode = var_map.count("uci") > 0;
+
   if (var_map.count("hce")) {
-    cout << "Using HCE." << endl;
+    if (!uci_mode) cout << "Using HCE." << endl;
   } else if (!omegazero::g_nnue.Load(nnue_path)) {
-    cout << "WARNING: NNUE weights not found. Using HCE instead." << endl;
+    if (!uci_mode) cout << "WARNING: NNUE weights not found. Using HCE instead." << endl;
   }
 
-  if (var_map.count("uci")) {
-    omegazero::UciHandler uci;
+  if (uci_mode) {
+    omegazero::UciHandler uci(opening_book_path);
     uci.Run();
     return 0;
   }

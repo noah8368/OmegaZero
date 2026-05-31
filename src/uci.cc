@@ -29,10 +29,11 @@ using std::vector;
 using std::min;
 using std::clamp;
 
-UciHandler::UciHandler() : turn_num_(1), on_opening_(true) {
+UciHandler::UciHandler(const string& book_path)
+    : book_path_(book_path), turn_num_(1), on_opening_(true) {
   board_ = std::make_unique<Board>(kStartFen);
   engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
-  LoadOpeningBook("p3ECO.txt");
+  LoadOpeningBook(book_path_);
 }
 
 auto UciHandler::Run() -> void {
@@ -50,6 +51,8 @@ auto UciHandler::Run() -> void {
       HandlePosition(line);
     } else if (line.rfind("go", 0) == 0) {
       HandleGo(line);
+    } else if (line == "stop") {
+      std::cout << "bestmove 0000" << std::endl;
     } else if (line == "quit") {
       break;
     }
@@ -72,7 +75,7 @@ auto UciHandler::HandleUciNewGame() -> void {
   fide_move_history_.clear();
   turn_num_ = 1;
   on_opening_ = true;
-  LoadOpeningBook("p3ECO.txt");
+  LoadOpeningBook(book_path_);
 }
 
 auto UciHandler::HandlePosition(const string& line) -> void {

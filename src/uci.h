@@ -22,7 +22,7 @@ namespace omegazero {
 
 class UciHandler {
  public:
-  UciHandler();
+  explicit UciHandler(const std::string& book_path);
   auto Run() -> void;
 
  private:
@@ -49,6 +49,7 @@ class UciHandler {
   std::unique_ptr<Engine> engine_;
   std::vector<std::string> opening_book_;
   std::string fide_move_history_;
+  std::string book_path_;
   int turn_num_;
   bool on_opening_;
 };

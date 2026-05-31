@@ -32,7 +32,16 @@ read_cfg() { python3 -c "import json; c=json.load(open('$CONFIG')); print(c.get(
 DATA_DIR=$(read_cfg output "$REPO_ROOT/nnue/data")
 EMAIL=$(read_cfg email "")
 NAME=$(read_cfg name "")
-TOTAL_GAMES=$(read_cfg games 0)
+
+# Persist the original total so restarts of the watchdog itself don't lose it.
+TOTAL_GAMES_FILE="$DATA_DIR/.total_games"
+if [[ -f "$TOTAL_GAMES_FILE" ]]; then
+    TOTAL_GAMES=$(cat "$TOTAL_GAMES_FILE")
+else
+    TOTAL_GAMES=$(read_cfg games 0)
+    mkdir -p "$DATA_DIR"
+    echo "$TOTAL_GAMES" > "$TOTAL_GAMES_FILE"
+fi
 
 MAX_RESTARTS=10
 POLL_INTERVAL="${WATCHDOG_POLL_INTERVAL:-30}"
@@ -51,11 +60,26 @@ send_email() {
 
 count_completed_games() {
     local count=0
-    for f in "$DATA_DIR"/*/metadata.txt; do
-        [[ -f "$f" ]] || continue
-        local g
-        g=$(grep -m1 "^games:" "$f" 2>/dev/null | awk '{print $2}') || true
-        [[ -n "$g" ]] && count=$((count + g))
+    for run_dir in "$DATA_DIR"/*/; do
+        [[ -d "$run_dir" ]] || continue
+        local meta="$run_dir/metadata.txt"
+        if [[ -f "$meta" ]]; then
+            local g
+            g=$(grep -m1 "^games:" "$meta" 2>/dev/null | awk '{print $2}') || true
+            [[ -n "$g" ]] && count=$((count + g))
+        else
+            # No metadata — estimate games from position count (~17 pos/game).
+            local positions=0
+            for f in "$run_dir"training_data.txt "$run_dir"data_worker_*.txt; do
+                [[ -f "$f" ]] && positions=$((positions + $(wc -l < "$f")))
+            done
+            for f in "$run_dir"validation_data.txt "$run_dir"val_worker_*.txt; do
+                [[ -f "$f" ]] && positions=$((positions + $(wc -l < "$f")))
+            done
+            if [[ "$positions" -gt 0 ]]; then
+                count=$((count + positions / 17))
+            fi
+        fi
     done
     echo "$count"
 }
@@ -174,6 +198,16 @@ while true; do
 
         if [[ "$exit_status" == "complete" ]]; then
             echo "  Clean completion."
+            # Restore original game count in config and remove tracking file.
+            python3 -c "
+import json
+with open('$CONFIG') as f:
+    cfg = json.load(f)
+cfg['games'] = $TOTAL_GAMES
+with open('$CONFIG', 'w') as f:
+    json.dump(cfg, f, indent=2)
+"
+            rm -f "$TOTAL_GAMES_FILE"
             echo "Watchdog exiting."
             exit 0
         fi
