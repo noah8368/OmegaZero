@@ -19,6 +19,9 @@
   - [Benchmarking](#benchmarking)
   - [Generating Move Tables](#generating-move-tables)
   - [NNUE Training](#nnue-training)
+    - [Generating Training Data](#generating-training-data)
+    - [Training the Network](#training-the-network)
+    - [Analyzing Results](#analyzing-results)
 - [Implementation](#implementation)
   - [Board Representation](#board-representation)
   - [Move Generation](#move-generation)
@@ -182,7 +185,6 @@ against Stockfish at various strength levels via cutechess-cli. It records
 per-game results to CSV and generates summary tables and plots.
 
 ```
-caffeinate -s python3 scripts/elo_test.py run                                    # macOS: prevent system sleep (including lid close)
 python3 scripts/elo_test.py run                                                  # defaults: 20 games each at 1320,1500,1700,1900,2100, 0.1s/move
 python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50 --st 0.5
 python3 scripts/elo_test.py plot                                                 # regenerate plots from version_history.csv
@@ -248,7 +250,7 @@ python3 scripts/mine_magics.py
 
 Training the NNUE is a three-step process: generate self-play training data, train the network, then analyze the results.
 
-**Step 1: Generate training data**
+##### Generating Training Data
 
 Build and run the native data generator, which plays OmegaZero against itself using direct engine calls (no UCI overhead). Each position's FEN, search score, and game outcome are recorded.
 
@@ -329,7 +331,7 @@ Pull data from a remote server and combine it locally:
 
 `combine_runs.sh` is idempotent — it deduplicates via `sort -u`, so re-running adds zero duplicates. `sync_from_server.sh` excludes `combined/` to prevent overwriting locally-combined data.
 
-**Step 2: Train the network**
+##### Training the Network
 
 Training parameters are read from the `training` section of `nnue/config.json`:
 
@@ -363,7 +365,7 @@ cp nnue/model/<run>/best.bin nnue/nnue.bin
 make
 ```
 
-**Step 3: Analyze data and model quality**
+##### Analyzing Results
 
 ```bash
 # Analyze the training data (score distributions, result balance, phase coverage)
