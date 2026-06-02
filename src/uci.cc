@@ -52,7 +52,8 @@ auto UciHandler::Run() -> void {
     } else if (line.rfind("go", 0) == 0) {
       HandleGo(line);
     } else if (line == "stop") {
-      std::cout << "bestmove 0000" << std::endl;
+      // Single-threaded: search already finished and bestmove was sent.
+      // Sending another bestmove here would desync the protocol.
     } else if (line == "quit") {
       break;
     }

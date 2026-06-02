@@ -182,6 +182,7 @@ against Stockfish at various strength levels via cutechess-cli. It records
 per-game results to CSV and generates summary tables and plots.
 
 ```
+caffeinate -s python3 scripts/elo_test.py run                                    # macOS: prevent system sleep (including lid close)
 python3 scripts/elo_test.py run                                                  # defaults: 20 games each at 1320,1500,1700,1900,2100, 0.1s/move
 python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50 --st 0.5
 python3 scripts/elo_test.py plot                                                 # regenerate plots from version_history.csv
