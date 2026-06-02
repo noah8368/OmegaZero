@@ -69,7 +69,7 @@ class Engine {
   // as the root function to call the Negamax search algorithm in an iterative
   // deepening framework.
   auto GetBestMove() -> Move;
-  auto GetBestMove(int& score_out) -> Move;
+  auto GetBestMove(int& node_score) -> Move;
 
   // Check for draws, checks, and checkmates. Note that this function does not
   // check for move repititions.
@@ -107,7 +107,8 @@ class Engine {
   // player by searching the tree of possible moves using the Negamax
   // algorithm.
   auto ValidateTtMove(const Move& move) const -> bool;
-  auto MtdfSearch(int f, int d, int ply, Move& best_move) -> int;
+  auto AspirationWindowSearch(int prev_score, int depth, int ply,
+                              Move& best_move) -> int;
   auto NegamaxSearch(int alpha, int beta, int depth, int ply,
                      bool null_move_allowed) -> int;
   auto NegamaxSearch(Move& pv_move, int alpha, int beta, int depth, int ply,
@@ -147,9 +148,6 @@ class Engine {
   auto ShouldSeePrune(const Move& move, int depth, bool at_pv_node,
                        bool gives_check, bool in_check,
                        int see_val) -> bool;
-  auto SearchMove(int alpha, int beta, int depth, int ply, int legal_moves,
-                   bool at_pv_node, bool gives_check, const Move& move,
-                   S8 player_to_move, int& see_val) -> int;
   auto ComputeLmrReduction(int depth, int legal_moves, S8 player_to_move,
                             const Move& move) -> int;
   auto RecordBetaCutoff(const Move& move, int depth, int ply,
@@ -183,6 +181,11 @@ class Engine {
 };
 
 // Implement public inline member functions.
+
+inline auto Engine::GetBestMove() -> Move {
+  int node_score;
+  return GetBestMove(node_score);
+}
 
 inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
 

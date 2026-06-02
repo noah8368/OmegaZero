@@ -405,8 +405,8 @@ algorithm was used to hash board states. Hash moves retrieved from the table are
 
 #### Search
 
-The [MTD(f)](https://www.chessprogramming.org/MTD(f)) search algorithm is used within an [Iterative Deepening](https://www.chessprogramming.org/Iterative_Deepening)
-framework. This routine calls an implementation of the [Negamax](https://www.chessprogramming.org/Negamax) algorithm
+[Aspiration Windows](https://www.chessprogramming.org/Aspiration_Windows) are used within an [Iterative Deepening](https://www.chessprogramming.org/Iterative_Deepening)
+framework. The Aspiration Window routine calls an implementation of the [Negamax](https://www.chessprogramming.org/Negamax) algorithm
 with [alpha-beta pruning](https://www.chessprogramming.org/Alpha-Beta), [Null Move Pruning](https://www.chessprogramming.org/Null_Move_Pruning), [Futility Pruning](https://www.chessprogramming.org/Futility_Pruning), [Reverse Futility Pruning](https://www.chessprogramming.org/Reverse_Futility_Pruning),  [Late Move Reduction](https://www.chessprogramming.org/Late_Move_Reductions), and [Late Move Pruning](https://www.chessprogramming.org/Futility_Pruning#Move_Count_Based_Pruning). A
 Transposition Table is used to cache seen positions, allowing the engine to
 store each [node's type](https://www.chessprogramming.org/Node_Types) and prevent costly re-evaluation of a node. This

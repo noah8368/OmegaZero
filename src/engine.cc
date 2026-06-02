@@ -71,78 +71,7 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   memset(history_heuristic_, 0, sizeof(history_heuristic_));
 }
 
-auto Engine::GetBestMove() -> Move {
-  assert(!pos_history_.empty());
-  board_->ClearPawnTable();
-  for (auto& km : killer_moves_) km = {};
-  // Save game-level history size; OutOfTime can unwind past the per-move
-  // restores in NegamaxSearch, leaving stale hashes behind.
-  size_t saved_history_size = pos_history_.size();
-  Move best_move;
-  Move move;
-  board_->SavePos();
-  constexpr int kRootNodePly = 0;
-
-  // WARNING: this fallback runs before the search timer starts, eating into
-  // the move time budget. The cost is subtracted from search_time_ below.
-  auto fallback_start = high_resolution_clock::now();
-  vector<Move> fallback_moves = GenerateMoves();
-  for (const Move& m : fallback_moves) {
-    try {
-      board_->MakeMove(m);
-      best_move = m;
-      board_->UnmakeMove(m);
-      break;
-    } catch (BadMove&) {
-      continue;
-    }
-  }
-  auto fallback_end = high_resolution_clock::now();
-  float fallback_secs =
-      std::chrono::duration<float>(fallback_end - fallback_start).count();
-  search_time_ = std::max(0.01f, search_time_ - fallback_secs);
-
-  search_start_ = high_resolution_clock::now();
-  nodes_since_time_check_ = 0;
-#ifdef BENCHMARK
-  total_nodes_ = 0;
-#endif
-  // Set the first evaluation guess as an even game.
-  int f = 0;
-  int search_depth = 1;
-  for (; search_depth <= kSearchLimit; ++search_depth) {
-    try {
-      f = MtdfSearch(f, search_depth, kRootNodePly, move);
-      if (move.moving_piece != kNA || move.castling_type != kNA) {
-        best_move = move;
-      }
-    } catch (OutOfTime& e) {
-      break;
-    }
-  }
-
-#ifdef BENCHMARK
-  {
-    search_depth =
-      (search_depth == kSearchLimit) ? kSearchLimit : search_depth - 1;
-    uint64_t nodes = total_nodes_ + nodes_since_time_check_;
-    float elapsed = duration_cast<duration<float>>(
-        high_resolution_clock::now() - search_start_).count();
-    uint64_t nps = elapsed > 0 ? static_cast<uint64_t>(nodes / elapsed) : 0;
-    std::cerr << "SEARCH DEPTH: " << search_depth
-              << "  NODES: " << nodes << "  NPS: " << nps << endl;
-  }
-#endif
-
-  board_->ResetPos();
-  // Discard any hashes stranded by OutOfTime.
-  pos_history_.resize(saved_history_size);
-  assert(best_move.moving_piece != kNA || best_move.castling_type != kNA ||
-         GetGameStatus() == kPlayerCheckmated || GetGameStatus() == kDraw);
-  return best_move;
-}
-
-auto Engine::GetBestMove(int& score_out) -> Move {
+auto Engine::GetBestMove(int& node_score) -> Move {
   assert(!pos_history_.empty());
   board_->ClearPawnTable();
   for (auto& km : killer_moves_) km = {};
@@ -174,11 +103,12 @@ auto Engine::GetBestMove(int& score_out) -> Move {
 #ifdef BENCHMARK
   total_nodes_ = 0;
 #endif
-  int f = 0;
+  int prev_score = 0;
   int search_depth = 1;
   for (; search_depth <= kSearchLimit; ++search_depth) {
     try {
-      f = MtdfSearch(f, search_depth, kRootNodePly, move);
+      prev_score = AspirationWindowSearch(prev_score, search_depth,
+                                          kRootNodePly, move);
       if (move.moving_piece != kNA || move.castling_type != kNA) {
         best_move = move;
       }
@@ -200,7 +130,7 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   }
 #endif
 
-  score_out = f;
+  node_score = prev_score;
   board_->ResetPos();
   pos_history_.resize(saved_history_size);
   assert(best_move.moving_piece != kNA || best_move.castling_type != kNA ||
@@ -302,28 +232,31 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
 
 // Implement private member functions.
 
-auto Engine::MtdfSearch(int f, int d, int ply, Move& best_move) -> int {
-  assert(d >= 1);
-  // Perform the MTD(f) algorithm, where f is the first guess for best value,
-  // d is the depth to loop for, and g is the current guess.
-  int g = f;
-  int upper_bound = kBestEval;
-  int lower_bound = kWorstEval;
-  int beta;
-  while (lower_bound < upper_bound) {
-    if (g == lower_bound) {
-      beta = g + 1;
+auto Engine::AspirationWindowSearch(int prev_score, int depth, int ply,
+                                    Move& best_move) -> int {
+  assert(depth >= 1);
+  if (depth == 1) {
+    return NegamaxSearch(best_move, kWorstEval, kBestEval, depth, ply, true);
+  }
+  int alpha = max(prev_score - 25, kWorstEval);
+  int beta = min(prev_score + 25, kBestEval);
+  int delta = 25;
+  
+  // Research with a widened window if the score fails low or high. Otherwise,
+  // return the score if it is within the window. Negamax search sets the best
+  // move 
+  for (;;) {
+    int score = NegamaxSearch(best_move, alpha, beta, depth, ply, true);
+    if (score <= alpha) {
+      delta *= 2;
+      alpha = max(score - delta, kWorstEval);
+    } else if (score >= beta) {
+      delta *= 2;
+      beta = min(score + delta, kBestEval);
     } else {
-      beta = g;
-    }
-    g = NegamaxSearch(best_move, beta - 1, beta, d, ply, true);
-    if (g < beta) {
-      upper_bound = g;
-    } else {
-      lower_bound = g;
+      return score;
     }
   }
-  return g;
 }
 
 auto Engine::ValidateTtMove(const Move& move) const -> bool {
