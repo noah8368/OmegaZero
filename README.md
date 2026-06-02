@@ -161,6 +161,8 @@ integration with chess GUIs and tournament managers. To launch in UCI mode:
 OmegaZero --uci
 ```
 
+The engine is single-threaded: search runs synchronously on the main thread, so UCI input (including `stop`) cannot be read until the search completes and `bestmove` is sent. The `stop` command is accepted but treated as a no-op, since the search has already finished by the time it can be processed. `go infinite` is not supported.
+
 #### Benchmarking
 
 The `scripts/benchmark.py` script runs the bench harness across four standard positions
