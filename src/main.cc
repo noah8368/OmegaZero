@@ -29,7 +29,7 @@ auto main(int argc, char* argv[]) -> int {
   constexpr size_t kProgNameLen = 9;
   exe_dir.erase(exe_dir.length() - kProgNameLen);
 
-  string opening_book_path = exe_dir + "../p3ECO.txt";
+  string opening_book_path = exe_dir + "../openings.pgn";
   string nnue_path = exe_dir + "../nnue/nnue.bin";
 
   // Parse optional arguments for testing and specifying initial position.

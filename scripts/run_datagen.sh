@@ -1,20 +1,55 @@
 #!/usr/bin/env bash
-# Watchdog for datagen. Monitors the datagen process and restarts on crash.
-#
-# Handles three exit scenarios:
-#   Exit 0:          Clean completion — stop.
-#   Exit 2:          Worker fatal crash — harness already emailed.
-#                    Watchdog counts remaining games, restarts.
-#   Other / signal:  Process-level crash (SIGABRT, segfault). Watchdog writes
-#                    crash log, emails, restarts.
-#   SIGTERM/SIGINT:  Intentional stop — harness handles its own email.
-#                    Watchdog stops (does NOT restart).
+# Watchdog for NNUE datagen. Launches datagen_harness, monitors for crashes,
+# and automatically restarts on failure (up to 10 times). The harness plays
+# OmegaZero against itself using direct engine calls (no UCI overhead). Each
+# position's FEN, search score, and game outcome are recorded.
 #
 # Usage:
 #   ./scripts/run_datagen.sh              # start datagen + watchdog
 #   ./scripts/run_datagen.sh <PID>        # attach to existing datagen PID
+#   nohup ./scripts/run_datagen.sh > datagen.log 2>&1 &   # background on server
 #
-# All settings read from nnue/config.json.
+# Graceful shutdown:
+#   ./scripts/shutdown_datagen.sh
+#   Workers finish their current game, flush data, merge worker files, and
+#   write metadata. Typically takes 30-60s.
+#
+# Config (nnue/config.json — copy from nnue/config.json.example):
+#   games              Total self-play games                       (default: 100)
+#   st                 Search time per move in seconds             (default: 0.5)
+#   workers            Parallel threads                            (default: 1)
+#   output             Output directory                            (default: nnue/data)
+#   val_fraction       Fraction of games for validation            (default: 0.1)
+#   email              Email for notifications (empty = disabled)  (default: "")
+#   name               Machine identifier for email subjects       (default: "")
+#   gmail_app_password Gmail app password for sending email         (default: "")
+#
+# Quality filters (applied automatically by datagen_harness):
+#   - Positions in check, mate scores, and |score| > 3000cp are skipped
+#   - Every 4th eligible position is sampled
+#   - Zobrist hash deduplication within each worker
+#   - Games adjudicated at 1000cp for 5 consecutive moves
+#   - First 10 plies skipped (opening theory)
+#   - Each game starts with 8 random moves for opening diversity
+#
+# Output (timestamped subdirectory, e.g. nnue/data/2026-05-25_20-33-09_eaf5059/):
+#   training_data.txt   — training positions
+#   validation_data.txt — validation positions (from separate games)
+#   metadata.txt        — generation parameters, timestamp, git commit
+#   crash_log.txt       — structured crash entries (only if crashes occurred)
+#
+# Crash handling (four tiers):
+#   1. Per-game crash    — worker logs to crash_log.txt, emails, continues
+#   2. Consecutive limit — 5 crashes in a row → all workers stop, watchdog restarts
+#   3. Worker fatal      — unrecoverable exception → all workers stop, watchdog restarts
+#   4. Process crash     — SIGABRT/segfault → watchdog writes crash log, emails, restarts
+#
+# Email notifications (when 'email' is set in config):
+#   Startup (after 10 games), completion, heartbeat (12h), milestones (10%),
+#   crashes (log contents in body), shutdown (progress summary).
+#
+# Environment:
+#   WATCHDOG_POLL_INTERVAL  Seconds between liveness checks (default: 30)
 
 set -uo pipefail
 

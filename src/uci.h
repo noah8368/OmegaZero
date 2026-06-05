@@ -47,10 +47,10 @@ class UciHandler {
 
   std::unique_ptr<Board> board_;
   std::unique_ptr<Engine> engine_;
-  std::vector<std::string> opening_book_;
-  std::string fide_move_history_;
+  std::vector<std::vector<std::string>> opening_book_;
   std::string book_path_;
   int turn_num_;
+  int move_index_;
   bool on_opening_;
 };
 

@@ -1,18 +1,57 @@
 #!/usr/bin/env python3
 """
-OmegaZero SPRT testing.
+OmegaZero SPRT (Sequential Probability Ratio Test) testing.
+
+Determines whether a new engine version is stronger than a baseline using
+statistically rigorous hypothesis testing. Unlike fixed-game Elo testing,
+SPRT stops automatically once it reaches a statistically significant
+conclusion — typically in fewer games.
+
+Requires cutechess-cli (auto-detected in cutechess/build/ or PATH).
 
 Subcommands:
-    run       — Run a single SPRT test between two engine versions.
+    match     — Compare any two git refs (tags, commits, branches).
+                Builds both versions from git worktrees automatically.
+    run       — Test the current build against a baseline (binary or commit).
     gauntlet  — Run SPRT across all consecutive version tags (v1→v2→...→vN).
     plot      — Regenerate plots from sprt_history.csv.
-    history   — Show SPRT test history.
+    history   — Show SPRT test history table.
+
+Common parameters (all subcommands):
+    --openings    Opening book for game diversity (.pgn or .epd).
+                  Default: openings.pgn (2,678 ECO openings, A00–E99).
+    --elo0        H0 bound — minimum Elo to reject null hypothesis (default: 0).
+    --elo1        H1 bound — Elo gain to confirm improvement (default: 5).
+    --alpha       Type I error rate, false positive (default: 0.05).
+    --beta        Type II error rate, false negative (default: 0.05).
+    --st          Fixed time per move in seconds (default: 0.5).
+    --max-games   Stop if SPRT hasn't concluded (default: 1000).
+    --concurrency Number of concurrent games (default: 1).
+
+Outcomes:
+    H1 accepted (PASSED)   — new version is stronger with high confidence.
+    H0 accepted (FAILED)   — no significant improvement detected.
+    INCONCLUSIVE           — max games reached without a conclusion.
+
+Each opening is played from both sides (-games 2 -repeat) to eliminate
+color bias. Results are saved to results/sprt/ and appended to
+sprt_history.csv. Plots include a W/D/L bar chart and an Elo gain chart
+with 95% confidence interval error bars.
 
 Usage:
-    # Single test against a commit
+    # Compare two tagged versions
+    python3 scripts/sprt.py match v1 v3
+
+    # Compare any two git refs
+    python3 scripts/sprt.py match HEAD~5 HEAD
+
+    # With custom settings
+    python3 scripts/sprt.py match v1 v3 --st 1.0 --concurrency 4
+
+    # Test current build against a previous commit
     python3 scripts/sprt.py run --baseline-commit HEAD~1
 
-    # Single test against a binary
+    # Test against a pre-built baseline binary
     python3 scripts/sprt.py run --baseline build/OmegaZero_base
 
     # Run the full version gauntlet with SPRT
@@ -21,7 +60,7 @@ Usage:
     # Gauntlet with custom settings
     python3 scripts/sprt.py gauntlet --st 0.5 --concurrency 4
 
-    # Resume an interrupted gauntlet
+    # Resume an interrupted gauntlet (skips completed matchups)
     python3 scripts/sprt.py gauntlet --resume
 
     # Regenerate plots from existing results
@@ -47,6 +86,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 RESULTS_DIR = REPO_ROOT / "results" / "sprt"
 HISTORY_CSV = RESULTS_DIR / "sprt_history.csv"
+DEFAULT_OPENINGS = REPO_ROOT / "openings.pgn"
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +96,20 @@ HISTORY_CSV = RESULTS_DIR / "sprt_history.csv"
 def elo_diff(score_rate):
     score_rate = max(0.001, min(0.999, score_rate))
     return -400 * math.log10(1.0 / score_rate - 1.0)
+
+
+def elo_error_95(wins, draws, losses):
+    """95% confidence interval for ELO difference."""
+    n = wins + draws + losses
+    if n == 0:
+        return 0.0
+    p = (wins + 0.5 * draws) / n
+    p = max(0.001, min(0.999, p))
+    # Derivative of elo(p) = -400*log10(1/p - 1) w.r.t. p is
+    # 400 / (ln(10) * p * (1-p))
+    delo_dp = 400.0 / (math.log(10) * p * (1.0 - p))
+    se_p = math.sqrt(p * (1.0 - p) / n)
+    return 1.96 * delo_dp * se_p
 
 
 def get_version_tag():
@@ -130,7 +184,15 @@ def build_at_commit(commit_ref, label):
     makefile = worktree / "Makefile"
     if makefile.exists():
         txt = makefile.read_text()
-        makefile.write_text(txt.replace("-Werror", ""))
+        txt = txt.replace("-Werror", "")
+        # Ensure magics.o is compiled with -O0 (older commits lack this rule)
+        if "magics.o: src/magics.cc" not in txt:
+            m = re.search(r"(build(?:/\w+)?)/magics\.o", txt)
+            if m:
+                prefix = m.group(1)
+                txt += (f"\n{prefix}/magics.o: src/magics.cc\n"
+                        f"\t$(CC) -c -o $@ $< $(FLAGS) -O0\n")
+        makefile.write_text(txt)
 
     try:
         subprocess.check_call(
@@ -282,9 +344,10 @@ def run_match(cutechess, test_binary, test_label, base_binary, base_label,
 
             if "SPRT" in line:
                 print(f"\n    >> {line}", flush=True)
-                if "H1 accepted" in line or "accepted H1" in line.lower():
+                low = line.lower()
+                if "h1" in low and "accepted" in low:
                     result_str = "H1_ACCEPTED"
-                elif "H0 accepted" in line or "accepted H0" in line.lower():
+                elif "h0" in low and "accepted" in low:
                     result_str = "H0_ACCEPTED"
 
             if "Elo" in line and ("LLR" in line or "difference" in line):
@@ -306,9 +369,10 @@ def run_match(cutechess, test_binary, test_label, base_binary, base_label,
         for sline in stderr_out.strip().splitlines():
             if "SPRT" in sline or "Elo" in sline or "LLR" in sline:
                 print(f"    >> {sline}", flush=True)
-                if "H1 accepted" in sline or "accepted H1" in sline.lower():
+                slow = sline.lower()
+                if "h1" in slow and "accepted" in slow:
                     result_str = "H1_ACCEPTED"
-                elif "H0 accepted" in sline or "accepted H0" in sline.lower():
+                elif "h0" in slow and "accepted" in slow:
                     result_str = "H0_ACCEPTED"
 
     total = wins + draws + losses
@@ -504,30 +568,43 @@ def generate_plots():
     plt.close(fig)
     print(f"  W/D/L chart: {wdl_path}")
 
-    # --- ELO diff bar chart ---
-    fig, ax = plt.subplots(figsize=(10, max(4, n * 0.8)))
+    # --- ELO diff vertical bar chart with error bars ---
+    fig, ax = plt.subplots(figsize=(max(6, n * 1.2), 6))
 
-    short_labels = []
+    matchup_labels = []
+    elo_errors = []
     for _, r in gauntlet_rows:
-        short_labels.append(f"{r['test_label']}")
+        matchup_labels.append(
+            f"{r['test_label']} v {r['base_label']}")
+        elo_errors.append(elo_error_95(int(r["wins"]), int(r["draws"]),
+                                       int(r["losses"])))
 
-    colors = ["#4CAF50" if e > 0 else "#F44336" for e in elo_diffs]
-    bars = ax.barh(y, elo_diffs, height=0.55, color=colors)
+    x = np.arange(n)
+    ax.bar(x, elo_diffs, width=0.55, color="#7EC8A4",
+           yerr=elo_errors, ecolor="black", capsize=4, alpha=0.85)
 
-    for i, (bar, elo) in enumerate(zip(bars, elo_diffs)):
-        x_pos = elo + (2 if elo >= 0 else -2)
-        ha = "left" if elo >= 0 else "right"
-        ax.text(x_pos, y[i], f"{elo:+.1f}", va="center", ha=ha,
-                fontsize=9, fontfamily="monospace")
+    for i, (elo, err) in enumerate(zip(elo_diffs, elo_errors)):
+        edge = elo + err if elo >= 0 else elo - err
+        y_pos = edge + (3 if elo >= 0 else -3)
+        va = "bottom" if elo >= 0 else "top"
+        ax.text(x[i], y_pos, f"{elo:+.1f} ± {err:.1f}",
+                ha="center", va=va, fontsize=9, fontfamily="monospace")
 
-    ax.set_yticks(y)
-    ax.set_yticklabels(short_labels, fontsize=9)
-    ax.invert_yaxis()
-    ax.axvline(0, color="black", linewidth=0.8)
-    ax.set_xlabel("ELO difference vs previous version")
-    ax.set_title("OmegaZero — ELO Gain Per Version")
-    ax.grid(True, alpha=0.2, axis="x")
-    fig.tight_layout()
+    ax.set_xticks(x)
+    ax.set_xticklabels(matchup_labels, fontsize=9, rotation=30, ha="right")
+    ax.axhline(0, color="black", linewidth=0.8)
+    ax.set_ylabel("ELO difference")
+    ax.set_title("OmegaZero — SPRT ELO Gain Per Version")
+    ax.grid(True, alpha=0.2, axis="y")
+
+    min_val = min(e - err for e, err in zip(elo_diffs, elo_errors))
+    max_val = max(e + err for e, err in zip(elo_diffs, elo_errors))
+    padding = max(abs(max_val - min_val) * 0.15, 10)
+    ax.set_ylim(min(0, min_val) - padding, max_val + padding * 1.3)
+
+    fig.text(0.5, 0.01, "Error bars show 95% confidence intervals.",
+             ha="center", fontsize=8, fontstyle="italic", color="gray")
+    fig.tight_layout(rect=[0, 0.03, 1, 1])
 
     elo_path = RESULTS_DIR / "sprt_gauntlet_elo.png"
     fig.savefig(elo_path, dpi=150)
@@ -643,6 +720,108 @@ def cmd_run(args):
 
 
 # ---------------------------------------------------------------------------
+# match subcommand
+# ---------------------------------------------------------------------------
+
+def resolve_label(ref):
+    """Return the tag name if ref points at a tag, otherwise the short hash."""
+    try:
+        tags = subprocess.check_output(
+            ["git", "tag", "--points-at", ref],
+            stderr=subprocess.DEVNULL, cwd=REPO_ROOT,
+        ).decode().strip().splitlines()
+        for t in tags:
+            if re.match(r"^v\d+$", t.strip()):
+                return t.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    return get_commit_short(ref)
+
+
+def cmd_match(args):
+    cutechess = find_cutechess(args.cutechess)
+
+    base_ref = args.base
+    test_ref = args.test
+    base_label = resolve_label(base_ref)
+    test_label = resolve_label(test_ref)
+
+    print(f"\n{'=' * 64}")
+    print(f"  SPRT Match: {test_label} vs {base_label}")
+    print(f"  H0: elo_diff >= {args.elo0}  (accept = no regression)")
+    print(f"  H1: elo_diff >= {args.elo1}  (accept = improvement)")
+    print(f"  alpha={args.alpha}  beta={args.beta}  |  {args.st}s/move")
+    print(f"  Max games: {args.max_games}")
+    print(f"{'=' * 64}\n")
+
+    print("Building engines...")
+    base_binary, base_tmp, base_wt = build_at_commit(base_ref, base_label)
+    test_binary, test_tmp, test_wt = build_at_commit(test_ref, test_label)
+
+    run_dir = RESULTS_DIR / f"{test_label}_vs_{base_label}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        summary, games = run_match(
+            cutechess,
+            test_binary, test_label,
+            base_binary, base_label,
+            st=args.st, elo0=args.elo0, elo1=args.elo1,
+            alpha=args.alpha, beta=args.beta,
+            max_games=args.max_games, concurrency=args.concurrency,
+            openings=args.openings, pgn_path=run_dir / "games.pgn",
+        )
+    finally:
+        cleanup_worktree(base_wt)
+        cleanup_worktree(test_wt)
+        shutil.rmtree(base_tmp, ignore_errors=True)
+        shutil.rmtree(test_tmp, ignore_errors=True)
+
+    if summary is None:
+        result_str = "INTERRUPTED"
+    else:
+        result_str = summary["result"]
+        summary["base_commit"] = get_commit_short(base_ref)
+        summary["test_commit"] = get_commit_short(test_ref)
+
+        if games:
+            games_csv = run_dir / "games.csv"
+            with open(games_csv, "w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=list(games[0].keys()))
+                w.writeheader()
+                w.writerows(games)
+
+        summary_csv = run_dir / "summary.csv"
+        with open(summary_csv, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=HISTORY_FIELDS)
+            w.writeheader()
+            w.writerow(summary)
+
+        append_to_history(summary)
+
+        total = summary["games"]
+        wins, draws, losses = summary["wins"], summary["draws"], summary["losses"]
+        rate = summary["score_rate"]
+        elo = summary["elo_diff"]
+
+        print(f"\n{'=' * 64}")
+        if result_str == "H1_ACCEPTED":
+            print(f"  RESULT: PASSED — {test_label} is stronger than {base_label}")
+        elif result_str == "H0_ACCEPTED":
+            print(f"  RESULT: FAILED — {test_label} is not stronger than {base_label}")
+        elif result_str == "INTERRUPTED":
+            print(f"  RESULT: INTERRUPTED — test incomplete")
+        else:
+            print(f"  RESULT: INCONCLUSIVE — max games reached")
+        print(f"  {total} games: +{wins} ={draws} -{losses}  "
+              f"({rate:.1%})  ELO: {elo:+.1f}")
+        print(f"  Results saved to {run_dir}/")
+        print(f"{'=' * 64}")
+
+    return 0 if result_str == "H1_ACCEPTED" else 1
+
+
+# ---------------------------------------------------------------------------
 # gauntlet subcommand
 # ---------------------------------------------------------------------------
 
@@ -689,7 +868,7 @@ def cmd_gauntlet(args):
             st=args.st, elo0=args.elo0, elo1=args.elo1,
             alpha=args.alpha, beta=args.beta,
             max_games=args.max_games, concurrency=args.concurrency,
-            pgn_path=run_dir / "games.pgn",
+            openings=args.openings, pgn_path=run_dir / "games.pgn",
         )
 
         cleanup_worktree(base_wt)
@@ -736,18 +915,21 @@ def cmd_gauntlet(args):
 def add_common_args(parser):
     parser.add_argument("--cutechess", default=None,
                         help="Path to cutechess-cli (default: auto-detect)")
+    parser.add_argument("--openings", default=str(DEFAULT_OPENINGS),
+                        help="Path to opening book, .epd or .pgn "
+                             "(default: openings.pgn)")
     parser.add_argument("--elo0", type=float, default=0.0,
                         help="H0 bound (default: 0)")
-    parser.add_argument("--elo1", type=float, default=10.0,
-                        help="H1 bound (default: 10)")
+    parser.add_argument("--elo1", type=float, default=5.0,
+                        help="H1 bound (default: 5)")
     parser.add_argument("--alpha", type=float, default=0.05,
                         help="Type I error rate (default: 0.05)")
     parser.add_argument("--beta", type=float, default=0.05,
                         help="Type II error rate (default: 0.05)")
-    parser.add_argument("--st", default="1",
-                        help="Fixed time per move in seconds (default: 1)")
-    parser.add_argument("--max-games", type=int, default=10000,
-                        help="Maximum games before stopping (default: 10000)")
+    parser.add_argument("--st", default="0.5",
+                        help="Fixed time per move in seconds (default: 0.5)")
+    parser.add_argument("--max-games", type=int, default=1000,
+                        help="Maximum games before stopping (default: 1000)")
     parser.add_argument("--concurrency", type=int, default=1,
                         help="Concurrent games (default: 1)")
 
@@ -764,9 +946,14 @@ def main():
                        help="Path to baseline engine binary")
     run_p.add_argument("--baseline-commit",
                        help="Git ref to build baseline from")
-    run_p.add_argument("--openings",
-                       help="Path to opening book (.epd or .pgn)")
     add_common_args(run_p)
+
+    # --- match ---
+    match_p = sub.add_parser("match",
+                             help="Compare any two git refs (e.g. v1 v3)")
+    match_p.add_argument("base", help="Baseline git ref (tag, commit, branch)")
+    match_p.add_argument("test", help="Test git ref (tag, commit, branch)")
+    add_common_args(match_p)
 
     # --- gauntlet ---
     gauntlet_p = sub.add_parser("gauntlet",
@@ -793,6 +980,8 @@ def main():
 
     if args.command == "run":
         sys.exit(cmd_run(args))
+    elif args.command == "match":
+        sys.exit(cmd_match(args))
     elif args.command == "gauntlet":
         cmd_gauntlet(args)
     elif args.command == "plot":

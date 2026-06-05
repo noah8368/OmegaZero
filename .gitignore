@@ -10,6 +10,7 @@ cutechess
 !/results/elo_testing/
 /results/elo_testing/*/
 *.pgn
+!openings.pgn
 .DS_Store
 nnue/*
 !nnue/config.json.example

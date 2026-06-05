@@ -1,19 +1,35 @@
 #!/usr/bin/env python3
 """
-ELO testing suite for OmegaZero.
+Elo testing suite for OmegaZero.
 
-Runs matches against Stockfish via cutechess-cli, records results to CSV,
-and generates plots and summary tables.
+Estimates OmegaZero's playing strength by running matches against Stockfish
+at various UCI_Elo levels via cutechess-cli. Records per-game results to
+CSV, generates summary tables and plots.
 
-Results are saved to nnue/results/elo_testing/<run_dir>/.
+Requires cutechess-cli and Stockfish (both auto-detected in PATH).
+
+Subcommands:
+    run   — Play matches against Stockfish at multiple Elo levels.
+    plot  — Regenerate plots from version_history.csv.
+
+Parameters (run subcommand):
+    --elo-levels   Comma-separated Stockfish UCI_Elo levels to test against.
+                   Default: 1320,1500,1700,1900,2100.
+    --games        Number of games per Elo level (default: 20).
+    --st           Fixed time per move in seconds (default: 0.1).
+    --engine       Path to OmegaZero binary (default: build/OmegaZero).
+    --cutechess    Path to cutechess-cli (default: auto-detect).
+
+Results are saved to results/elo_testing/:
+    <run_dir>/games.csv       — per-game results with running Elo estimates.
+    <run_dir>/summary.csv     — W/D/L totals and Elo per opponent level.
+    <run_dir>/games_{elo}.pgn — PGN files per Stockfish level.
+    version_history.csv       — cumulative results across all versions.
+    version_elo_plot.png      — Elo estimates by Stockfish level and version.
 
 Usage:
-    python3 scripts/elo_test.py run [options]
-    python3 scripts/elo_test.py plot
-
-Examples:
-    python3 scripts/elo_test.py run --games 20 --st 0.5
-    python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50
+    python3 scripts/elo_test.py run
+    python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50 --st 0.5
     python3 scripts/elo_test.py plot
 """
 
@@ -314,43 +330,80 @@ def generate_plots(current_version=None):
 
     RESULTS_BASE.mkdir(parents=True, exist_ok=True)
 
-    # --- ELO by version and Stockfish level (grouped bars) ---
-    fig, ax = plt.subplots(figsize=(max(10, len(versions) * 1.5), 6))
-    x = np.arange(len(levels))
-    width = 0.8 / max(1, len(versions))
-    palette = ["#1976D2", "#388E3C", "#F57C00", "#D32F2F", "#7B1FA2",
-               "#00838F", "#6A1B9A", "#E64A19"]
+    n_versions = len(versions)
+    n_levels = len(levels)
+    n_groups = n_versions * n_levels
 
-    for i, ver in enumerate(versions):
-        elos = []
+    fig, ax = plt.subplots(figsize=(max(10, n_groups * 0.9), 6))
+    x = np.arange(n_groups)
+
+    win_rates = []
+    draw_rates = []
+    loss_rates = []
+    labels = []
+    elo_by_version = {}
+
+    for ver in versions:
+        elo_estimates = []
         for level in levels:
             matches = [r for r in history
                        if r["version"] == ver
                        and int(r["opponent_elo"]) == level]
             if matches:
-                elos.append(float(matches[-1]["elo_estimate"]))
+                row = matches[-1]
+                w = int(row["wins"])
+                d = int(row["draws"])
+                lo = int(row["losses"])
+                total = w + d + lo
+                win_rates.append(w / total if total else 0)
+                draw_rates.append(d / total if total else 0)
+                loss_rates.append(lo / total if total else 0)
+                elo_estimates.append(float(row["elo_estimate"]))
             else:
-                elos.append(0)
-        offset = (i - len(versions) / 2 + 0.5) * width
-        color = palette[i % len(palette)]
-        label = ver
-        if current_version and ver == current_version:
-            label = f"{ver} (current)"
-        ax.bar(x + offset, elos, width, label=label, color=color, alpha=0.85)
+                win_rates.append(0)
+                draw_rates.append(0)
+                loss_rates.append(0)
+            labels.append(f"{ver}\nSF {level}")
+        if elo_estimates:
+            elo_by_version[ver] = round(sum(elo_estimates) / len(elo_estimates))
 
-    ax.set_xlabel("Stockfish Level")
-    ax.set_ylabel("Estimated ELO")
-    ax.set_title("OmegaZero — ELO Estimate by Stockfish Level and Version")
+    w_arr = np.array(win_rates)
+    d_arr = np.array(draw_rates)
+    lo_arr = np.array(loss_rates)
+
+    ax.bar(x, w_arr, width=0.7, label="Win", color="#7EC8A4")
+    ax.bar(x, d_arr, width=0.7, bottom=w_arr, label="Draw", color="#A8D8EA")
+    ax.bar(x, lo_arr, width=0.7, bottom=w_arr + d_arr, label="Loss",
+           color="#F4A7A0")
+
+    ax.set_ylabel("Fraction")
     ax.set_xticks(x)
-    ax.set_xticklabels([f"SF {l}" for l in levels])
-    ax.legend(title="Version")
+    ax.set_xticklabels(labels, fontsize=8, ha="center")
+    ax.set_ylim(0, 1.0)
+    ax.legend(loc="upper right")
     ax.grid(True, alpha=0.3, axis="y")
-    fig.tight_layout()
+
+    # Add vertical separators and Elo annotations between version groups.
+    for i, ver in enumerate(versions):
+        group_start = i * n_levels
+        group_end = group_start + n_levels - 1
+        group_center = (group_start + group_end) / 2
+        if ver in elo_by_version:
+            ax.text(group_center, 1.06, f"~{elo_by_version[ver]} Elo",
+                    ha="center", va="bottom", fontsize=9, fontweight="bold",
+                    transform=ax.get_xaxis_transform())
+        if i < n_versions - 1:
+            sep_x = group_end + 0.5
+            ax.axvline(sep_x, color="#999999", linewidth=0.8, linestyle="--")
+
+    fig.suptitle("OmegaZero — W/D/L Ratio by Version and Stockfish Level",
+                 fontsize=13, y=0.99)
+    fig.tight_layout(rect=[0, 0, 1, 0.90])
 
     plot_path = RESULTS_BASE / "version_elo_plot.png"
     fig.savefig(plot_path, dpi=150)
     plt.close(fig)
-    print(f"  ELO plot: {plot_path}")
+    print(f"  Elo plot: {plot_path}")
 
 
 

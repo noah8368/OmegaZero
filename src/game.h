@@ -87,8 +87,9 @@ class Game {
   float search_time_;
 
   int turn_num_;
-  // Store the possible lines to choose from in the opening book.
-  vector<string> opening_book_;
+  // Each opening is a sequence of FIDE move strings.
+  vector<vector<string>> opening_book_;
+  vector<string> played_fide_moves_;
 
   S8 winner_;
 

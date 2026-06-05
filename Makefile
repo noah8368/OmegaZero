@@ -27,12 +27,12 @@ OBJECTS = build/play/board.o build/play/engine.o build/play/game.o build/play/ma
           build/play/piece_sq_tables.o build/play/uci.o
 
 DEBUG_OBJECTS = build/debug/board.o build/debug/engine.o build/debug/game.o \
-                build/debug/magics.o build/debug/nnue.o build/debug/test_harness.o \
+                build/debug/magics.o build/debug/nnue.o build/debug/debug_harness.o \
                 build/debug/masks.o build/debug/transposition_table.o \
                 build/debug/piece_sq_tables.o
 
 BENCH_OBJECTS = build/bench/board.o build/bench/engine.o build/bench/game.o \
-                build/bench/magics.o build/bench/nnue.o build/bench/test_harness.o \
+                build/bench/magics.o build/bench/nnue.o build/bench/debug_harness.o \
                 build/bench/masks.o build/bench/transposition_table.o \
                 build/bench/piece_sq_tables.o
 
@@ -44,7 +44,7 @@ DATAGEN_OBJECTS = build/datagen/board.o build/datagen/engine.o build/datagen/gam
 all : build/play $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS) $(OPT_FLAGS) $(LINK_FLAGS)
 debug : build/debug $(DEBUG_OBJECTS)
-	$(CC) -o build/test_harness $(DEBUG_OBJECTS) $(FLAGS) $(DEBUG_FLAGS) $(LINK_FLAGS)
+	$(CC) -o build/debug_harness $(DEBUG_OBJECTS) $(FLAGS) $(DEBUG_FLAGS) $(LINK_FLAGS)
 bench : build/bench $(BENCH_OBJECTS)
 	$(CC) -o build/bench_harness $(BENCH_OBJECTS) $(FLAGS) $(OPT_FLAGS) -DBENCHMARK $(LINK_FLAGS)
 datagen : build/datagen $(DATAGEN_OBJECTS)

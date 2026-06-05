@@ -214,6 +214,11 @@ auto Board::Evaluate() -> int {
   }
 
   // Handcrafted eval fallback (used when no NNUE weights are loaded).
+  // Factors: material + piece-square tables, pawn structure (isolated, passed,
+  // backward, phalanx, defended, king pawn shield), piece mobility (pseudo-legal
+  // squares, minors exclude enemy-pawn-attacked squares), king safety (Toga/Fruit
+  // style attack counting on king zone), bishop pair, connected rooks, castling
+  // rights, rook behind passed pawn. Tapered eval for king positioning.
   int board_score = 0;
   Bitboard white_pawn_attackspan;
   Bitboard white_pawn_attack_map;

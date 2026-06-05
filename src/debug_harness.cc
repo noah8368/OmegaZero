@@ -1,9 +1,9 @@
 /* Noah Himed
  *
- * Automated test harness: perft regression, eval sanity, search sanity,
+ * Automated debug harness: perft regression, eval sanity, search sanity,
  * and self-play crash detection.
- * Build with: make test
- * Run with:   ./build/test_harness
+ * Build with: make debug
+ * Run with:   ./build/debug_harness
  *
  * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
  */
