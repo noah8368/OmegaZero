@@ -7,6 +7,7 @@
 ### Table of Contents
 
 - [Project Summary](#project-summary)
+- [Changelog](#changelog)
 - [Play Online](#play-online)
 - [Usage](#usage)
   - [Prerequisites](#prerequisites)
@@ -14,6 +15,7 @@
   - [Playing a Game](#playing-a-game)
   - [UCI Mode](#uci-mode)
   - [ELO Testing](#elo-testing)
+  - [SPRT Testing](#sprt-testing)
   - [Perft Testing](#perft-testing)
   - [Test Harness](#test-harness)
   - [Benchmarking](#benchmarking)
@@ -32,7 +34,6 @@
     - [NNUE Eval](#nnue-eval)
     - [Handcrafted Eval](#handcrafted-eval)
 - [Performance](#performance)
-  - [Changelog](#changelog)
   - [NPS Comparison](#nodes-per-second-nps-comparison)
   - [Stockfish ELO Comparison](#stockfish-elo-comparison)
   - [Example Games](#example-games)
@@ -45,6 +46,19 @@ developed by [DeepMind](https://deepmind.com/) that was used to create one of th
 best Chess engines. The [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during
 development. Credit goes to [Brandon Hsu](https://github.com/2brandonh) for designing the
 logo for this project.
+
+### Changelog
+
+| Version | Commit | Description |
+|---------|--------|-------------|
+| **v1** | `a260fa0` | **Baseline** — bitboards, magic move gen, MTD(f) iterative deepening, negamax alpha-beta, transposition table, killer moves, MVV-LVA, LMR, null move pruning, quiescence search with delta pruning, handcrafted eval, opening book, UCI protocol |
+| **v2** | `dafc269` | **Search fixes + check extensions** — persist TT across moves for free search depth, fix double move generation and LMR indexing bug, add check extensions, clean up opening book |
+| **v3** | `f63352f` | **Evaluation overhaul** — exponential passed pawn bonus, fix doubled/passer and rook direction bugs, add piece mobility evaluation, add king safety (Toga/Fruit style attack counting) |
+| **v4** | `cc2cdf6` | **SEE** — implement iterative SEE swap algorithm, integrate into move ordering, quiescence pruning, and LMR decisions |
+| **v5** | `71bcc21` | **Pruning** — reverse futility pruning + futility pruning |
+| **v6** | `68a6a0c` | **Move ordering** — opening book in UCI, history heuristic with gravity formula, history maluses for non-cutoff quiet moves |
+| **v7** | `aebf08c` | **LMP + lazy pruning** — late move pruning, lazy SEE and futility pruning margins, countermove heuristic, history-aware LMR |
+| **vDatagen-100M** | `688922a` | **Production datagen** — UCI bugfixes for cutechess-cli compatibility; functionally identical to v7 for playing strength. 102M-position generation run in progress on Hetzner EPYC 7502P |
 
 ### Play Online
 
@@ -198,6 +212,70 @@ Results are saved to `results/elo_testing/`:
 - `<run_dir>/games_{elo}.pgn` — PGN files per Stockfish level
 - `version_history.csv` — cumulative results across all versions
 - `version_elo_plot.png` — ELO estimates by Stockfish level and version
+
+#### SPRT Testing
+
+The `scripts/sprt.py` script runs a [Sequential Probability Ratio Test](https://www.chessprogramming.org/Match_Statistics#SPRT) to determine whether a new engine version is stronger than a baseline. Unlike fixed-game ELO testing, SPRT stops automatically once it reaches a statistically significant conclusion — typically in fewer games.
+
+```
+# Test current build against a previous commit (builds it automatically)
+python3 scripts/sprt.py run --baseline-commit HEAD~1
+
+# Test against a pre-built baseline binary
+python3 scripts/sprt.py run --baseline build/OmegaZero_base
+
+# Custom bounds: test for 0-5 ELO gain with 1s/move
+python3 scripts/sprt.py run --baseline-commit HEAD~1 --elo0 0 --elo1 5 --st 1
+
+# Use an opening book for more varied games
+python3 scripts/sprt.py run --baseline build/OmegaZero_base --openings openings.epd
+
+# Run SPRT across all landmark versions (v1→v7)
+python3 scripts/sprt.py gauntlet
+
+# Gauntlet with custom settings
+python3 scripts/sprt.py gauntlet --st 0.5 --concurrency 4
+
+# Resume an interrupted gauntlet (skips completed matchups)
+python3 scripts/sprt.py gauntlet --resume
+
+# Regenerate plots from existing results
+python3 scripts/sprt.py plot
+
+# View past SPRT results
+python3 scripts/sprt.py history
+```
+
+When using `--baseline-commit`, the script creates a temporary git worktree, builds the engine at that commit, runs the test, and cleans up automatically.
+
+The `gauntlet` subcommand discovers all `v<N>` tags in the repo (excluding non-numeric tags like `vDatagen-100M`) and runs SPRT for each consecutive pair. Both commits are built from worktrees automatically. Results are appended to `sprt_history.csv` as each matchup completes, so interrupted runs can be resumed with `--resume`. Plots are generated automatically after the gauntlet finishes, or can be regenerated anytime with `plot`.
+
+**SPRT parameters (shared by `run` and `gauntlet`):**
+
+| Flag | Description | Default |
+|---|---|---|
+| `--elo0` | H0 bound (minimum ELO gain to reject null hypothesis) | 0 |
+| `--elo1` | H1 bound (ELO gain to confirm improvement) | 10 |
+| `--alpha` | Type I error rate (false positive) | 0.05 |
+| `--beta` | Type II error rate (false negative) | 0.05 |
+| `--st` | Fixed time per move (seconds) | 1 |
+| `--max-games` | Stop if SPRT hasn't concluded after this many games | 10000 |
+| `--concurrency` | Number of concurrent games | 1 |
+
+**Outcomes:**
+- **H1 accepted (PASSED)** — the new version is stronger by at least `elo0` ELO with high confidence
+- **H0 accepted (FAILED)** — no significant improvement detected
+- **INCONCLUSIVE** — max games reached without a conclusion (widen the bounds or play more games)
+
+Results are saved to `results/sprt/`:
+- `<run_dir>/games.csv` — per-game results with running W/D/L and ELO
+- `<run_dir>/summary.csv` — test parameters, final score, and SPRT outcome
+- `<run_dir>/games.pgn` — all games in PGN format
+- `sprt_history.csv` — cumulative results across all SPRT tests
+- `sprt_gauntlet_wdl.png` — horizontal W/D/L bar chart (generated by `plot`)
+- `sprt_gauntlet_elo.png` — ELO gain per version (generated by `plot`)
+
+Each opening is played from both sides (`-games 2 -repeat`) to eliminate color bias.
 
 #### Perft Testing
 
@@ -492,13 +570,6 @@ the formula found [here](https://www.chessprogramming.org/Tapered_Eval#Implement
 
 ### Performance
 
-#### Changelog
-
-- **v1** — Baseline engine: bitboards, magic move gen, MTD(f) search, handcrafted eval, opening book
-- **v2** — Persistent TT, eliminated double move gen (2.7x NPS), check extensions, LMR fix
-- **v3** — Exponential passed pawn bonus, rook-behind-passer fix, piece mobility, Toga/Fruit king safety
-- **v4** — Full search tuning: NMP, history heuristic, RFP, SEE, futility pruning, LMP, countermove heuristic, history-aware LMR
-
 #### Nodes Per Second (NPS) Comparison
 
 NPS (nodes per second) is measured by `scripts/benchmark.py`, averaging across four positions
@@ -545,4 +616,4 @@ Final Position
 
 <sup>1</sup> Lichess rating
 <sup>2</sup> Chess.com rating
-<sup>3</sup> Benchmarked on [v4](#changelog), the first version with all search features. Earlier versions lacked the features being measured.
+<sup>3</sup> Benchmarked on [v7](#changelog), the first version with all search features. Earlier versions lacked the features being measured.
