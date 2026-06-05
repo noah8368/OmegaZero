@@ -16,11 +16,6 @@ nnue/*
 !nnue/nnue.bin
 !nnue/model/
 nnue/model/**/*.pt
-!nnue/data/
-nnue/data/*
-!nnue/data/combined/
-nnue/data/combined/*
-!nnue/data/combined/*.txt
 config.json
 datagen.log
 scripts/ssh_hetzner.sh
