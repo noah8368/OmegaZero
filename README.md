@@ -20,34 +20,13 @@
   <img src="https://img.shields.io/github/v/release/noah8368/OmegaZero" alt="Latest Release">
 </p>
 
-### Table of Contents
-
-- [Project Summary](#project-summary)
-- [Play Online](#play-online)
-- [Usage](#usage)
-  - [Prerequisites](#prerequisites)
-  - [Building](#building)
-  - [Playing a Game](#playing-a-game)
-  - [UCI Mode](#uci-mode)
-  - [Testing](#testing)
-    - [SPRT](#sprt)
-    - [Elo Testing](#elo-testing)
-    - [Search Benchmarking](#search-benchmarking)
-    - [Perft](#perft)
-    - [Debug Harness](#debug-harness)
-  - [Generating Move Tables](#generating-move-tables)
-  - [NNUE](#nnue)
-- [Implementation](#implementation)
-  - [Board Representation](#board-representation)
-  - [Move Generation](#move-generation)
-  - [Transposition Table](#transposition-table)
-  - [Search](#search)
-  - [Opening Book](#opening-book)
-  - [Evaluation](#evaluation)
-- [Performance](#performance)
-  - [Elo Gain](#elo-gain)
-  - [Win / Draw / Loss Breakdown](#win--draw--loss-breakdown)
-  - [Example Games](#example-games)
+<p align="center">
+  <a href="#project-summary">Project Summary</a> •
+  <a href="#play-online">Play Online</a> •
+  <a href="#usage">Usage</a> •
+  <a href="#implementation">Implementation</a> •
+  <a href="#performance">Performance</a>
+</p>
 
 ### Project Summary
 
