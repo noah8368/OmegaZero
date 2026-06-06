@@ -1,12 +1,10 @@
-# OmegaZero
+<h1 align="center">OmegaZero</h1>
 
-###### Noah Himed
+<h6 align="center">Noah Himed</h6>
 
 <p align="center">
   <img src="./figs/logo.png" width="300" alt="OmegaZero Logo">
 </p>
-
-<h1 align="center">OmegaZero</h1>
 
 <p align="center">
   Proudly open source, ruthlessly tactical, and queer-built. 🏳️‍🌈 
@@ -25,7 +23,6 @@
 ### Table of Contents
 
 - [Project Summary](#project-summary)
-- [Changelog](#changelog)
 - [Play Online](#play-online)
 - [Usage](#usage)
   - [Prerequisites](#prerequisites)
@@ -58,18 +55,8 @@ OmegaZero is a chess engine built from scratch which allows a user to play
 against an AI. The name "OmegaZero" is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), a program
 developed by [DeepMind](https://deepmind.com/) that was used to create one of the world's
 best Chess engines. The [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during
-development. Credit goes to [Brandon Hsu](https://github.com/2brandonh) for designing the
-logo for the original logo of this project.
-
-### Changelog
-
-| Version | Highlights |
-|---------|------------|
-| [**v3**](https://github.com/noah8368/OmegaZero/releases/tag/v3) | Pruning + move ordering (datagen baseline) |
-| [**v2**](https://github.com/noah8368/OmegaZero/releases/tag/v2) | Search + eval overhaul |
-| [**v1**](https://github.com/noah8368/OmegaZero/releases/tag/v1) | Baseline |
-
-See [Releases](https://github.com/noah8368/OmegaZero/releases) for full details.
+development. Credit goes to [Brandon Hsu](https://github.com/2brandonh) for designing the original
+logo; [Claude](https://en.wikipedia.org/wiki/Claude_(language_model)) was used to stylize the image after the anime [No Game No Life](https://en.wikipedia.org/wiki/No_Game_No_Life) anime.
 
 ### Play Online
 
