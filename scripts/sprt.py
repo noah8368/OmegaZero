@@ -142,7 +142,7 @@ def get_commit_short(ref):
 
 
 def discover_version_tags():
-    """Find all tags matching v<number>, sorted numerically."""
+    """Find all tags matching v*, sorted numerically (v1..vN) then alphabetically."""
     try:
         raw = subprocess.check_output(
             ["git", "tag", "-l", "v*"],
@@ -151,15 +151,19 @@ def discover_version_tags():
     except (subprocess.CalledProcessError, FileNotFoundError):
         return []
 
-    tags = []
+    numeric = []
+    other = []
     for line in raw.splitlines():
         tag = line.strip()
         suffix = tag[1:]
         if suffix.isdigit():
-            tags.append((int(suffix), tag))
+            numeric.append((int(suffix), tag))
+        else:
+            other.append(tag)
 
-    tags.sort()
-    return [tag for _, tag in tags]
+    numeric.sort()
+    other.sort()
+    return [tag for _, tag in numeric] + other
 
 
 def build_at_commit(commit_ref, label):
@@ -523,7 +527,7 @@ def generate_plots():
     elo_diffs = []
 
     for _, r in gauntlet_rows:
-        labels.append(f"{r['test_label']}\nvs {r['base_label']}")
+        labels.append(f"{r['test_label']} vs. {r['base_label']}")
         wins_list.append(int(r["wins"]))
         draws_list.append(int(r["draws"]))
         losses_list.append(int(r["losses"]))
@@ -536,12 +540,12 @@ def generate_plots():
     fig, ax = plt.subplots(figsize=(12, max(4, n * 0.9)))
 
     bar_h = 0.6
-    ax.barh(y, wins_list, height=bar_h, color="#4CAF50", label="Wins")
+    ax.barh(y, wins_list, height=bar_h, color="#7EC8A4", label="Wins")
     ax.barh(y, draws_list, height=bar_h, left=wins_list,
-            color="#9E9E9E", label="Draws")
+            color="#A8D8EA", label="Draws")
     left_losses = [w + d for w, d in zip(wins_list, draws_list)]
     ax.barh(y, losses_list, height=bar_h, left=left_losses,
-            color="#F44336", label="Losses")
+            color="#F4A7A0", label="Losses")
 
     for i in range(n):
         total = wins_list[i] + draws_list[i] + losses_list[i]
@@ -575,7 +579,7 @@ def generate_plots():
     elo_errors = []
     for _, r in gauntlet_rows:
         matchup_labels.append(
-            f"{r['test_label']} v {r['base_label']}")
+            f"{r['base_label']} → {r['test_label']}")
         elo_errors.append(elo_error_95(int(r["wins"]), int(r["draws"]),
                                        int(r["losses"])))
 

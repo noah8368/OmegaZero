@@ -2,7 +2,25 @@
 
 ###### Noah Himed
 
-![OmegaZero Logo](./figs/logo.png "OmegaZero -Brandon Hsu")
+<p align="center">
+  <img src="./figs/logo.png" width="300" alt="OmegaZero Logo">
+</p>
+
+<h1 align="center">OmegaZero</h1>
+
+<p align="center">
+  A modern C++ chess engine built from scratch. Proudly open source, ruthlessly tactical. 🏳️‍🌈 
+</p>
+
+<p align="center">
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License">
+  </a>
+  <img src="https://img.shields.io/badge/Elo-1900-orange.svg" alt="1900 Elo">
+  <img src="https://img.shields.io/badge/UCI-Compatible-success.svg" alt="UCI Compatible">
+  <img src="https://img.shields.io/badge/NNUE-HalfKP-blue.svg" alt="NNUE HalfKP">
+  <img src="https://img.shields.io/github/v/release/noahhimed/OmegaZero" alt="Latest Release">
+</p>
 
 ### Table of Contents
 
@@ -30,8 +48,8 @@
   - [Opening Book](#opening-book)
   - [Evaluation](#evaluation)
 - [Performance](#performance)
-  - [NPS Comparison](#nodes-per-second-nps-comparison)
-  - [Stockfish Elo Comparison](#stockfish-elo-comparison)
+  - [Elo Gain Per Version](#elo-gain)
+  - [Win / Draw / Loss Breakdown](#win--draw--loss-breakdown)
   - [Example Games](#example-games)
 
 ### Project Summary
@@ -41,20 +59,24 @@ against an AI. The name "OmegaZero" is an homage to [AlphaZero](https://en.wikip
 developed by [DeepMind](https://deepmind.com/) that was used to create one of the world's
 best Chess engines. The [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during
 development. Credit goes to [Brandon Hsu](https://github.com/2brandonh) for designing the
-logo for this project.
+logo for the original logo of this project.
 
 ### Changelog
 
-| Version | Commit | Description |
-|---------|--------|-------------|
-| **v1** | `a260fa0` | **Baseline** — bitboards, magic move gen, MTD(f) iterative deepening, negamax alpha-beta, transposition table, killer moves, MVV-LVA, LMR, null move pruning, quiescence search with delta pruning, handcrafted eval, opening book, UCI protocol |
-| **v2** | `dafc269` | **Search fixes + check extensions** — persist TT across moves for free search depth, fix double move generation and LMR indexing bug, add check extensions, clean up opening book |
-| **v3** | `f63352f` | **Evaluation overhaul** — exponential passed pawn bonus, fix doubled/passer and rook direction bugs, add piece mobility evaluation, add king safety (Toga/Fruit style attack counting) |
-| **v4** | `cc2cdf6` | **SEE** — implement iterative SEE swap algorithm, integrate into move ordering, quiescence pruning, and LMR decisions |
-| **v5** | `71bcc21` | **Pruning** — reverse futility pruning + futility pruning |
-| **v6** | `68a6a0c` | **Move ordering** — opening book in UCI, history heuristic with gravity formula, history maluses for non-cutoff quiet moves |
-| **v7** | `aebf08c` | **LMP + lazy pruning** — late move pruning, lazy SEE and futility pruning margins, countermove heuristic, history-aware LMR |
-| **vDatagen-100M** | `688922a` | **Production datagen** — UCI bugfixes for cutechess-cli compatibility; functionally identical to v7 for playing strength. 102M-position generation run in progress on Hetzner EPYC 7502P |
+| Version | Commit | Highlights |
+|---------|--------|------------|
+| **v1** | `a260fa0` | **Baseline** |
+| | | - Bitboards + magic move gen, MTD(f) iterative deepening, negamax alpha-beta |
+| | | - Transposition table, killer moves, MVV-LVA, LMR, null move pruning |
+| | | - Handcrafted eval, opening book, UCI protocol |
+| **v2** | `cc2cdf6` | **Search + eval overhaul** |
+| | | - SEE (static exchange evaluation) for move ordering and pruning |
+| | | - King safety, piece mobility, exponential passed pawn scoring |
+| | | - Check extensions, persistent TT across moves, search bug fixes |
+| **v3** | `688922a` | **Pruning + move ordering** |
+| | | - Reverse futility, futility, and late move pruning |
+| | | - History heuristic with gravity, countermove heuristic, history-aware LMR |
+| | | - UCI compatibility fixes for cutechess-cli and Lichess bot |
 
 ### Play Online
 
@@ -75,7 +97,6 @@ The `Makefile` supports GNU/Linux and macOS. Install the core dependencies first
 | | Ubuntu | macOS ([Homebrew](https://brew.sh/)) |
 |---|---|---|
 | C++ / build tools | `sudo apt-get install g++ make` | Xcode Command Line Tools |
-| [Boost](https://www.boost.org/) | `sudo apt-get install libboost-all-dev` | `brew install boost` |
 | Python 3 | `sudo apt-get install python3` | pre-installed |
 
 Verify everything is in place:
@@ -115,7 +136,7 @@ make debug        # Debug harness (ASan, -O0) → build/debug_harness
 make bench        # NPS benchmark harness (-O3) → build/bench_harness
 make clean        # Remove all build artifacts
 make datagen      # NNUE training data generation harness → build/datagen_harness
-make check-deps   # Verify g++, python3, and Boost are installed
+make check-deps   # Verify g++ and python3 are installed
 ```
 
 #### Playing a Game
@@ -302,18 +323,7 @@ Moves are put in the following order:
 4. All other quiet moves, ordered by [History Heuristic](https://www.chessprogramming.org/History_Heuristic) and [Countermove Heuristic](https://www.chessprogramming.org/Countermove_Heuristic)
 5. Bad captures (SEE value < 0) ordered by SEE Heuristic
 
-The [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA) is used to order captures in Quiescence Search, with all quiets placed after, unordered.  
-
-The table below shows how each search feature contributes when stacked cumulatively. Each column adds one feature on top of all previous ones.<sup>3</sup>
-
-*Search Feature Stacking Benchmark (5s/position)*
-| Position | No Features | + LMR | + NMP + History | + RFP | + SEE | + Futility | + LMP | + Countermove | + Hist LMR |
-|----------|-------------|-------|-----------------|-------|-------|------------|-------|---------------|------------|
-| opening  | 1084k, d6   | 997k, d8  | 906k, d12 | 911k, d11 | 537k, d12 | 508k, d14 | 431k, d14 | 472k, d14 | 512k, d13 |
-| midgame  | 838k, d5    | 617k, d6  | 569k, d6  | 1085k, d7 | 767k, d11 | 486k, d11 | 410k, d13 | 439k, d12 | 434k, d13 |
-| kiwipete | 532k, d4    | 173k, d3  | 174k, d3  | 518k, d5  | 157k, d5  | 134k, d5  | 148k, d6  | 148k, d6  | 145k, d6  |
-| endgame  | 795k, d10   | 781k, d14 | 782k, d18 | 785k, d17 | 779k, d17 | 772k, d17 | 618k, d18 | 593k, d17 | 532k, d18 |
-| **Avg NPS** | **812k** | **641k** | **608k** | **825k** | **560k** | **475k** | **402k** | **413k** | **406k** |
+The [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA) is used to order captures in Quiescence Search, with all quiets placed after, unordered. 
 
 
 #### Opening Book
@@ -330,24 +340,19 @@ If no weights file is found (`nnue/nnue.bin`), the engine falls back to a [Fruit
 
 ### Performance
 
-#### Nodes Per Second (NPS) Comparison
+#### Elo Gain
 
-NPS (nodes per second) is measured by `scripts/search_bench.py`, averaging across four positions
-(opening, midgame, complex midgame, endgame) at 5s/position. See
-[Benchmarking](#benchmarking) for details. History is tracked in
-`results/benchmarking/version_history.csv`.
+Measured via [SPRT](#sprt) (0.5s/move, 2,678 ECO openings).
 
-![NPS by Version](./figs/version_nps_plot.png "Nodes Per Second by Version")
+![SPRT Elo Gain](./figs/sprt_gauntlet_elo.png "SPRT Elo Gain Per Version")
 
-#### Stockfish Elo Comparison
+#### Win / Draw / Loss Breakdown
 
-W/D/L ratios against Stockfish at various `UCI_Elo` levels (20 games per level, 0.1s/move), with average Elo estimate per version. See [Elo Testing](#elo-testing) for details. History is tracked in `results/elo_testing/version_history.csv`.
-
-![W/D/L by Version](./figs/version_elo_plot.png "W/D/L Ratio by Version and Stockfish Level")
+![SPRT W/D/L](./figs/sprt_gauntlet_wdl.png "SPRT W/D/L Breakdown")
 
 #### Example Games
 
-**~1000 Elo Human Player (White) vs OmegaZero v3 (Black) — 0-1, 32 moves.** English Opening, Symmetrical Variation. OmegaZero struck in the center with ...d5, winning a piece after 13...Nxd2 14.Qxd2 Qxd5. After 18...Qxa2 the engine was up heavy material and coordinated queen and knight to deliver mate with 32...Qxb2#.
+**~1000 Elo Human Player (White) vs OmegaZero v1 (Black) — 0-1** English Opening, Symmetrical Variation.
 
 `1.c4 c5 2.Nc3 Nc6 3.d4 cxd4 4.Nd5 e6 5.Nf4 Bb4+ 6.Bd2 Bxd2+ 7.Qxd2 Nf6 8.Nf3 Ne4 9.Qd3 Qa5+ 10.Nd2 d5 11.cxd5 exd5 12.g3 Bg4 13.Nxd5 Nxd2 14.Qxd2 Qxd5 15.Rg1 0-0-0 16.h3 Bxe2 17.Bxe2 Rhe8 18.0-0-0 Qxa2 19.Bg4+ Kb8 20.Qf4+ Ne5 21.Rxd4 Rxd4 22.Qxd4 Qa1+ 23.Kc2 Qxg1 24.Qd6+ Ka8 25.Bd1 Qxf2+ 26.Qd2 Rc8+ 27.Kb3 Qxd2 28.Ka2 Qxd1 29.g4 Qa4+ 30.Kb1 Qc2+ 31.Ka2 Nd3 32.h4 Qxb2# 0-1`
 
@@ -355,7 +360,7 @@ Final Position
 
 ![Final Position 1000 Elo Player](./figs/final_position_1000_ELO_player.png "Final Position for 1000 Elo Player")
 
-**1643 Elo<sup>1</sup> Human Player (White) vs OmegaZero v3 (Black) — 0-1, 63 moves.** Scandinavian Defense. OmegaZero grabbed the g2 pawn with 5...Qxg2 and traded queens immediately. Down a pawn with no compensation, White slowly crumbled over a long endgame. OmegaZero converted with a centralized knight and advancing passed pawns. White resigned.
+**1643 Elo<sup>1</sup> Human Player (White) vs OmegaZero v1 (Black) — 0-1** Scandinavian Defense.
 
 `1.e4 d5 2.exd5 Nf6 3.Bc4 Nxd5 4.Bxd5 Qxd5 5.Nc3 Qxg2 6.Qf3 Qxf3 7.Nxf3 Na6 8.a3 Bg4 9.Ne5 Bf5 10.d3 f6 11.Nc4 e5 12.Be3 Nc5 13.b4 Ne6 14.O-O-O Bg4 15.Rd2 c5 16.b5 O-O-O 17.Ne4 Be7 18.Ng3 Nd4 19.h3 Be6 20.Nb2 Nxb5 21.a4 Nd4 22.Ne4 f5 23.Nc3 Nf3 24.Re2 e4 25.dxe4 fxe4 26.Nxe4 Bxh3 27.Rxh3 Ng1 28.Re1 Nxh3 29.Nxc5 Bxc5 30.Bxc5 b6 31.Be3 Rhf8 32.Nd3 Rxd3 33.cxd3 Nxf2 34.Kd2 Rf7 35.Re2 Ng4 36.Bd4 Kb7 37.Rg2 Rf4 38.Bxg7 Rxa4 39.Kc3 Ne3 40.Re2 Nd5+ 41.Kb3 Rb4+ 42.Ka3 Rb5 43.d4 Ra5+ 44.Kb3 Ra1 45.Kc4 Rg1 46.Be5 Rg2 47.Re4 Kc6 48.Bh8 Rc2+ 49.Kd3 Rc3+ 50.Kd2 Rh3 51.Re6+ Kb5 52.Rd6 Rh2+ 53.Kd3 Rh5 54.Rd7 Nb4+ 55.Kc3 Rh3+ 56.Kd2 Nc6 57.d5 Rh2+ 58.Kc3 Nb4 59.d6 Nc6 60.Rc7 Rh4 61.d7 Rh3+ 62.Kd2 Rh5 63.Rc8 Rd5+ 0-1`
 
@@ -363,7 +368,7 @@ Final Position
 
 ![Final Position 1643 Elo Player](./figs/final_position_1643_ELO_player.gif "Final Position for 1643 Elo Player")
 
-**~1900 Elo<sup>2</sup> Human Player vs OmegaZero v3 (Black) — 1-0, 31 moves.** White punished OmegaZero's material greed in a Queen's Gambit Accepted. The engine grabbed two center pawns with its queen (5...Qxd4), spending 5 of its first 15 moves on queen maneuvers. Despite winning the exchange, OmegaZero fell behind in development and left its king in the center. White's knights broke through with Nxe6/Nxg7+ and finished with Qd5#. Textbook example of the engine's material-over-development weakness.
+**~1900 Elo<sup>2</sup> Human Player vs OmegaZero v1 (Black) — 1-0** Queen's Gambit Accepted.
 
 `1.d4 d5 2.c4 e6 3.g3 dxc4 4.Bg2 Ne7 5.Nd2 Qxd4 6.Ngf3 Qc5 7.O-O Nd5 8.Qc2 c3 9.Ne4 cxb2 10.Qxb2 Qb6 11.Qc2 Nb4 12.Qa4+ Bd7 13.Qd1 Nxa2 14.Rxa2 Qb1 15.Qc2 Qxa2 16.Qxa2 f5 17.Neg5 Nc6 18.Nxe6 Bd6 19.Nxg7+ Kd8 20.Bg5+ Kc8 21.Rb1 Nb4 22.Qc4 Bxg3 23.Qxb4 Bc6 24.hxg3 Bxf3 25.Bxf3 b6 26.Nxf5 h5 27.Bxa8 h4 28.Qe4 Rd8 29.Ne7+ Kd7 30.Bc6+ Kd6 31.Qd5# 1-0`
 
@@ -373,4 +378,3 @@ Final Position
 
 <sup>1</sup> Lichess rating
 <sup>2</sup> Chess.com rating
-<sup>3</sup> Benchmarked on [v7](#changelog), the first version with all search features. Earlier versions lacked the features being measured.

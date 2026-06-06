@@ -15,8 +15,9 @@ Subcommands:
 Parameters (run subcommand):
     --elo-levels   Comma-separated Stockfish UCI_Elo levels to test against.
                    Default: 1320,1500,1700,1900,2100.
-    --games        Number of games per Elo level (default: 20).
-    --st           Fixed time per move in seconds (default: 0.1).
+    --games        Number of games per Elo level (default: 100).
+    --st           Fixed time per move in seconds (default: 0.5).
+    --concurrency  Number of concurrent games (default: 8).
     --engine       Path to OmegaZero binary (default: build/OmegaZero).
     --cutechess    Path to cutechess-cli (default: auto-detect).
 
@@ -28,8 +29,9 @@ Results are saved to results/elo_testing/:
     version_elo_plot.png      — Elo estimates by Stockfish level and version.
 
 Usage:
-    python3 scripts/elo_test.py run
-    python3 scripts/elo_test.py run --elo-levels 1400,1600,1800,2000 --games 50 --st 0.5
+    python3 scripts/elo_test.py run                             # 500 games (~6h)
+    python3 scripts/elo_test.py run --games 20 --st 5           # quick smoke test
+    python3 scripts/elo_test.py run --concurrency 8             # use more cores
     python3 scripts/elo_test.py plot
 """
 
@@ -131,6 +133,7 @@ def run_matches(args):
                 f"option.UCI_Elo={opp_elo}",
             "-each", f"st={args.st}", "timemargin=500",
             "-rounds", str(args.games),
+            "-concurrency", str(args.concurrency),
             "-pgnout", str(run_dir / f"games_{opp_elo}.pgn"),
             "-recover",
             "-repeat",
@@ -428,16 +431,20 @@ def main():
         help="Path to cutechess-cli (default: auto-detect)",
     )
     run_p.add_argument(
-        "--elo-levels", default="1320,1700,2100",
-        help="Comma-separated opponent ELO levels (default: 1320,1700,2100)",
+        "--elo-levels", default="1320,1500,1700,1900,2100",
+        help="Comma-separated opponent Elo levels (default: 1320,1500,1700,1900,2100)",
     )
     run_p.add_argument(
-        "--games", type=int, default=20,
-        help="Games per level (default: 20)",
+        "--games", type=int, default=100,
+        help="Games per level (default: 100)",
     )
     run_p.add_argument(
-        "--st", default="5",
-        help="Fixed time per move in seconds (default: 5)",
+        "--st", default="0.5",
+        help="Fixed time per move in seconds (default: 0.5)",
+    )
+    run_p.add_argument(
+        "--concurrency", type=int, default=8,
+        help="Number of concurrent games (default: 8)",
     )
 
     sub.add_parser("plot", help="Regenerate plots from version_history.csv")

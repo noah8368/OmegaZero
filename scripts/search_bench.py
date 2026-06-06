@@ -91,15 +91,19 @@ def discover_version_tags():
     except (subprocess.CalledProcessError, FileNotFoundError):
         return []
 
-    tags = []
+    numeric = []
+    other = []
     for line in raw.splitlines():
         tag = line.strip()
         suffix = tag[1:]
         if suffix.isdigit():
-            tags.append((int(suffix), tag))
+            numeric.append((int(suffix), tag))
+        else:
+            other.append(tag)
 
-    tags.sort()
-    return [tag for _, tag in tags]
+    numeric.sort()
+    other.sort()
+    return [tag for _, tag in numeric] + other
 
 
 def build_bench_at_commit(commit_ref, label):
