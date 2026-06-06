@@ -9,7 +9,7 @@
 <h1 align="center">OmegaZero</h1>
 
 <p align="center">
-  A modern C++ chess engine built from scratch. Proudly open source, ruthlessly tactical. 🏳️‍🌈 
+  Proudly open source, ruthlessly tactical, and queer-built. 🏳️‍🌈 
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/Elo-1900-orange.svg" alt="1900 Elo">
   <img src="https://img.shields.io/badge/UCI-Compatible-success.svg" alt="UCI Compatible">
   <img src="https://img.shields.io/badge/NNUE-HalfKP-blue.svg" alt="NNUE HalfKP">
-  <img src="https://img.shields.io/github/v/release/noahhimed/OmegaZero" alt="Latest Release">
+  <img src="https://img.shields.io/github/v/release/noah8368/OmegaZero" alt="Latest Release">
 </p>
 
 ### Table of Contents
@@ -48,7 +48,7 @@
   - [Opening Book](#opening-book)
   - [Evaluation](#evaluation)
 - [Performance](#performance)
-  - [Elo Gain Per Version](#elo-gain)
+  - [Elo Gain](#elo-gain)
   - [Win / Draw / Loss Breakdown](#win--draw--loss-breakdown)
   - [Example Games](#example-games)
 
@@ -63,20 +63,13 @@ logo for the original logo of this project.
 
 ### Changelog
 
-| Version | Commit | Highlights |
-|---------|--------|------------|
-| **v1** | `a260fa0` | **Baseline** |
-| | | - Bitboards + magic move gen, MTD(f) iterative deepening, negamax alpha-beta |
-| | | - Transposition table, killer moves, MVV-LVA, LMR, null move pruning |
-| | | - Handcrafted eval, opening book, UCI protocol |
-| **v2** | `cc2cdf6` | **Search + eval overhaul** |
-| | | - SEE (static exchange evaluation) for move ordering and pruning |
-| | | - King safety, piece mobility, exponential passed pawn scoring |
-| | | - Check extensions, persistent TT across moves, search bug fixes |
-| **v3** | `688922a` | **Pruning + move ordering** |
-| | | - Reverse futility, futility, and late move pruning |
-| | | - History heuristic with gravity, countermove heuristic, history-aware LMR |
-| | | - UCI compatibility fixes for cutechess-cli and Lichess bot |
+| Version | Highlights |
+|---------|------------|
+| [**v3**](https://github.com/noah8368/OmegaZero/releases/tag/v3) | Pruning + move ordering (datagen baseline) |
+| [**v2**](https://github.com/noah8368/OmegaZero/releases/tag/v2) | Search + eval overhaul |
+| [**v1**](https://github.com/noah8368/OmegaZero/releases/tag/v1) | Baseline |
+
+See [Releases](https://github.com/noah8368/OmegaZero/releases) for full details.
 
 ### Play Online
 
@@ -334,7 +327,9 @@ In the beginning of the game, the engine randomly picks an opening from a PGN op
 
 OmegaZero uses an [NNUE](https://www.chessprogramming.org/NNUE) (Efficiently Updatable Neural Network) for position evaluation. The [HalfKP](https://www.chessprogramming.org/Stockfish_NNUE) architecture encodes 40,960 sparse (king_square, piece_type, piece_square) features per perspective, with only ~30 active per position. Weights are quantized to `int16`/`int8` for fast integer inference. See [NNUE](#nnue) for training.
 
-![NNUE Architecture](./figs/nnue_architecture.png "NNUE Architecture")
+<p align="center">
+  <img src="./figs/nnue_architecture.png" width="480" alt="NNUE Architecture">
+</p>
 
 If no weights file is found (`nnue/nnue.bin`), the engine falls back to a [Fruit](https://www.chessprogramming.org/Fruit)-style handcrafted eval: material + [piece-square tables](https://www.chessprogramming.org/Simplified_Evaluation_Function), [pawn structure](https://www.chessprogramming.org/Pawn_Structure) (isolated, passed, backward, phalanx, defended, king shield), [piece mobility](https://www.chessprogramming.org/Mobility), [king safety](https://www.chessprogramming.org/King_Safety) (Toga/Fruit attack counting), and misc bonuses ([bishop pair](https://www.chessprogramming.org/Bishop_Pair), connected rooks, [castling rights](https://www.chessprogramming.org/Castling_Rights), [rook behind passer](https://www.chessprogramming.org/Tarrasch_Rule)). Uses [tapered eval](https://www.chessprogramming.org/Tapered_Eval) for king positioning. See `Board::Evaluate()` in `board.cc` for details.
 
@@ -344,7 +339,9 @@ If no weights file is found (`nnue/nnue.bin`), the engine falls back to a [Fruit
 
 Measured via [SPRT](#sprt) (0.5s/move, 2,678 ECO openings).
 
-![SPRT Elo Gain](./figs/sprt_gauntlet_elo.png "SPRT Elo Gain Per Version")
+<p align="center">
+  <img src="./figs/sprt_gauntlet_elo.png" width="480" alt="SPRT Elo Gain Per Version">
+</p>
 
 #### Win / Draw / Loss Breakdown
 
@@ -358,7 +355,9 @@ Measured via [SPRT](#sprt) (0.5s/move, 2,678 ECO openings).
 
 Final Position
 
-![Final Position 1000 Elo Player](./figs/final_position_1000_ELO_player.png "Final Position for 1000 Elo Player")
+<p align="center">
+  <img src="./figs/final_position_1000_ELO_player.png" width="480" alt="Final Position for 1000 Elo Player">
+</p>
 
 **1643 Elo<sup>1</sup> Human Player (White) vs OmegaZero v1 (Black) — 0-1** Scandinavian Defense.
 
@@ -366,7 +365,9 @@ Final Position
 
 Final Position
 
-![Final Position 1643 Elo Player](./figs/final_position_1643_ELO_player.gif "Final Position for 1643 Elo Player")
+<p align="center">
+  <img src="./figs/final_position_1643_ELO_player.gif" width="480" alt="Final Position for 1643 Elo Player">
+</p>
 
 **~1900 Elo<sup>2</sup> Human Player vs OmegaZero v1 (Black) — 1-0** Queen's Gambit Accepted.
 
@@ -374,7 +375,9 @@ Final Position
 
 Final Position
 
-![Final Position 1900 Elo Player](./figs/final_position_1900_ELO_player.png "Final Position for 1900 Elo Player")
+<p align="center">
+  <img src="./figs/final_position_1900_ELO_player.png" width="480" alt="Final Position for 1900 Elo Player">
+</p>
 
 <sup>1</sup> Lichess rating
 <sup>2</sup> Chess.com rating
