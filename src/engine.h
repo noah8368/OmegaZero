@@ -20,6 +20,9 @@
 #include "board.h"
 #include "move.h"
 #include "out_of_time.h"
+#ifdef SEARCH_TRACE
+#include "search_trace.h"
+#endif
 #include "transposition_table.h"
 
 namespace omegazero {
@@ -93,6 +96,10 @@ class Engine {
   auto GetTotalNodes() const -> uint64_t {
     return total_nodes_ + nodes_since_time_check_;
   }
+#endif
+
+#ifdef SEARCH_TRACE
+  auto GetSearchTrace() const -> const SearchTrace& { return search_trace_; }
 #endif
 
  private:
@@ -177,6 +184,11 @@ class Engine {
   vector<U64> pos_history_;
 
   S8 user_side_;
+
+#ifdef SEARCH_TRACE
+  SearchTrace search_trace_;
+  std::vector<int> trace_path_;
+#endif
 
   // Keep track of information for positions that've already been evaluated.
   TranspositionTable transposition_table_;

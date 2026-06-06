@@ -19,6 +19,11 @@ BENCH_OBJECTS = build/bench/board.o build/bench/engine.o build/bench/game.o \
                 build/bench/masks.o build/bench/transposition_table.o \
                 build/bench/piece_sq_tables.o
 
+TRACE_OBJECTS = build/trace/board.o build/trace/engine.o build/trace/game.o \
+                build/trace/magics.o build/trace/nnue.o build/trace/search_trace_harness.o \
+                build/trace/masks.o build/trace/transposition_table.o \
+                build/trace/piece_sq_tables.o
+
 DATAGEN_OBJECTS = build/datagen/board.o build/datagen/engine.o build/datagen/game.o \
                   build/datagen/magics.o build/datagen/nnue.o build/datagen/datagen.o \
                   build/datagen/masks.o build/datagen/transposition_table.o \
@@ -30,6 +35,8 @@ debug : build/debug $(DEBUG_OBJECTS)
 	$(CC) -o build/debug_harness $(DEBUG_OBJECTS) $(FLAGS) $(DEBUG_FLAGS)
 bench : build/bench $(BENCH_OBJECTS)
 	$(CC) -o build/bench_harness $(BENCH_OBJECTS) $(FLAGS) $(OPT_FLAGS) -DBENCHMARK
+trace : build/trace $(TRACE_OBJECTS)
+	$(CC) -o build/trace_harness $(TRACE_OBJECTS) $(FLAGS) $(OPT_FLAGS) -DSEARCH_TRACE
 datagen : build/datagen $(DATAGEN_OBJECTS)
 	$(CC) -o build/datagen_harness $(DATAGEN_OBJECTS) $(FLAGS) $(OPT_FLAGS) -lpthread
 build/play/magics.o: src/magics.cc
@@ -44,6 +51,10 @@ build/bench/magics.o: src/magics.cc
 	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/bench/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS) -DBENCHMARK
+build/trace/magics.o: src/magics.cc
+	$(CC) -c -o $@ $< $(FLAGS) -O0
+build/trace/%.o: src/%.cc
+	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS) -DSEARCH_TRACE
 build/datagen/magics.o: src/magics.cc
 	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/datagen/%.o: src/%.cc
@@ -57,6 +68,8 @@ build/debug : build
 	mkdir -p $@
 build/bench : build
 	mkdir -p $@
+build/trace : build
+	mkdir -p $@
 build/datagen : build
 	mkdir -p $@
 
@@ -65,7 +78,7 @@ src/masks.cc :
 src/magics.cc :
 	python3 scripts/mine_magics.py
 
--include build/play/*.d build/debug/*.d build/bench/*.d build/datagen/*.d
+-include build/play/*.d build/debug/*.d build/bench/*.d build/trace/*.d build/datagen/*.d
 
 .PHONY: check-deps
 check-deps:

@@ -110,16 +110,36 @@ auto Engine::GetBestMove() -> Move {
   // Set the first evaluation guess as an even game.
   int f = 0;
   int search_depth = 1;
+#ifdef SEARCH_TRACE
+  SearchTrace last_complete_trace;
+  search_trace_.Clear();
+  trace_path_.clear();
+  search_trace_.recording = true;
+#endif
   for (; search_depth <= kSearchLimit; ++search_depth) {
     try {
+#ifdef SEARCH_TRACE
+      search_trace_.root.children.clear();
+#endif
       f = MtdfSearch(f, search_depth, kRootNodePly, move);
       if (move.moving_piece != kNA || move.castling_type != kNA) {
         best_move = move;
       }
+#ifdef SEARCH_TRACE
+      search_trace_.final_depth = search_depth;
+      search_trace_.root.eval = f;
+      last_complete_trace = search_trace_;
+#endif
     } catch (OutOfTime& e) {
+#ifdef SEARCH_TRACE
+      search_trace_ = last_complete_trace;
+#endif
       break;
     }
   }
+#ifdef SEARCH_TRACE
+  search_trace_.recording = false;
+#endif
 
 #ifdef BENCHMARK
   {
@@ -176,16 +196,36 @@ auto Engine::GetBestMove(int& score_out) -> Move {
 #endif
   int f = 0;
   int search_depth = 1;
+#ifdef SEARCH_TRACE
+  SearchTrace last_complete_trace;
+  search_trace_.Clear();
+  trace_path_.clear();
+  search_trace_.recording = true;
+#endif
   for (; search_depth <= kSearchLimit; ++search_depth) {
     try {
+#ifdef SEARCH_TRACE
+      search_trace_.root.children.clear();
+#endif
       f = MtdfSearch(f, search_depth, kRootNodePly, move);
       if (move.moving_piece != kNA || move.castling_type != kNA) {
         best_move = move;
       }
+#ifdef SEARCH_TRACE
+      search_trace_.final_depth = search_depth;
+      search_trace_.root.eval = f;
+      last_complete_trace = search_trace_;
+#endif
     } catch (OutOfTime& e) {
+#ifdef SEARCH_TRACE
+      search_trace_ = last_complete_trace;
+#endif
       break;
     }
   }
+#ifdef SEARCH_TRACE
+  search_trace_.recording = false;
+#endif
 
 #ifdef BENCHMARK
   {
@@ -382,8 +422,15 @@ auto Engine::TryNullMovePrune(int alpha, int beta, int depth, int ply,
   }
   board_->MakeNullMove();
   int R = (depth > kNullMoveDepthHighR) ? 3 : 2;
+#ifdef SEARCH_TRACE
+  bool was_recording = search_trace_.recording;
+  search_trace_.recording = false;
+#endif
   int null_move_eval = -NegamaxSearch(-beta, -alpha, depth - R - 1, ply + 1,
                                       false);
+#ifdef SEARCH_TRACE
+  search_trace_.recording = was_recording;
+#endif
   board_->UnmakeNullMove();
   return null_move_eval >= beta;
 }
@@ -457,8 +504,22 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   CheckSearchTime();
 
   int orig_alpha = alpha;
+#ifdef SEARCH_TRACE
+  if (search_trace_.recording && ply == 0) {
+    trace_path_.clear();
+  }
+#endif
   int tt_result;
+#ifdef SEARCH_TRACE
+  int pre_tt_alpha = alpha, pre_tt_beta = beta;
+#endif
   if (ProbeTt(pv_move, alpha, beta, depth, tt_result)) {
+#ifdef SEARCH_TRACE
+    if (search_trace_.recording && ply == 0) {
+      alpha = pre_tt_alpha;
+      beta = pre_tt_beta;
+    } else
+#endif
     return tt_result;
   }
 
@@ -497,12 +558,42 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
   int best_eval = kWorstEval;
   int legal_moves = 0;
   bool futility_pruned = false;
+#ifdef SEARCH_TRACE
+  bool trace_this_ply = search_trace_.recording
+      && ply < search_trace_.max_trace_ply;
+  auto trace_node = [&]() -> TraceNode& {
+    TraceNode* n = &search_trace_.root;
+    for (int idx : trace_path_) n = &n->children[idx];
+    return *n;
+  };
+  auto trace_find_or_add = [&](const std::string& uci) -> int {
+    TraceNode& parent = trace_node();
+    for (size_t i = 0; i < parent.children.size(); ++i) {
+      if (parent.children[i].move_uci == uci) return static_cast<int>(i);
+    }
+    parent.children.push_back(TraceNode{});
+    parent.children.back().move_uci = uci;
+    return static_cast<int>(parent.children.size()) - 1;
+  };
+  int best_trace_idx = -1;
+#endif
 
   for (size_t move_idx = 0; move_idx < move_list.size(); ++move_idx) {
     Move move = move_list[move_idx];
 
     if (ShouldFutilityPrune(move, static_eval, depth, at_pv_node, in_check,
                            alpha)) {
+#ifdef SEARCH_TRACE
+      if (trace_this_ply) {
+        std::string uci = SearchTrace::MoveToUci(move, player_to_move);
+        int idx = trace_find_or_add(uci);
+        TraceNode& child = trace_node().children[idx];
+        if (child.eval == 0 && child.children.empty()) {
+          child.pruned = true;
+          child.prune_reason = "futility";
+        }
+      }
+#endif
       futility_pruned = true;
       continue;
     }
@@ -524,6 +615,17 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     int num_quiet_searched = static_cast<int>(searched_quiet_moves.size());
     if (ShouldLateMovePrune(move, num_quiet_searched, depth, at_pv_node,
                             gives_check, in_check, ply)) {
+#ifdef SEARCH_TRACE
+      if (trace_this_ply) {
+        std::string uci = SearchTrace::MoveToUci(move, player_to_move);
+        int idx = trace_find_or_add(uci);
+        TraceNode& child = trace_node().children[idx];
+        if (child.eval == 0 && child.children.empty()) {
+          child.pruned = true;
+          child.prune_reason = "LMP";
+        }
+      }
+#endif
       board_->UnmakeMove(move);
       pos_history_.resize(history_size_before_moves);
       continue;
@@ -531,6 +633,17 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
 
     if (ShouldSeePrune(move, depth, at_pv_node, gives_check, in_check,
                        see_val)) {
+#ifdef SEARCH_TRACE
+      if (trace_this_ply) {
+        std::string uci = SearchTrace::MoveToUci(move, player_to_move);
+        int idx = trace_find_or_add(uci);
+        TraceNode& child = trace_node().children[idx];
+        if (child.eval == 0 && child.children.empty()) {
+          child.pruned = true;
+          child.prune_reason = "SEE";
+        }
+      }
+#endif
       board_->UnmakeMove(move);
       pos_history_.resize(history_size_before_moves);
       continue;
@@ -539,6 +652,16 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
     // Late move reduction or full-depth search.
     int search_eval;
     bool needs_full_search = true;
+#ifdef SEARCH_TRACE
+    int this_trace_idx = -1;
+    if (trace_this_ply) {
+      std::string uci = SearchTrace::MoveToUci(move, player_to_move);
+      this_trace_idx = trace_find_or_add(uci);
+      trace_node().children[this_trace_idx].pruned = false;
+      trace_node().children[this_trace_idx].prune_reason.clear();
+      trace_path_.push_back(this_trace_idx);
+    }
+#endif
 
     if (legal_moves > kNumEarlyMoves && !at_pv_node
         && move.castling_type == kNA && move.promoted_to_piece == kNA
@@ -567,16 +690,39 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
 
     board_->UnmakeMove(move);
     pos_history_.resize(history_size_before_moves);
+#ifdef SEARCH_TRACE
+    if (trace_this_ply) {
+      trace_node().eval = search_eval;
+      trace_path_.pop_back();
+    }
+#endif
 
     if (search_eval > best_eval) {
       best_move = move;
       pv_move = best_move;
       best_eval = search_eval;
+#ifdef SEARCH_TRACE
+      if (trace_this_ply) best_trace_idx = this_trace_idx;
+#endif
     }
 
     alpha = max(alpha, search_eval);
     if (alpha >= beta) {
       RecordBetaCutoff(move, depth, ply, searched_quiet_moves);
+#ifdef SEARCH_TRACE
+      if (trace_this_ply) {
+        for (size_t i = move_idx + 1;
+             i < move_list.size() && i <= move_idx + 5; ++i) {
+          std::string uci = SearchTrace::MoveToUci(move_list[i], player_to_move);
+          int idx = trace_find_or_add(uci);
+          TraceNode& child = trace_node().children[idx];
+          if (child.eval == 0 && child.children.empty()) {
+            child.pruned = true;
+            child.prune_reason = "β cutoff";
+          }
+        }
+      }
+#endif
       break;
     }
 
@@ -584,6 +730,12 @@ auto Engine::NegamaxSearch(Move& pv_move, int alpha, int beta, int depth,
       searched_quiet_moves.push_back(move);
     }
   }
+
+#ifdef SEARCH_TRACE
+  if (trace_this_ply && best_trace_idx >= 0) {
+    trace_node().children[best_trace_idx].is_pv = true;
+  }
+#endif
 
   if (legal_moves == 0) {
     if (futility_pruned) {

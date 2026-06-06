@@ -36,12 +36,14 @@ Usage:
 """
 
 import argparse
+import atexit
 import csv
 import math
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -81,13 +83,39 @@ def get_run_dir_name():
     return f"{ts}_{tag}"
 
 
-def run_matches(args):
-    engine = Path(args.engine)
-    if not engine.is_absolute():
-        engine = REPO_ROOT / engine
-    engine = engine.resolve()
+def build_version(ref):
+    """Check out a git ref in a temporary worktree, build, return engine path."""
+    tmp = tempfile.mkdtemp(prefix=f"omega_elo_{ref}_")
+    worktree = Path(tmp) / "worktree"
+    subprocess.check_call(
+        ["git", "worktree", "add", "--detach", str(worktree), ref],
+        cwd=REPO_ROOT,
+    )
+    atexit.register(
+        lambda: subprocess.call(
+            ["git", "worktree", "remove", "--force", str(worktree)],
+            cwd=REPO_ROOT,
+        )
+    )
+    print(f"Building {ref} in {worktree} ...", flush=True)
+    (worktree / "build" / "play").mkdir(parents=True, exist_ok=True)
+    subprocess.check_call(["make", "-j8"], cwd=worktree)
+    engine = worktree / "build" / "OmegaZero"
     if not engine.exists():
-        sys.exit(f"Engine not found: {engine}\nRun 'make' first.")
+        sys.exit(f"Build failed for {ref}: {engine} not found")
+    return engine
+
+
+def run_matches(args):
+    if args.version:
+        engine = build_version(args.version)
+    else:
+        engine = Path(args.engine)
+        if not engine.is_absolute():
+            engine = REPO_ROOT / engine
+        engine = engine.resolve()
+        if not engine.exists():
+            sys.exit(f"Engine not found: {engine}\nRun 'make' first.")
 
     sf = args.stockfish
     if not Path(sf).exists() and not shutil.which(sf):
@@ -109,7 +137,9 @@ def run_matches(args):
     elif not Path(cutechess).exists() and not shutil.which(cutechess):
         sys.exit(f"cutechess-cli not found: {cutechess}")
 
-    run_name = get_run_dir_name()
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    tag = args.version if args.version else get_version_tag()
+    run_name = f"{ts}_{tag}"
     run_dir = RESULTS_BASE / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -230,7 +260,7 @@ def run_matches(args):
         w.writeheader()
         w.writerows(summary_rows)
 
-    version = get_version_tag()
+    version = args.version if args.version else get_version_tag()
     print(f"\nResults saved to {run_dir}/  [version: {version}]")
     print_summary(summary_rows)
     append_to_history(summary_rows, version)
@@ -418,6 +448,11 @@ def main():
     sub.required = True
 
     run_p = sub.add_parser("run", help="Run matches against Stockfish")
+    run_p.add_argument(
+        "--version", default=None,
+        help="Git ref (tag, branch, commit) to test. Checks out and builds "
+             "in a temp directory. Omit to test the current build.",
+    )
     run_p.add_argument(
         "--engine", default="build/OmegaZero",
         help="Path to OmegaZero binary (default: build/OmegaZero)",

@@ -1,5 +1,6 @@
 build
 debug_build
+.venv
 __pycache__
 **/.vscode/**
 games
