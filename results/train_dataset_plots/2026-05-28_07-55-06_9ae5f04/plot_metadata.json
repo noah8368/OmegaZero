@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-05-28 07:55:10",
+  "git_commit": "9ae5f04",
+  "command": "data",
+  "input": "/Users/nhimed/dev/OmegaZero/nnue/data",
+  "positions": 1373029,
+  "score_range": [
+    -2980.0,
+    2998.0
+  ]
+}

@@ -3,12 +3,30 @@
 Generate analysis plots for NNUE training data and trained models.
 
 Subcommands:
-    data    — Analyze raw training data (score distributions, game results, diversity)
-    model   — Evaluate a trained model on validation data (accuracy, calibration, error)
+    data    — Analyze raw training data: score distributions, game result
+              balance, game phase coverage, and position diversity metrics.
+    model   — Evaluate a trained model on validation data: predicted vs actual
+              accuracy scatter, calibration curve, and error distribution.
+
+Parameters (data subcommand):
+    --input     Training data file or directory. When a directory, resolves
+                to combined/ first, then latest timestamped run.
+                                                        (default: nnue/data)
+
+Parameters (model subcommand):
+    --checkpoint   Path to PyTorch checkpoint (.pt)      (default: auto-detect best.pt)
+    --val-data     Validation data file                  (default: auto-detect)
+
+Output:
+    results/nnue_data_analysis/     — data subcommand plots
+    results/nnue_model_analysis/    — model subcommand plots
+    Each directory includes a plot_metadata.json with timestamp and git commit.
 
 Usage:
+    python3 scripts/plot_training.py data
     python3 scripts/plot_training.py data --input nnue/data/<run>/training_data.txt
-    python3 scripts/plot_training.py model --checkpoint nnue/model/<run>/best.pt \
+    python3 scripts/plot_training.py model
+    python3 scripts/plot_training.py model --checkpoint nnue/model/<run>/best.pt \\
                                            --val-data nnue/data/<run>/validation_data.txt
 """
 

@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <random>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -32,6 +33,7 @@ using std::ios;
 using std::mt19937;
 using std::ofstream;
 using std::random_device;
+using std::istringstream;
 using std::string;
 using std::uniform_int_distribution;
 using std::vector;
@@ -107,30 +109,53 @@ Game::Game(const string& init_pos, const string& opening_book_path,
     piece_symbols_[kBlack][kKing] = "♔";
   }
 
-  // Initialize the opening book with the opening book text file.
+  // Load PGN opening book.
   ifstream opening_book_f(opening_book_path);
   if (opening_book_f.is_open()) {
     string f_line;
-    string opening_line;
+    string move_text;
+    bool in_moves = false;
     while (getline(opening_book_f, f_line)) {
-      if (f_line.rfind("1.", 0) != string::npos) {
-        for (;;) {
-          if (!f_line.empty() && f_line.back() == '\r') {
-            f_line.pop_back();
+      if (!f_line.empty() && f_line.back() == '\r') f_line.pop_back();
+      if (f_line.empty()) {
+        if (in_moves && !move_text.empty()) {
+          // Parse move_text into individual moves.
+          vector<string> moves;
+          istringstream iss(move_text);
+          string token;
+          while (iss >> token) {
+            // Skip move numbers (e.g. "1.", "12."), result markers, and NAGs.
+            if (token.back() == '.' || token == "1/2-1/2" ||
+                token == "1-0" || token == "0-1" || token == "*" ||
+                token[0] == '$') {
+              continue;
+            }
+            moves.push_back(token);
           }
-          opening_line += f_line;
-          if (opening_line.length() >= 3 &&
-              opening_line.substr(opening_line.length() - 3) == "1/2") {
-            // Add the current opening to the opening book.
-            opening_book_.push_back(opening_line);
-            opening_line.clear();
-            // Start looking for the next opening.
-            break;
-          }
-          // Add on to a current opening.
-          getline(opening_book_f, f_line);
+          if (!moves.empty()) opening_book_.push_back(moves);
+          move_text.clear();
+          in_moves = false;
         }
+        continue;
       }
+      if (f_line[0] == '[') continue;
+      in_moves = true;
+      move_text += " " + f_line;
+    }
+    // Handle last game if file doesn't end with blank line.
+    if (in_moves && !move_text.empty()) {
+      vector<string> moves;
+      istringstream iss(move_text);
+      string token;
+      while (iss >> token) {
+        if (token.back() == '.' || token == "1/2-1/2" ||
+            token == "1-0" || token == "0-1" || token == "*" ||
+            token[0] == '$') {
+          continue;
+        }
+        moves.push_back(token);
+      }
+      if (!moves.empty()) opening_book_.push_back(moves);
     }
     opening_book_f.close();
   } else {
@@ -201,47 +226,42 @@ auto Game::MakeOtherEngineMove(const Move& move) -> void {
 }
 
 auto Game::GetOpeningMove(Move& opening_move) -> bool {
-  if (on_opening_) {
-    string opening_line;
-    // Remove all irrelevant opening lines.
-    int last_opening_line_idx = static_cast<int>(opening_book_.size()) - 1;
-    for (int opening_line_idx = last_opening_line_idx; opening_line_idx >= 0;
-         --opening_line_idx) {
-      opening_line = opening_book_[opening_line_idx];
-      // If an opening doesn't match the move history or has no moves left,
-      // remove it as an option.
-      if (opening_line.rfind(move_history_, 0) == string::npos ||
-          opening_line.substr(move_history_.size(), 3) == "1/2") {
-        opening_book_.erase(opening_book_.begin() + opening_line_idx);
+  if (!on_opening_) return false;
+
+  int num_played = static_cast<int>(played_fide_moves_.size());
+
+  // Filter out openings that don't match all moves played so far.
+  int last = static_cast<int>(opening_book_.size()) - 1;
+  for (int i = last; i >= 0; --i) {
+    const auto& line = opening_book_[i];
+    bool mismatch = num_played >= static_cast<int>(line.size());
+    if (!mismatch) {
+      for (int j = 0; j < num_played; ++j) {
+        if (line[j] != played_fide_moves_[j]) {
+          mismatch = true;
+          break;
+        }
       }
     }
-
-    // Get next move string.
-    int num_opening_lines = static_cast<int>(opening_book_.size());
-    if (num_opening_lines > 0) {
-      // Pick a random valid opening line.
-      random_device dev;
-      mt19937 rng(dev());
-      uniform_int_distribution<mt19937::result_type> opening_line_rand_dist(
-          0, num_opening_lines - 1);
-      size_t opening_line_idx = opening_line_rand_dist(rng);
-      string rand_opening_line = opening_book_[opening_line_idx];
-
-      // Extract the next move from the line.
-      size_t move_start_idx;
-      if (board_.GetPlayerToMove() == kWhite) {
-        move_start_idx = rand_opening_line.find(".", move_history_.size()) + 1;
-      } else {
-        move_start_idx = move_history_.size();
-      }
-      size_t move_str_len =
-          rand_opening_line.find(" ", move_start_idx) - move_start_idx;
-      string opening_move_str =
-          rand_opening_line.substr(move_start_idx, move_str_len);
-      opening_move = ParseMoveCmd(opening_move_str);
-    } else {
-      on_opening_ = false;
+    // Also require a next move to exist.
+    if (!mismatch && num_played >= static_cast<int>(line.size())) {
+      mismatch = true;
     }
+    if (mismatch) {
+      opening_book_.erase(opening_book_.begin() + i);
+    }
+  }
+
+  int num_lines = static_cast<int>(opening_book_.size());
+  if (num_lines > 0) {
+    random_device dev;
+    mt19937 rng(dev());
+    uniform_int_distribution<mt19937::result_type> dist(0, num_lines - 1);
+    size_t line_idx = dist(rng);
+    string opening_move_str = opening_book_[line_idx][num_played];
+    opening_move = ParseMoveCmd(opening_move_str);
+  } else {
+    on_opening_ = false;
   }
   return on_opening_;
 }
@@ -872,6 +892,8 @@ auto Game::InterpAlgNotation(const string& user_cmd, Move& move, S8& start_rank,
 }
 
 auto Game::UpdateMoveHistory(string move_str) -> void {
+  played_fide_moves_.push_back(move_str);
+
   S8 moved_player = GetOtherPlayer(board_.GetPlayerToMove());
   if (moved_player == kWhite) {
     move_history_ += to_string(turn_num_) + "." + move_str;

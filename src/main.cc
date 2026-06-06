@@ -5,8 +5,8 @@
  * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
  */
 
-#include <boost/program_options.hpp>
 #include <cerrno>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -21,58 +21,71 @@ using std::endl;
 using std::invalid_argument;
 using std::runtime_error;
 using std::string;
-using std::to_string;
+
+static void PrintUsage(const char* prog) {
+  cout << "Usage: " << prog << " [OPTIONS]\n"
+       << "  -p SIDE        Side to play: w, b, or r (default: w)\n"
+       << "  -t TIME        Search time in seconds (default: 5)\n"
+       << "  -i FEN         Initial position as FEN string\n"
+       << "  -d DEPTH       Run perft to this depth\n"
+       << "  -o PATH        Opening book file path\n"
+       << "  -n PATH        NNUE weights file path\n"
+       << "  --pgn NAME     Save game as PGN with given opponent name\n"
+       << "  --uci          Run in UCI protocol mode\n"
+       << "  --hce          Use handcrafted eval instead of NNUE\n"
+       << "  --light-theme  Piece symbols for light terminal backgrounds\n"
+       << "  --help         Show this message\n";
+}
 
 auto main(int argc, char* argv[]) -> int {
-  // Compute default paths relative to the executable location.
   string exe_dir(argv[0]);
   constexpr size_t kProgNameLen = 9;
   exe_dir.erase(exe_dir.length() - kProgNameLen);
 
-  string opening_book_path = exe_dir + "../p3ECO.txt";
+  string init_pos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  string opening_book_path = exe_dir + "../openings.pgn";
   string nnue_path = exe_dir + "../nnue/nnue.bin";
-
-  // Parse optional arguments for testing and specifying initial position.
-  namespace prog_opt = boost::program_options;
-  prog_opt::options_description desc("Options");
-  string init_pos;
   string pgn_opponent;
-  float search_time;
-  int depth;
-  char player_side;
-  desc.add_options()
-      ("initial-position,i",
-      prog_opt::value<string>(&init_pos)->default_value(
-          "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
-      "FEN formatted string specifying the initial game position")
-      ("depth,d", prog_opt::value<int>(&depth),
-      "Depth to run Perft testing function to")
-      ("player-side,p", prog_opt::value<char>(&player_side)->default_value('w'),
-      "Side user will play")
-      ("time,t", prog_opt::value<float>(&search_time)->default_value(5),
-      "Search time")
-      ("opening-book-path,o",
-      prog_opt::value<string>(&opening_book_path),
-      "Opening book file path")
-      ("nnue,n", prog_opt::value<string>(&nnue_path),
-      "NNUE weights file path")
-      ("pgn", prog_opt::value<string>(&pgn_opponent),
-      "Save game as PGN file, using the given opponent name")
-      ("uci,u", "Run in UCI protocol mode")
-      ("hce", "Use handcrafted eval instead of NNUE")
-      ("light-theme", "Use piece symbols for light terminal backgrounds");
-  prog_opt::variables_map var_map;
-  try {
-    prog_opt::store(prog_opt::parse_command_line(argc, argv, desc), var_map);
-    prog_opt::notify(var_map);
-  } catch (prog_opt::error& e) {
-    cout << "ERROR: Parsing fault: " << e.what() << endl;
-    return EINVAL;
+  float search_time = 5.0f;
+  int depth = -1;
+  char player_side = 'w';
+  bool uci_mode = false;
+  bool hce_mode = false;
+  bool light_theme = false;
+
+  for (int i = 1; i < argc; ++i) {
+    string arg = argv[i];
+    if (arg == "--help" || arg == "-h") {
+      PrintUsage(argv[0]);
+      return 0;
+    } else if (arg == "--uci" || arg == "-u") {
+      uci_mode = true;
+    } else if (arg == "--hce") {
+      hce_mode = true;
+    } else if (arg == "--light-theme") {
+      light_theme = true;
+    } else if ((arg == "-p" || arg == "--player-side") && i + 1 < argc) {
+      player_side = argv[++i][0];
+    } else if ((arg == "-t" || arg == "--time") && i + 1 < argc) {
+      search_time = std::atof(argv[++i]);
+    } else if ((arg == "-i" || arg == "--initial-position") && i + 1 < argc) {
+      init_pos = argv[++i];
+    } else if ((arg == "-d" || arg == "--depth") && i + 1 < argc) {
+      depth = std::atoi(argv[++i]);
+    } else if ((arg == "-o" || arg == "--opening-book-path") && i + 1 < argc) {
+      opening_book_path = argv[++i];
+    } else if ((arg == "-n" || arg == "--nnue") && i + 1 < argc) {
+      nnue_path = argv[++i];
+    } else if (arg == "--pgn" && i + 1 < argc) {
+      pgn_opponent = argv[++i];
+    } else {
+      cout << "Unknown option: " << arg << endl;
+      PrintUsage(argv[0]);
+      return EINVAL;
+    }
   }
 
-  bool uci_mode = var_map.count("uci") > 0;
-
-  if (var_map.count("hce")) {
+  if (hce_mode) {
     if (!uci_mode) cout << "Using HCE." << endl;
   } else if (!omegazero::g_nnue.Load(nnue_path)) {
     if (!uci_mode) cout << "WARNING: NNUE weights not found. Using HCE instead." << endl;
@@ -87,20 +100,17 @@ auto main(int argc, char* argv[]) -> int {
   try {
     bool on_opening =
         init_pos == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    bool light_theme = var_map.count("light-theme") > 0;
     omegazero::Game game(init_pos, opening_book_path, player_side, search_time,
                          on_opening, light_theme);
-    if (var_map.count("depth")) {
-      // Output perft results.
+    if (depth >= 0) {
       game.Test(depth);
     } else {
-      // Play a game against a user.
       while (game.IsActive()) {
         game.Play();
       }
       game.OutputWinner();
 
-      if (var_map.count("pgn")) {
+      if (!pgn_opponent.empty()) {
         game.SavePgn(pgn_opponent);
       }
     }

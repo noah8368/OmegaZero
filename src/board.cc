@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <array>
-#include <boost/multiprecision/cpp_int.hpp>
 #include <cassert>
 #include <cctype>
 #include <chrono>
@@ -33,7 +32,7 @@ using std::string;
 using std::max;
 using std::array;
 
-typedef boost::multiprecision::uint128_t U128;
+typedef __uint128_t U128;
 
 Board::Board(const string& init_pos) {
   for (S8 piece_type = kPawn; piece_type <= kKing; ++piece_type) {
@@ -92,9 +91,7 @@ auto Board::GetAttackMap(S8 attacking_player, S8 sq, S8 attacking_piece) const
     case kKnight:
       attack_map = kNonSliderAttackMaps[kKnightAttack][sq];
       break;
-    // Use the magic bitboard method to get possible moves for bishops and
-    // rooks. The Boost library's 128 bit unsigned int data type "U128"
-    // is used here to avoid integer overflow.
+    // Use magic bitboards for sliding pieces.
     case kBishop: {
       Bitboard all_pieces = player_pieces_[kWhite] | player_pieces_[kBlack];
       Bitboard blockers = kSliderPieceMaps[kBishopMoves][sq] & all_pieces;
@@ -214,6 +211,11 @@ auto Board::Evaluate() -> int {
   }
 
   // Handcrafted eval fallback (used when no NNUE weights are loaded).
+  // Factors: material + piece-square tables, pawn structure (isolated, passed,
+  // backward, phalanx, defended, king pawn shield), piece mobility (pseudo-legal
+  // squares, minors exclude enemy-pawn-attacked squares), king safety (Toga/Fruit
+  // style attack counting on king zone), bishop pair, connected rooks, castling
+  // rights, rook behind passed pawn. Tapered eval for king positioning.
   int board_score = 0;
   Bitboard white_pawn_attackspan;
   Bitboard white_pawn_attack_map;

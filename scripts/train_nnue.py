@@ -9,11 +9,47 @@ Architecture: HalfKP (Half King-Piece)
   - Concat white + black perspectives -> 512
   - 512 -> 32 -> 32 -> 1
 
-Training target: blend of sigmoid(search_score) and game outcome.
+Training target: blend of sigmoid(search_score) and game outcome,
+controlled by the lambda parameter.
+
+Parameters (CLI args override nnue/config.json training section):
+    --data        Training data path (file or directory). When a directory,
+                  resolves to combined/ first, then latest timestamped run.
+                  When pointing to a .bin, checks for a newer .txt and
+                  re-preprocesses automatically.             (default: nnue/data)
+    --val-data    Separate validation data file               (default: auto-detected)
+    --epochs      Training epochs                             (default: 200)
+    --batch       Batch size                                  (default: 16384)
+    --lr          Initial learning rate                       (default: 0.001)
+    --wd          Weight decay                                (default: 1e-6)
+    --lmbda       Score/result blend weight:
+                  lmbda * sigmoid(score/400) + (1-lmbda) * result
+                                                              (default: 0.7)
+    --val-split   Fraction of data for validation if no
+                  separate val file                           (default: 0.05)
+    --output      Model checkpoint directory                  (default: nnue/model)
+
+Data preprocessing:
+    .txt files are converted to a memory-mapped .bin format on first run for
+    efficient random access with 100M+ positions. The .bin is automatically
+    re-generated whenever the .txt is newer (e.g. after combining new data).
+
+Output (run directories named <timestamp>_<hash>_<N>_pos):
+    nnue/model/<run>/best.bin    — quantized binary weights (int16/int8)
+    nnue/model/<run>/best.pt     — best PyTorch checkpoint (by val loss)
+    nnue/model/<run>/epoch_N.pt  — per-epoch checkpoints
+    nnue/model/<run>/final.pt    — last epoch checkpoint
+
+To use trained weights:
+    cp nnue/model/<run>/best.bin nnue/nnue.bin
+    make
 
 Usage:
-    python3 scripts/train_nnue.py --data nnue/data/<run>/training_data.txt
-    python3 scripts/train_nnue.py --data nnue/data/<run>/training_data.txt --val-data nnue/data/<run>/validation_data.txt
+    python3 scripts/train_nnue.py
+    python3 scripts/train_nnue.py --data nnue/data/combined/training_data.txt
+    python3 scripts/train_nnue.py --data nnue/data/<run>/training_data.txt \\
+                                  --val-data nnue/data/<run>/validation_data.txt
+    python3 scripts/train_nnue.py --epochs 300 --lr 0.0003   # one-off overrides
 """
 
 import argparse
