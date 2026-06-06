@@ -1,7 +1,5 @@
 <h1 align="center">OmegaZero</h1>
 
-<h6 align="center">Noah Himed</h6>
-
 <p align="center">
   <img src="./figs/logo.png" width="300" alt="OmegaZero Logo">
 </p>
