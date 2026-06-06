@@ -127,8 +127,8 @@ OmegaZero primarily evaluates positions using an [NNUE](https://www.chessprogram
 Training loss and score accuracy from a 6M-position dataset (v3, HCE-generated):
 
 <p align="center">
-  <img src="./figs/nnue_loss.png" width="420" alt="NNUE Training Loss">
-  <img src="./figs/nnue_score_accuracy.png" width="420" alt="NNUE Score Accuracy">
+  <img src="./figs/nnue_loss.png" width="480" alt="NNUE Training Loss">
+  <img src="./figs/nnue_score_accuracy.png" width="480" alt="NNUE Score Accuracy">
 </p>
 
 If no NNUE weights file is available, OmegaZero falls back to a handcrafted evaluation inspired by [Fruit](https://www.chessprogramming.org/Fruit), incorporating:
