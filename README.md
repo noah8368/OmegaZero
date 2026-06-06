@@ -12,7 +12,7 @@
   <a href="./LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License">
   </a>
-  <img src="https://img.shields.io/badge/Elo-1900-orange.svg" alt="1900 Elo">
+  <img src="https://img.shields.io/badge/Elo-1790-orange.svg" alt="1900 Elo">
   <img src="https://img.shields.io/badge/UCI-Compatible-success.svg" alt="UCI Compatible">
   <img src="https://img.shields.io/badge/NNUE-HalfKP-blue.svg" alt="NNUE HalfKP">
   <img src="https://img.shields.io/github/v/release/noah8368/OmegaZero" alt="Latest Release">
@@ -36,6 +36,16 @@ development. Credit goes to [Brandon Hsu](https://github.com/2brandonh) for desi
 logo; [Claude](https://en.wikipedia.org/wiki/Claude_(language_model)) was used to stylize the image after the [No Game No Life](https://en.wikipedia.org/wiki/No_Game_No_Life) anime.
 
 ## Performance
+
+All results use [OmegaZero v3](https://github.com/noah8368/OmegaZero/releases/tag/v3).
+
+### Elo Estimate
+
+OmegaZero's rating estimated by fitting the standard Elo logistic curve to 2,100 games against Stockfish at three `UCI_Elo` levels (0.5s/move). Shaded region shows the 95% bootstrap confidence interval.
+
+<p align="center">
+  <img src="./figs/elo_estimate.png" width="600" alt="Elo Estimation Plot">
+</p>
 
 ### Elo Gain
 
@@ -114,8 +124,11 @@ OmegaZero primarily evaluates positions using an [NNUE](https://www.chessprogram
 - Typically only ~30 features are active in a given position.
 - Network weights are quantized to `int16` and `int8` for fast integer inference.
 
+Training loss and score accuracy from a 6M-position dataset (v3, HCE-generated):
+
 <p align="center">
-  <img src="./figs/nnue_architecture.png" width="480" alt="NNUE Architecture">
+  <img src="./figs/nnue_loss.png" width="420" alt="NNUE Training Loss">
+  <img src="./figs/nnue_score_accuracy.png" width="420" alt="NNUE Score Accuracy">
 </p>
 
 If no NNUE weights file is available, OmegaZero falls back to a handcrafted evaluation inspired by [Fruit](https://www.chessprogramming.org/Fruit), incorporating:
@@ -132,6 +145,8 @@ Additional positional bonuses include the [bishop pair](https://www.chessprogram
 See [NNUE](#nnue) for training details.
 
 ### Search
+
+The animation below shows a subset of notes from the search trace performed by [OmegaZero v3](https://github.com/noah8368/OmegaZero/releases/tag/v3). The board position is from one of [Deep Blue's](https://www.chessprogramming.org/Deep_Blue) games, with Deep Blue to move (Deep Blue chose the move `Nxe6`).
 
 <p align="center">
   <img src="./figs/search_animation.gif" width="720" alt="Alpha-Beta Search Animation">
@@ -179,6 +194,14 @@ Additional pruning techniques include:
 
 - [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning)
 - [SEE Pruning](https://www.chessprogramming.org/Static_Exchange_Evaluation#Pruning)
+
+#### Search Depth vs Time
+
+Search depth reached across four standard positions at increasing time controls (log scale). Endgame positions search deepest due to fewer pieces; kiwipete is the most complex due to its high branching factor. Depth results displayed below are from [OmegaZero v3](https://github.com/noah8368/OmegaZero/releases/tag/v3).
+
+<p align="center">
+  <img src="./figs/depth_vs_time.png" width="600" alt="Search Depth vs Time">
+</p>
 
 ### Move Generation
 
