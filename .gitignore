@@ -8,8 +8,8 @@ cutechess
 /results/*
 !/results/benchmarking/
 /results/benchmarking/*/
-!/results/elo_testing/
-/results/elo_testing/*/
+!/results/elo/
+/results/elo/*/
 *.pgn
 !openings.pgn
 .DS_Store

@@ -26,7 +26,7 @@
   <a href="#usage">Usage</a>
 </p>
 
-### Project Summary
+## Project Summary
 
 OmegaZero is a chess engine built from scratch which allows a user to play 
 against an AI. The name "OmegaZero" is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), a program
@@ -35,21 +35,23 @@ best Chess engines. The [Chess Programming Wiki](https://www.chessprogramming.or
 development. Credit goes to [Brandon Hsu](https://github.com/2brandonh) for designing the original
 logo; [Claude](https://en.wikipedia.org/wiki/Claude_(language_model)) was used to stylize the image after the [No Game No Life](https://en.wikipedia.org/wiki/No_Game_No_Life) anime.
 
-### Performance
+## Performance
 
-#### Elo Gain
+### Elo Gain
 
-Measured via [SPRT](#sprt) (0.5s/move, 2,678 ECO openings).
+Elo gain per version, measured via [SPRT](#sprt) (0.5s/move, 2,678 ECO openings). Each bar shows the estimated rating improvement over the previous version.
 
 <p align="center">
   <img src="./figs/sprt_gauntlet_elo.png" width="480" alt="SPRT Elo Gain Per Version">
 </p>
 
-#### Win / Draw / Loss Breakdown
+### Win / Draw / Loss Breakdown
+
+Win/draw/loss breakdown for each version pair from the same SPRT gauntlet.
 
 ![SPRT W/D/L](./figs/sprt_gauntlet_wdl.png "SPRT W/D/L Breakdown")
 
-#### Example Games
+### Example Games
 
 <details>
 <summary><strong>~1000 Elo Human Player (White) vs OmegaZero v1 (Black) — 0-1</strong> English Opening, Symmetrical Variation.</summary>
@@ -93,7 +95,7 @@ Final Position
 <sup>1</sup> Lichess rating
 <sup>2</sup> Chess.com rating
 
-### Play Online
+## Play Online
 
 OmegaZero is live on Lichess as a bot! You can challenge it to a game anytime:
 
@@ -315,12 +317,13 @@ python3 scripts/sprt.py run --baseline-commit HEAD~1
 python3 scripts/sprt.py plot                      # regenerate Elo/W-D-L charts
 ```
 
-#### Elo Testing
+#### Elo Estimation
 
-Estimates playing strength by running matches against Stockfish at various `UCI_Elo` levels via cutechess-cli. See `python3 scripts/elo_test.py --help` for all options.
+Fits the standard Elo logistic curve to match results against multiple Stockfish levels, producing a statistically grounded rating estimate with bootstrap confidence intervals. See `python3 scripts/elo.py --help` for all options.
 ```bash
-python3 scripts/elo_test.py run                   # defaults: 20 games at 5 Elo levels
-python3 scripts/elo_test.py plot                   # regenerate plots
+python3 scripts/elo.py run               # 500 games × 7 levels (1700–2300), 1s/move
+python3 scripts/elo.py run --games 50 --st 0.5  # quick smoke test
+python3 scripts/elo.py plot results/elo/<run>/summary.csv
 ```
 
 #### Search Benchmarking
