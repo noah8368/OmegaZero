@@ -295,6 +295,12 @@ The board display defaults to dark terminal backgrounds (filled glyphs = white p
 OmegaZero --light-theme -p w
 ```
 
+<p align="center">
+  <img src="./figs/light_vs_dark_theme.png" width="600" alt="Light v Dark Theme">
+  <br>
+  <em>Terminal Interface on Light and Dartk Backgrounds</em>
+</p>
+
 To start from a custom position, add `-i` with a [FEN](https://www.chessprogramming.org/Forsyth-Edwards_Notation) string. Use `w` or `b` in the FEN to set which side moves first:
 ```
 OmegaZero -i "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1" -p w -t 5  # white to move
@@ -379,6 +385,12 @@ make debug
 ### NNUE
 
 A pre-built [6M-position training dataset](https://drive.google.com/drive/folders/11guxluj5UL4BMaGmm0CqD-n7u5INT-EE?usp=sharing) is available for download. Place the files in `nnue/data/` and run `train_nnue.py` to train from scratch.
+
+<p align="center">
+  <img src="./figs/data_score_distribution_1M_pos.png" width="600" alt="1M Position Dataset Score Distribution">
+  <br>
+  <em>Example NNUE Dataset Score Distribution</em>
+</p>
 
 To generate your own data, train, and analyze — config lives in `nnue/config.json` (copy from `nnue/config.json.example`). See each script's `--help` or header comments for options.
 ```bash
