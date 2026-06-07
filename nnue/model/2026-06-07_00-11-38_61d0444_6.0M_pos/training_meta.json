@@ -1,0 +1,19 @@
+{
+  "run_name": "2026-06-07_00-11-38_61d0444_6.0M_pos",
+  "timestamp": "2026-06-07 00:41:00",
+  "git_commit": "61d0444",
+  "device": "mps",
+  "train_positions": 6048613,
+  "val_positions": 318348,
+  "epochs": 20,
+  "batch_size": 16384,
+  "learning_rate": 0.001,
+  "weight_decay": 1e-06,
+  "lambda": 0.7,
+  "val_split": 0.05,
+  "best_epoch": 4,
+  "best_val_loss": 0.05746303145308826,
+  "final_train_loss": 0.02063589382060482,
+  "total_time_s": 1761.7,
+  "data_path": "/Users/nhimed/dev/OmegaZero/nnue/data/combined/training_data.bin"
+}
