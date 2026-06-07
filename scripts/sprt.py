@@ -34,9 +34,14 @@ Outcomes:
     INCONCLUSIVE           — max games reached without a conclusion.
 
 Each opening is played from both sides (-games 2 -repeat) to eliminate
-color bias. Results are saved to results/sprt/ and appended to
-sprt_history.csv. Plots include a W/D/L bar chart and an Elo gain chart
-with 95% confidence interval error bars.
+color bias.
+
+Results are saved to results/sprt/:
+    <run_dir>/games.csv       — individual game results (W/D/L per game).
+    <run_dir>/summary.csv     — matchup summary: W/D/L, Elo diff, SPRT outcome.
+    sprt_history.csv          — cumulative results across all matchups.
+    sprt_gauntlet_wdl.png     — W/D/L bar chart across matchups.
+    sprt_gauntlet_elo.png     — Elo gain chart with 95% CI error bars.
 
 Usage:
     # Compare two tagged versions
@@ -558,7 +563,7 @@ def generate_plots():
     ax.set_yticklabels(labels, fontsize=9)
     ax.invert_yaxis()
     ax.set_xlabel("Games")
-    ax.set_title("OmegaZero — SPRT Version Gauntlet")
+    ax.set_title("SPRT Version Gauntlet")
     ax.legend(loc="lower right")
     ax.grid(True, alpha=0.2, axis="x")
 
@@ -597,8 +602,8 @@ def generate_plots():
     ax.set_xticks(x)
     ax.set_xticklabels(matchup_labels, fontsize=9, rotation=30, ha="right")
     ax.axhline(0, color="black", linewidth=0.8)
-    ax.set_ylabel("ELO difference")
-    ax.set_title("OmegaZero — SPRT ELO Gain Per Version")
+    ax.set_ylabel("Elo Difference")
+    ax.set_title("SPRT Elo Gain Per Version")
     ax.grid(True, alpha=0.2, axis="y")
 
     min_val = min(e - err for e, err in zip(elo_diffs, elo_errors))

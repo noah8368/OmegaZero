@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-06-07 00:37:44",
+  "git_commit": "61d0444",
+  "command": "data",
+  "input": "nnue/data/combined/training_data.txt",
+  "positions": 6366961,
+  "score_range": [
+    -2986.0,
+    3000.0
+  ]
+}

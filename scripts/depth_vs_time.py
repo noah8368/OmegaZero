@@ -6,6 +6,10 @@ Runs bench_harness at increasing search durations and records the depth
 reached per position. Produces a line plot showing how depth scales with
 time for each of the four standard positions.
 
+Results are saved to results/depth_vs_time/<run_dir>/:
+    data.csv                  — search time, position, and depth reached.
+    depth_vs_time.png         — depth vs time line plot per position.
+
 Usage:
     python3 scripts/depth_vs_time.py run                # default time points
     python3 scripts/depth_vs_time.py run --max-time 30   # go up to 30s
@@ -173,9 +177,9 @@ def generate_plot(data_csv, output_dir=None):
                 linewidth=2, markersize=7, label=pos, zorder=5)
 
     ax.set_xscale("log")
-    ax.set_xlabel("Search time (seconds)", fontsize=12)
-    ax.set_ylabel("Search depth", fontsize=12)
-    ax.set_title("OmegaZero — Search Depth vs Time", fontsize=15,
+    ax.set_xlabel("Search Time [s]", fontsize=12)
+    ax.set_ylabel("Search Depth", fontsize=12)
+    ax.set_title("Search Depth vs Time", fontsize=15,
                  fontweight="bold", pad=15)
 
     time_vals = sorted(set(float(r["search_time"]) for r in rows))
