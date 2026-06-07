@@ -144,10 +144,15 @@ See [NNUE](#nnue) for training details.
 
 ### Search
 
-The animation below shows a subset of notes from the search trace performed by [OmegaZero v3](https://github.com/noah8368/OmegaZero/releases/tag/v3). The board position is from one of [Deep Blue's](https://www.chessprogramming.org/Deep_Blue) games, with Deep Blue to move (Deep Blue chose the move `Nxe6`).
-
 <p align="center">
   <img src="./figs/search_animation.gif" width="720" alt="Alpha-Beta Search Animation">
+  <br>
+  <em>
+    Search trace performed by OmegaZero<sup>3</sup> on a board position from
+    <a href="https://www.chessprogramming.org/Kasparov_versus_Deep_Blue_1997#Game_6">
+      Deep Blue v Kasparov
+    </a>
+  </em>
 </p>
 
 OmegaZero uses [Aspiration Windows](https://www.chessprogramming.org/Aspiration_Windows) with [Principal Variation Search (PVS)](https://www.chessprogramming.org/Principal_Variation_Search) within an [Iterative Deepening](https://www.chessprogramming.org/Iterative_Deepening) framework built on [Negamax](https://www.chessprogramming.org/Negamax) and [Alpha-Beta Pruning](https://www.chessprogramming.org/Alpha-Beta).
@@ -218,9 +223,9 @@ Additional pruning techniques include:
 - The opening book is derived from [`p3ECO.txt`](https://www.enpassant.dk/chess/palview/manual/p3eco.htm) by Paul Onstad, with contributions from Franz Hemmer and J.E.H. Shaw.
 - The same PGN format is used by cutechess-cli during automated testing to increase opening diversity.
 
-### Usage
+## Usage
 
-#### Prerequisites
+### Prerequisites
 
 The `Makefile` supports GNU/Linux and macOS. Install the core dependencies first, then add optional ones as needed.
 
@@ -260,7 +265,7 @@ cd cutechess && mkdir build && cd build
 cmake .. && make -j8
 ```
 
-#### Building
+### Building
 
 ```
 make              # Optimized engine binary → build/OmegaZero
@@ -271,7 +276,7 @@ make datagen      # NNUE training data generation harness → build/datagen_harn
 make check-deps   # Verify g++ and python3 are installed
 ```
 
-#### Playing a Game
+### Playing a Game
 
 To begin a game, a user invokes the program as follows:
 ```
@@ -316,7 +321,7 @@ to avoid ambiguity in a movement command. Some valid example moves are
 
 To resign, a user must enter `q` on their turn.
 
-#### UCI Mode
+### UCI Mode
 
 OmegaZero supports the [Universal Chess Interface](https://www.chessprogramming.org/UCI) (UCI) protocol for integration with chess GUIs and tournament managers:
 ```
