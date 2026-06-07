@@ -294,6 +294,12 @@ The board display defaults to dark terminal backgrounds (filled glyphs = white p
 OmegaZero --light-theme -p w
 ```
 
+<p align="center">
+  <img src="./figs/light_vs_dark_theme.png" width="600" alt="Light v Dark Theme">
+  <br>
+  <em>Terminal Interface on Light and Dartk Backgrounds</em>
+</p>
+
 To start from a custom position, add `-i` with a [FEN](https://www.chessprogramming.org/Forsyth-Edwards_Notation) string. Use `w` or `b` in the FEN to set which side moves first:
 ```
 OmegaZero -i "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1" -p w -t 5  # white to move

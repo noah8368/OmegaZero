@@ -11,9 +11,9 @@ cutechess
 !openings.pgn
 .DS_Store
 nnue/*
-# !nnue/config.json.example
-# !nnue/nnue.bin
-# !nnue/model/
+!nnue/config.json.example
+!nnue/nnue.bin
+!nnue/model/
 nnue/model/**/*.pt
 config.json
 datagen.log
