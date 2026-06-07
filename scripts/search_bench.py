@@ -20,7 +20,9 @@ Results are saved to results/benchmarking/:
     <run_dir>/nps.csv             — per-position NPS, nodes, and elapsed time.
     <run_dir>/depths.csv          — search depth reached per position.
     version_nps_history.csv       — cumulative average NPS across all versions.
-    version_nps_plot.png          — NPS bar chart across versions.
+    version_nps_by_position.csv   — per-position NPS and depth across all versions.
+    version_nps_plot.png          — average NPS bar chart across versions.
+    version_nps_by_position.png   — per-position NPS line chart across versions.
 
 Usage:
     python3 scripts/search_bench.py run               # 5s/position (default)

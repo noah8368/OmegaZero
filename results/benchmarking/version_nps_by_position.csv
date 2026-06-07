@@ -1,0 +1,13 @@
+version,position,nps,knps,depth
+v1,opening,260900,260,11
+v1,midgame,83122,83,9
+v1,kiwipete,110704,110,4
+v1,endgame,237411,237,13
+v2,opening,501508,501,11
+v2,midgame,416020,416,8
+v2,kiwipete,198635,198,6
+v2,endgame,885429,885,18
+v3,opening,506645,506,12
+v3,midgame,408686,408,12
+v3,kiwipete,105210,105,7
+v3,endgame,570018,570,17

@@ -123,8 +123,7 @@ OmegaZero primarily evaluates positions using an [NNUE](https://www.chessprogram
 - Network weights are quantized to `int16` and `int8` for fast integer inference.
 
 <p align="center">
-  <img src="./figs/nnue_loss.png" width="480" alt="NNUE Training Loss">
-  <img src="./figs/nnue_score_accuracy.png" width="480" alt="NNUE Score Accuracy">
+  <img src="./figs/nnue_loss_and_accuracy.png" width="720" alt="NNUE Training Loss and Score Accuracy">
   <br>
   <em>Training loss and score accuracy on a <a href="https://drive.google.com/drive/folders/11guxluj5UL4BMaGmm0CqD-n7u5INT-EE?usp=sharing">6M-position HCE-generated dataset</a>.<sup>3</sup></em>
 </p>
@@ -154,9 +153,6 @@ See [NNUE](#nnue) for training details.
     </a>
   </em>
 </p>
-
-OmegaZero uses [Aspiration Windows](https://www.chessprogramming.org/Aspiration_Windows) with [Principal Variation Search (PVS)](https://www.chessprogramming.org/Principal_Variation_Search) within an [Iterative Deepening](https://www.chessprogramming.org/Iterative_Deepening) framework built on [Negamax](https://www.chessprogramming.org/Negamax) and [Alpha-Beta Pruning](https://www.chessprogramming.org/Alpha-Beta).
-
 
 #### Search Enhancements
 
@@ -209,6 +205,12 @@ Additional pruning techniques include:
 - Precomputed attack tables are used for non-sliding pieces.
 - Sliding piece attacks are generated using the [Magic Bitboard](http://pradu.us/old/Nov27_2008/Buzz/research/magic/Bitboards.pdf) technique.
 - The engine generates [pseudo-legal moves](https://www.chessprogramming.org/Move_Generation#Pseudo-legal), with legality verified during move execution.
+
+<p align="center">
+  <img src="./figs/version_nps_by_position.png" width="600" alt="NPS by Position Across Versions">
+  <br>
+  <em>NPS by Position Across Versions (5s/position, MacBook M4)</em>
+</p>
 
 ### Board Representation
 
@@ -298,7 +300,7 @@ OmegaZero --light-theme -p w
 <p align="center">
   <img src="./figs/light_vs_dark_theme.png" width="600" alt="Light v Dark Theme">
   <br>
-  <em>Terminal Interface on Light and Dartk Backgrounds</em>
+  <em>Terminal Interface on Light and Dark Backgrounds</em>
 </p>
 
 To start from a custom position, add `-i` with a [FEN](https://www.chessprogramming.org/Forsyth-Edwards_Notation) string. Use `w` or `b` in the FEN to set which side moves first:
@@ -387,9 +389,9 @@ make debug
 A pre-built [6M-position training dataset](https://drive.google.com/drive/folders/11guxluj5UL4BMaGmm0CqD-n7u5INT-EE?usp=sharing) is available for download. Place the files in `nnue/data/` and run `train_nnue.py` to train from scratch.
 
 <p align="center">
-  <img src="./figs/data_score_distribution_1M_pos.png" width="600" alt="1M Position Dataset Score Distribution">
+  <img src="./figs/data_score_distribution.png" width="600" alt="6M Position Dataset Score Distribution">
   <br>
-  <em>Example NNUE Dataset Score Distribution</em>
+  <em>NNUE Training Dataset — Score Distribution (6.4M positions)</em>
 </p>
 
 To generate your own data, train, and analyze — config lives in `nnue/config.json` (copy from `nnue/config.json.example`). See each script's `--help` or header comments for options.

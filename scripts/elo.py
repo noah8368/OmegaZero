@@ -10,6 +10,11 @@ Subcommands:
     run   — Play matches and generate the Elo estimation plot.
     plot  — Regenerate the plot from an existing run's summary.csv.
 
+Results are saved to results/elo/<run_dir>/:
+    summary.csv               — per-level: elo_level, games, wins, draws, losses, score_rate.
+    games_<elo>.pgn           — raw PGN files per Stockfish level.
+    elo.png                   — logistic curve fit with bootstrap CI.
+
 Usage:
     python3 scripts/elo.py run
     python3 scripts/elo.py run --games 50 --st 0.5      # quick test
