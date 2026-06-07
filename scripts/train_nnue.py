@@ -12,7 +12,11 @@ Architecture: HalfKP (Half King-Piece)
 Training target: blend of sigmoid(search_score) and game outcome,
 controlled by the lambda parameter.
 
-Parameters (CLI args override nnue/config.json training section):
+Subcommands:
+    train   — Train a new NNUE model (default if no subcommand given).
+    plot    — Regenerate all plots from a previous training run.
+
+Parameters (train subcommand, CLI args override nnue/config.json):
     --data        Training data path (file or directory). When a directory,
                   resolves to combined/ first, then latest timestamped run.
                   When pointing to a .bin, checks for a newer .txt and
@@ -29,16 +33,24 @@ Parameters (CLI args override nnue/config.json training section):
                   separate val file                           (default: 0.05)
     --output      Model checkpoint directory                  (default: nnue/model)
 
+Parameters (plot subcommand):
+    --run         Path to a training run directory containing
+                  training_history.csv and best.pt.
+    --val-data    Validation data for score accuracy plot     (default: auto-detect)
+    --batch       Batch size for inference                    (default: 4096)
+
 Data preprocessing:
     .txt files are converted to a memory-mapped .bin format on first run for
     efficient random access with 100M+ positions. The .bin is automatically
     re-generated whenever the .txt is newer (e.g. after combining new data).
 
 Output (run directories named <timestamp>_<hash>_<N>_pos):
-    nnue/model/<run>/best.bin    — quantized binary weights (int16/int8)
-    nnue/model/<run>/best.pt     — best PyTorch checkpoint (by val loss)
-    nnue/model/<run>/epoch_N.pt  — per-epoch checkpoints
-    nnue/model/<run>/final.pt    — last epoch checkpoint
+    nnue/model/<run>/best.bin              — quantized binary weights (int16/int8)
+    nnue/model/<run>/best.pt               — best PyTorch checkpoint (by val loss)
+    nnue/model/<run>/epoch_N.pt            — per-epoch checkpoints
+    nnue/model/<run>/final.pt              — last epoch checkpoint
+    nnue/model/<run>/training_history.csv  — per-epoch loss/lr/timing stats
+    nnue/model/<run>/training_meta.json    — run config and summary stats
 
 To use trained weights:
     cp nnue/model/<run>/best.bin nnue/nnue.bin
@@ -46,18 +58,20 @@ To use trained weights:
 
 Usage:
     python3 scripts/train_nnue.py
-    python3 scripts/train_nnue.py --data nnue/data/combined/training_data.txt
-    python3 scripts/train_nnue.py --data nnue/data/<run>/training_data.txt \\
-                                  --val-data nnue/data/<run>/validation_data.txt
-    python3 scripts/train_nnue.py --epochs 300 --lr 0.0003   # one-off overrides
+    python3 scripts/train_nnue.py train --data nnue/data/combined/training_data.txt
+    python3 scripts/train_nnue.py train --epochs 300 --lr 0.0003
+    python3 scripts/train_nnue.py plot --run nnue/model/<run>
 """
 
 import argparse
+import csv
+import json
 import os
 import shutil
 import struct
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -444,66 +458,79 @@ def generate_plots(train_losses, val_losses, plot_dir,
     plot_dir.mkdir(parents=True, exist_ok=True)
     epochs = range(1, len(train_losses) + 1)
 
-    # Loss curve
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(epochs, train_losses, label="Train Loss")
-    ax.plot(epochs, val_losses, label="Val Loss")
-    best_epoch = val_losses.index(min(val_losses)) + 1
-    ax.axvline(best_epoch, color="gray", linestyle="--", alpha=0.5,
-               label=f"Best val (epoch {best_epoch})")
-    ax.set_xlabel("Epoch")
-    ax.set_ylabel("MSE Loss")
-    ax.set_title("NNUE Training Loss")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    fig.savefig(plot_dir / "loss.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    import numpy as np
 
-    # Collect predictions on validation set
-    model.eval()
+    has_val_data = val_loader is not None
     all_predicted = []
     all_actual = []
     all_results = []
     all_material = []
-    with torch.no_grad():
-        for batch in val_loader:
-            if len(batch) == 7:
-                w_idx, w_off, b_idx, b_off, score, result, stm = batch
-                w_idx = w_idx.to(device)
-                w_off = w_off.to(device)
-                b_idx = b_idx.to(device)
-                b_off = b_off.to(device)
-                stm = stm.to(device)
-                pred = model(w_idx, w_off, b_idx, b_off, stm).squeeze(1)
-                num_features = len(w_idx) / max(len(w_off), 1)
-                all_material.extend([num_features] * len(w_off))
-            else:
-                wf, bf, score, result, stm = batch
-                wf = wf.to(device)
-                bf = bf.to(device)
-                stm = stm.to(device)
-                pred = model(wf, bf, stm).squeeze(1)
-                all_material.extend(wf.sum(dim=1).tolist())
 
-            pred_cp = pred * SCORE_SCALE
-            all_predicted.extend(pred_cp.cpu().tolist())
-            all_actual.extend(score.tolist())
-            all_results.extend(result.tolist())
+    if has_val_data:
+        model.eval()
+        with torch.no_grad():
+            for batch in val_loader:
+                if len(batch) == 7:
+                    w_idx, w_off, b_idx, b_off, score, result, stm = batch
+                    w_idx = w_idx.to(device)
+                    w_off = w_off.to(device)
+                    b_idx = b_idx.to(device)
+                    b_off = b_off.to(device)
+                    stm = stm.to(device)
+                    pred = model(w_idx, w_off, b_idx, b_off, stm).squeeze(1)
+                    num_features = len(w_idx) / max(len(w_off), 1)
+                    all_material.extend([num_features] * len(w_off))
+                else:
+                    wf, bf, score, result, stm = batch
+                    wf = wf.to(device)
+                    bf = bf.to(device)
+                    stm = stm.to(device)
+                    pred = model(wf, bf, stm).squeeze(1)
+                    all_material.extend(wf.sum(dim=1).tolist())
 
-    # Score accuracy: predicted vs actual
-    fig, ax = plt.subplots(figsize=(8, 8))
-    ax.scatter(all_actual, all_predicted, alpha=0.15, s=4)
-    lo = min(min(all_actual), min(all_predicted))
-    hi = max(max(all_actual), max(all_predicted))
-    ax.plot([lo, hi], [lo, hi], "r--", linewidth=1, label="Perfect prediction")
-    ax.set_xlabel("Actual Score (cp)")
-    ax.set_ylabel("Predicted Score (cp)")
-    ax.set_title("NNUE Score Accuracy (Validation Set)")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    ax.set_aspect("equal")
-    fig.savefig(plot_dir / "score_accuracy.png", dpi=150, bbox_inches="tight")
+                pred_cp = pred * SCORE_SCALE
+                all_predicted.extend(pred_cp.cpu().tolist())
+                all_actual.extend(score.tolist())
+                all_results.extend(result.tolist())
+
+    # Loss curve + score accuracy (side-by-side if val data, loss-only otherwise)
+    best_epoch = val_losses.index(min(val_losses)) + 1
+
+    if has_val_data and all_predicted:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    else:
+        fig, ax1 = plt.subplots(figsize=(8, 5))
+
+    ax1.plot(epochs, train_losses, label="Train")
+    ax1.plot(epochs, val_losses, label="Validation")
+    ax1.axvline(best_epoch, color="gray", linestyle="--", alpha=0.5,
+                label=f"Best val (epoch {best_epoch})")
+    ax1.set_xlabel("Epoch")
+    ax1.set_ylabel("Loss [MSE]")
+    ax1.set_title("Training Loss")
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+
+    if has_val_data and all_predicted:
+        ax2.scatter(all_actual, all_predicted, alpha=0.15, s=4)
+        lo = min(min(all_actual), min(all_predicted))
+        hi = max(max(all_actual), max(all_predicted))
+        ax2.plot([lo, hi], [lo, hi], "r--", linewidth=1, label="Perfect prediction")
+        ax2.set_xlabel("Actual Score [cp]")
+        ax2.set_ylabel("Predicted Score [cp]")
+        ax2.set_title("Score Accuracy (Validation)")
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        ax2.set_aspect("equal")
+
+    fig.tight_layout()
+    fig.savefig(plot_dir / "loss_and_accuracy.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
+
+    if not has_val_data or not all_predicted:
+        print(f"  Plots saved to: {plot_dir}")
+        print("  (Score accuracy and model evaluation plots skipped — no validation data)")
+        return
 
     # Score distribution: predicted vs actual histograms
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -513,9 +540,9 @@ def generate_plots(train_losses, val_losses, plot_dir,
     bins = 80
     ax.hist(clipped_actual, bins=bins, alpha=0.5, label="Actual", density=True)
     ax.hist(clipped_predicted, bins=bins, alpha=0.5, label="Predicted", density=True)
-    ax.set_xlabel("Score (cp)")
+    ax.set_xlabel("Score [cp]")
     ax.set_ylabel("Density")
-    ax.set_title("Score Distribution (Validation Set)")
+    ax.set_title("Score Distribution (Validation)")
     ax.legend()
     ax.grid(True, alpha=0.3)
     fig.savefig(plot_dir / "score_distribution.png", dpi=150, bbox_inches="tight")
@@ -525,8 +552,6 @@ def generate_plots(train_losses, val_losses, plot_dir,
     errors = [abs(p - a) for p, a in zip(all_predicted, all_actual)]
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.scatter(all_material, errors, alpha=0.1, s=4)
-    # Bin by material count and plot mean error
-    import numpy as np
     mat_arr = np.array(all_material)
     err_arr = np.array(errors)
     bin_edges = np.linspace(mat_arr.min(), mat_arr.max(), 20)
@@ -539,8 +564,8 @@ def generate_plots(train_losses, val_losses, plot_dir,
             bin_means.append(err_arr[mask].mean())
     ax.plot(bin_centers, bin_means, "r-o", linewidth=2, markersize=5,
             label="Mean error")
-    ax.set_xlabel("Piece Count (active features)")
-    ax.set_ylabel("Absolute Error (cp)")
+    ax.set_xlabel("Piece Count [active features]")
+    ax.set_ylabel("Absolute Error [cp]")
     ax.set_title("Prediction Error by Game Phase")
     ax.legend()
     ax.grid(True, alpha=0.3)
@@ -567,8 +592,8 @@ def generate_plots(train_losses, val_losses, plot_dir,
         xs = np.linspace(min(bucket_scores), max(bucket_scores), 200)
         expected = 100.0 / (1.0 + np.exp(-xs / SCORE_SCALE))
         ax.plot(xs, expected, "r--", linewidth=1, alpha=0.7, label="Expected (sigmoid)")
-        ax.set_xlabel("Predicted Score (cp)")
-        ax.set_ylabel("Actual Win Rate (%)")
+        ax.set_xlabel("Predicted Score [cp]")
+        ax.set_ylabel("Actual Win Rate [%]")
         ax.set_title("Win Rate Calibration")
         ax.legend()
         ax.grid(True, alpha=0.3)
@@ -581,7 +606,6 @@ def generate_plots(train_losses, val_losses, plot_dir,
 def get_run_tag():
     """Return a timestamped run tag: YYYY-MM-DD_HH-MM-SS_<githash>."""
     import subprocess
-    from datetime import datetime
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     try:
         commit = subprocess.check_output(
@@ -730,12 +754,25 @@ def train(args):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     best_val_loss = float("inf")
+    best_epoch = 0
     train_losses = []
     val_losses = []
     learning_rates = []
 
+    history_path = out_dir / "training_history.csv"
+    history_file = open(history_path, "w", newline="")
+    history_writer = csv.writer(history_file)
+    history_writer.writerow([
+        "epoch", "train_loss", "val_loss", "learning_rate",
+        "best_val_loss", "epoch_time_s",
+    ])
+
+    training_start = time.time()
+
     epoch_pbar = tqdm(range(1, args.epochs + 1), desc="Training", unit="epoch")
     for epoch in epoch_pbar:
+        epoch_start = time.time()
+
         # --- Train ---
         model.train()
         train_loss_sum = 0.0
@@ -815,6 +852,7 @@ def train(args):
 
         val_loss = val_loss_sum / val_count
         lr = optimizer.param_groups[0]["lr"]
+        epoch_time = time.time() - epoch_start
 
         train_losses.append(train_loss)
         val_losses.append(val_loss)
@@ -823,6 +861,7 @@ def train(args):
         improved = ""
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            best_epoch = epoch
             torch.save(model.state_dict(), out_dir / "best.pt")
             improved = " *"
 
@@ -831,6 +870,15 @@ def train(args):
         )
 
         torch.save(model.state_dict(), out_dir / f"epoch_{epoch}.pt")
+
+        history_writer.writerow([
+            epoch, f"{train_loss:.8f}", f"{val_loss:.8f}", f"{lr:.2e}",
+            f"{best_val_loss:.8f}", f"{epoch_time:.1f}",
+        ])
+        history_file.flush()
+
+    history_file.close()
+    total_time = time.time() - training_start
 
     # Save final model
     torch.save(model.state_dict(), out_dir / "final.pt")
@@ -845,13 +893,38 @@ def train(args):
     canonical_path = repo_root / "nnue" / "nnue.bin"
     print(f"  To use these weights: cp {export_path} {canonical_path}")
 
+    # Save training metadata
+    meta = {
+        "run_name": run_name,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "git_commit": get_run_tag().split("_")[-1],
+        "device": str(device),
+        "train_positions": train_size,
+        "val_positions": val_size,
+        "epochs": args.epochs,
+        "batch_size": args.batch,
+        "learning_rate": args.lr,
+        "weight_decay": args.wd,
+        "lambda": args.lmbda,
+        "val_split": args.val_split,
+        "best_epoch": best_epoch,
+        "best_val_loss": best_val_loss,
+        "final_train_loss": train_losses[-1],
+        "total_time_s": round(total_time, 1),
+        "data_path": str(data_path),
+    }
+    with open(out_dir / "training_meta.json", "w") as f:
+        json.dump(meta, f, indent=2)
+
     model.to(device)
     plot_dir = repo_root / "results" / "nnue_training" / run_name
     generate_plots(train_losses, val_losses, plot_dir,
                    model, val_loader, device, args.lmbda)
 
     print(f"\nTraining complete.")
-    print(f"  Best validation loss: {best_val_loss:.6f}")
+    print(f"  Best validation loss: {best_val_loss:.6f} (epoch {best_epoch})")
+    print(f"  Total time: {total_time / 60:.1f} min")
+    print(f"  History: {history_path}")
     print(f"  PyTorch checkpoints: {out_dir}")
     print(f"  Quantized weights: {export_path}")
 
@@ -938,8 +1011,89 @@ def export_quantized(model, path):
 #  Entry point
 # --------------------------------------------------------------------------- #
 
+def replot(args):
+    """Regenerate all plots from a previous training run."""
+    run_dir = Path(args.run)
+    if not run_dir.is_dir():
+        sys.exit(f"Run directory not found: {run_dir}")
+
+    history_path = run_dir / "training_history.csv"
+    if not history_path.exists():
+        sys.exit(f"No training_history.csv in {run_dir}")
+
+    checkpoint_path = run_dir / "best.pt"
+    if not checkpoint_path.exists():
+        sys.exit(f"No best.pt in {run_dir}")
+
+    train_losses = []
+    val_losses = []
+    with open(history_path) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            train_losses.append(float(row["train_loss"]))
+            val_losses.append(float(row["val_loss"]))
+
+    if not train_losses:
+        sys.exit("training_history.csv is empty")
+
+    print(f"Loaded {len(train_losses)} epochs from {history_path}")
+
+    val_data_path = args.val_data
+    if val_data_path is None:
+        meta_path = run_dir / "training_meta.json"
+        if meta_path.exists():
+            with open(meta_path) as f:
+                meta = json.load(f)
+            data_path = meta.get("data_path", "")
+            candidate = Path(data_path).parent / "validation_data.bin"
+            if candidate.exists() and candidate.stat().st_size > 0:
+                val_data_path = str(candidate)
+            else:
+                candidate = Path(data_path).parent / "validation_data.txt"
+                if candidate.exists() and candidate.stat().st_size > 0:
+                    val_data_path = str(candidate)
+
+    if args.device:
+        device = torch.device(args.device)
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Device: {device}")
+
+    model = NnueNetwork().to(device)
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device, weights_only=True))
+    print(f"Loaded checkpoint: {checkpoint_path}")
+
+    val_loader = None
+    if val_data_path:
+        val_set = load_dataset(val_data_path)
+        if len(val_set) > 0:
+            collate = binary_collate if isinstance(val_set, BinaryNnueDataset) else None
+            val_loader = DataLoader(
+                val_set, batch_size=args.batch, shuffle=False,
+                num_workers=0, collate_fn=collate,
+            )
+            print(f"Validation data: {val_data_path} ({len(val_set):,} positions)")
+        else:
+            print(f"Warning: validation data empty, skipping score accuracy plot")
+    else:
+        print("No validation data found, skipping score accuracy plot")
+
+    meta_path = run_dir / "training_meta.json"
+    lmbda = 0.7
+    if meta_path.exists():
+        with open(meta_path) as f:
+            meta = json.load(f)
+        lmbda = meta.get("lambda", 0.7)
+
+    repo_root = Path(__file__).resolve().parent.parent
+    plot_dir = repo_root / "results" / "nnue_training" / run_dir.name
+    generate_plots(train_losses, val_losses, plot_dir,
+                   model, val_loader, device, lmbda)
+
+    print(f"\nPlots regenerated in: {plot_dir}")
+
+
 def load_config():
-    import json
     cfg_path = os.path.join(os.path.dirname(__file__), "..", "nnue", "config.json")
     try:
         with open(cfg_path) as f:
@@ -962,49 +1116,78 @@ def main():
     parser = argparse.ArgumentParser(
         description="Train an NNUE evaluation network for OmegaZero"
     )
-    parser.add_argument(
+    subparsers = parser.add_subparsers(dest="command")
+
+    # train subcommand
+    train_parser = subparsers.add_parser("train", help="Train a new NNUE model")
+    train_parser.add_argument(
         "--data", default=resolve_default("data", "nnue/data"),
         help="Path to training data file or directory (auto-resolves latest run)",
     )
-    parser.add_argument(
+    train_parser.add_argument(
         "--val-data", default=resolve_default("val_data", None),
         help="Path to separate validation data file (from different games, avoids contamination)",
     )
-    parser.add_argument(
+    train_parser.add_argument(
         "--output", default=resolve_default("output", "nnue/model"),
         help="Output directory for model checkpoints (default: nnue/model)",
     )
-    parser.add_argument(
+    train_parser.add_argument(
         "--epochs", type=int, default=t.get("epochs", 200),
         help="Number of training epochs (default: 200)",
     )
-    parser.add_argument(
+    train_parser.add_argument(
         "--batch", type=int, default=t.get("batch", 16384),
         help="Batch size (default: 16384)",
     )
-    parser.add_argument(
+    train_parser.add_argument(
         "--lr", type=float, default=t.get("lr", 1e-3),
         help="Initial learning rate (default: 0.001)",
     )
-    parser.add_argument(
+    train_parser.add_argument(
         "--wd", type=float, default=t.get("wd", 1e-6),
         help="Weight decay (default: 1e-6)",
     )
-    parser.add_argument(
+    train_parser.add_argument(
         "--lmbda", type=float, default=t.get("lmbda", 0.7),
         help="Blend factor: lambda*sigmoid(score) + (1-lambda)*result (default: 0.7)",
     )
-    parser.add_argument(
+    train_parser.add_argument(
         "--val-split", type=float, default=t.get("val_split", 0.05),
         help="Fraction of data for validation (default: 0.05)",
     )
-    parser.add_argument(
+    train_parser.add_argument(
         "--device", default=t.get("device"),
         help="Device: cpu, mps, or cuda (default: auto-detect)",
     )
+
+    # plot subcommand
+    plot_parser = subparsers.add_parser("plot", help="Regenerate plots from a previous run")
+    plot_parser.add_argument(
+        "--run", required=True,
+        help="Path to training run directory (contains training_history.csv and best.pt)",
+    )
+    plot_parser.add_argument(
+        "--val-data", default=None,
+        help="Path to validation data file (default: auto-detect from training_meta.json)",
+    )
+    plot_parser.add_argument(
+        "--batch", type=int, default=4096,
+        help="Batch size for inference (default: 4096)",
+    )
+    plot_parser.add_argument(
+        "--device", default=None,
+        help="Device: cpu, mps, or cuda (default: auto-detect)",
+    )
+
     args = parser.parse_args()
 
-    train(args)
+    if args.command == "plot":
+        replot(args)
+    else:
+        if args.command is None:
+            args = train_parser.parse_args()
+        train(args)
 
 
 if __name__ == "__main__":

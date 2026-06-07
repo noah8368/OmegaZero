@@ -346,8 +346,8 @@ def generate_plot(summary_csv, output_dir=None):
                                 linewidth=1.2))
 
     ax.set_xlabel("Stockfish Elo", fontsize=12)
-    ax.set_ylabel("Score rate (W + 0.5D)", fontsize=12)
-    ax.set_title("OmegaZero vs Stockfish — Elo Estimation",
+    ax.set_ylabel("Score Rate [W + 0.5D]", fontsize=12)
+    ax.set_title("Elo Estimation vs Stockfish",
                  fontsize=15, fontweight="bold", pad=15)
     ax.set_ylim(-0.02, 1.05)
     ax.legend(loc="upper right", fontsize=10)

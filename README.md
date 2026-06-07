@@ -20,8 +20,8 @@
 
 <p align="center">
   <a href="#project-summary">Project Summary</a> •
-  <a href="#play-online">Play Online</a> •
   <a href="#performance">Performance</a> •
+  <a href="#play-online">Play Online</a> •
   <a href="#implementation">Implementation</a> •
   <a href="#usage">Usage</a>
 </p>
@@ -37,34 +37,34 @@ logo; [Claude](https://en.wikipedia.org/wiki/Claude_(language_model)) was used t
 
 ## Performance
 
-All results use [OmegaZero v3](https://github.com/noah8368/OmegaZero/releases/tag/v3).
-
 ### Elo Estimate
-
-OmegaZero's rating estimated by fitting the standard Elo logistic curve to 2,100 games against Stockfish at three `UCI_Elo` levels (0.5s/move). Shaded region shows the 95% bootstrap confidence interval.
 
 <p align="center">
   <img src="./figs/elo_estimate.png" width="600" alt="Elo Estimation Plot">
+  <br>
+  <em>Elo estimate from 2,100 games vs Stockfish (0.5s/move), with 95% bootstrap CI.<sup>3</sup></em>
 </p>
 
 ### Elo Gain
 
-Elo gain per version, measured via [SPRT](#sprt) (0.5s/move, 2,678 ECO openings). Each bar shows the estimated rating improvement over the previous version.
-
 <p align="center">
   <img src="./figs/sprt_gauntlet_elo.png" width="480" alt="SPRT Elo Gain Per Version">
+  <br>
+  <em>Elo gain per version via SPRT (0.5s/move, 2,678 ECO openings).<sup>3</sup></em>
 </p>
 
 ### Win / Draw / Loss Breakdown
 
-Win/draw/loss breakdown for each version pair from the same SPRT gauntlet.
-
-![SPRT W/D/L](./figs/sprt_gauntlet_wdl.png "SPRT W/D/L Breakdown")
+<p align="center">
+  <img src="./figs/sprt_gauntlet_wdl.png" width="600" alt="SPRT W/D/L Breakdown">
+  <br>
+  <em>Win/draw/loss breakdown per version pair from the SPRT gauntlet.<sup>3</sup></em>
+</p>
 
 ### Example Games
 
 <details>
-<summary><strong>~1000 Elo Human Player (White) vs OmegaZero v1 (Black) — 0-1</strong> English Opening, Symmetrical Variation.</summary>
+<summary><strong>~1000 Elo Human Player (White) vs OmegaZero<sup>4</sup> (Black) — 0-1</strong> English Opening, Symmetrical Variation.</summary>
 
 `1.c4 c5 2.Nc3 Nc6 3.d4 cxd4 4.Nd5 e6 5.Nf4 Bb4+ 6.Bd2 Bxd2+ 7.Qxd2 Nf6 8.Nf3 Ne4 9.Qd3 Qa5+ 10.Nd2 d5 11.cxd5 exd5 12.g3 Bg4 13.Nxd5 Nxd2 14.Qxd2 Qxd5 15.Rg1 0-0-0 16.h3 Bxe2 17.Bxe2 Rhe8 18.0-0-0 Qxa2 19.Bg4+ Kb8 20.Qf4+ Ne5 21.Rxd4 Rxd4 22.Qxd4 Qa1+ 23.Kc2 Qxg1 24.Qd6+ Ka8 25.Bd1 Qxf2+ 26.Qd2 Rc8+ 27.Kb3 Qxd2 28.Ka2 Qxd1 29.g4 Qa4+ 30.Kb1 Qc2+ 31.Ka2 Nd3 32.h4 Qxb2# 0-1`
 
@@ -77,7 +77,7 @@ Final Position
 </details>
 
 <details>
-<summary><strong>1643 Elo<sup>1</sup> Human Player (White) vs OmegaZero v1 (Black) — 0-1</strong> Scandinavian Defense.</summary>
+<summary><strong>1643 Elo<sup>1</sup> Human Player (White) vs OmegaZero<sup>4</sup> (Black) — 0-1</strong> Scandinavian Defense.</summary>
 
 `1.e4 d5 2.exd5 Nf6 3.Bc4 Nxd5 4.Bxd5 Qxd5 5.Nc3 Qxg2 6.Qf3 Qxf3 7.Nxf3 Na6 8.a3 Bg4 9.Ne5 Bf5 10.d3 f6 11.Nc4 e5 12.Be3 Nc5 13.b4 Ne6 14.O-O-O Bg4 15.Rd2 c5 16.b5 O-O-O 17.Ne4 Be7 18.Ng3 Nd4 19.h3 Be6 20.Nb2 Nxb5 21.a4 Nd4 22.Ne4 f5 23.Nc3 Nf3 24.Re2 e4 25.dxe4 fxe4 26.Nxe4 Bxh3 27.Rxh3 Ng1 28.Re1 Nxh3 29.Nxc5 Bxc5 30.Bxc5 b6 31.Be3 Rhf8 32.Nd3 Rxd3 33.cxd3 Nxf2 34.Kd2 Rf7 35.Re2 Ng4 36.Bd4 Kb7 37.Rg2 Rf4 38.Bxg7 Rxa4 39.Kc3 Ne3 40.Re2 Nd5+ 41.Kb3 Rb4+ 42.Ka3 Rb5 43.d4 Ra5+ 44.Kb3 Ra1 45.Kc4 Rg1 46.Be5 Rg2 47.Re4 Kc6 48.Bh8 Rc2+ 49.Kd3 Rc3+ 50.Kd2 Rh3 51.Re6+ Kb5 52.Rd6 Rh2+ 53.Kd3 Rh5 54.Rd7 Nb4+ 55.Kc3 Rh3+ 56.Kd2 Nc6 57.d5 Rh2+ 58.Kc3 Nb4 59.d6 Nc6 60.Rc7 Rh4 61.d7 Rh3+ 62.Kd2 Rh5 63.Rc8 Rd5+ 0-1`
 
@@ -90,7 +90,7 @@ Final Position
 </details>
 
 <details>
-<summary><strong>~1900 Elo<sup>2</sup> Human Player vs OmegaZero v1 (Black) — 1-0</strong> Queen's Gambit Accepted.</summary>
+<summary><strong>~1900 Elo<sup>2</sup> Human Player vs OmegaZero<sup>4</sup> (Black) — 1-0</strong> Queen's Gambit Accepted.</summary>
 
 `1.d4 d5 2.c4 e6 3.g3 dxc4 4.Bg2 Ne7 5.Nd2 Qxd4 6.Ngf3 Qc5 7.O-O Nd5 8.Qc2 c3 9.Ne4 cxb2 10.Qxb2 Qb6 11.Qc2 Nb4 12.Qa4+ Bd7 13.Qd1 Nxa2 14.Rxa2 Qb1 15.Qc2 Qxa2 16.Qxa2 f5 17.Neg5 Nc6 18.Nxe6 Bd6 19.Nxg7+ Kd8 20.Bg5+ Kc8 21.Rb1 Nb4 22.Qc4 Bxg3 23.Qxb4 Bc6 24.hxg3 Bxf3 25.Bxf3 b6 26.Nxf5 h5 27.Bxa8 h4 28.Qe4 Rd8 29.Ne7+ Kd7 30.Bc6+ Kd6 31.Qd5# 1-0`
 
@@ -102,8 +102,6 @@ Final Position
 
 </details>
 
-<sup>1</sup> Lichess rating
-<sup>2</sup> Chess.com rating
 
 ## Play Online
 
@@ -124,16 +122,16 @@ OmegaZero primarily evaluates positions using an [NNUE](https://www.chessprogram
 - Typically only ~30 features are active in a given position.
 - Network weights are quantized to `int16` and `int8` for fast integer inference.
 
-Training loss and score accuracy from a 6M-position dataset (v3, HCE-generated):
-
 <p align="center">
   <img src="./figs/nnue_loss.png" width="480" alt="NNUE Training Loss">
   <img src="./figs/nnue_score_accuracy.png" width="480" alt="NNUE Score Accuracy">
+  <br>
+  <em>Training loss and score accuracy on a <a href="https://drive.google.com/drive/folders/11guxluj5UL4BMaGmm0CqD-n7u5INT-EE?usp=sharing">6M-position HCE-generated dataset</a>.<sup>3</sup></em>
 </p>
 
 If no NNUE weights file is available, OmegaZero falls back to a handcrafted evaluation inspired by [Fruit](https://www.chessprogramming.org/Fruit), incorporating:
 
-- Material balance
+- [Material balance](https://www.chessprogramming.org/Material)
 - [Piece-square tables](https://www.chessprogramming.org/Simplified_Evaluation_Function)
 - [Pawn structure](https://www.chessprogramming.org/Pawn_Structure)
 - [Piece mobility](https://www.chessprogramming.org/Mobility)
@@ -152,7 +150,7 @@ The animation below shows a subset of notes from the search trace performed by [
   <img src="./figs/search_animation.gif" width="720" alt="Alpha-Beta Search Animation">
 </p>
 
-OmegaZero uses [MTD(f)](https://www.chessprogramming.org/MTD(f)) within an [Iterative Deepening](https://www.chessprogramming.org/Iterative_Deepening) framework built on [Negamax](https://www.chessprogramming.org/Negamax) and [Alpha-Beta Pruning](https://www.chessprogramming.org/Alpha-Beta).
+OmegaZero uses [Aspiration Windows](https://www.chessprogramming.org/Aspiration_Windows) with [Principal Variation Search (PVS)](https://www.chessprogramming.org/Principal_Variation_Search) within an [Iterative Deepening](https://www.chessprogramming.org/Iterative_Deepening) framework built on [Negamax](https://www.chessprogramming.org/Negamax) and [Alpha-Beta Pruning](https://www.chessprogramming.org/Alpha-Beta).
 
 
 #### Search Enhancements
@@ -195,12 +193,10 @@ Additional pruning techniques include:
 - [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning)
 - [SEE Pruning](https://www.chessprogramming.org/Static_Exchange_Evaluation#Pruning)
 
-#### Search Depth vs Time
-
-Search depth reached across four standard positions at increasing time controls (log scale). Endgame positions search deepest due to fewer pieces; kiwipete is the most complex due to its high branching factor. Depth results displayed below are from [OmegaZero v3](https://github.com/noah8368/OmegaZero/releases/tag/v3).
-
 <p align="center">
   <img src="./figs/depth_vs_time.png" width="600" alt="Search Depth vs Time">
+  <br>
+  <em>Search depth vs time across four standard positions (log scale).<sup>3</sup></em>
 </p>
 
 ### Move Generation
@@ -377,7 +373,9 @@ make debug
 
 ### NNUE
 
-Generate self-play data, train, analyze. Config lives in `nnue/config.json` (copy from `nnue/config.json.example`). See each script's `--help` or header comments for options.
+A pre-built [6M-position training dataset](https://drive.google.com/drive/folders/11guxluj5UL4BMaGmm0CqD-n7u5INT-EE?usp=sharing) is available for download. Place the files in `nnue/data/` and run `train_nnue.py` to train from scratch.
+
+To generate your own data, train, and analyze — config lives in `nnue/config.json` (copy from `nnue/config.json.example`). See each script's `--help` or header comments for options.
 ```bash
 make datagen && ./scripts/run_datagen.sh     # generate data (auto-restarts on crash)
 ./scripts/shutdown_datagen.sh                # graceful shutdown
@@ -409,3 +407,10 @@ python3 scripts/mine_magics.py
 ```
 
 `make` will automatically regenerate these files if they are missing.
+
+---
+
+<sup>1</sup> Lichess rating
+<sup>2</sup> Chess.com rating
+<sup>3</sup> All plots use [OmegaZero v3](https://github.com/noah8368/OmegaZero/releases/tag/v3)
+<sup>3</sup> All example games use [OmegaZero v1](https://github.com/noah8368/OmegaZero/releases/tag/v1)

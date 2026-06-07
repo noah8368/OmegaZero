@@ -173,9 +173,9 @@ def generate_plot(data_csv, output_dir=None):
                 linewidth=2, markersize=7, label=pos, zorder=5)
 
     ax.set_xscale("log")
-    ax.set_xlabel("Search time (seconds)", fontsize=12)
-    ax.set_ylabel("Search depth", fontsize=12)
-    ax.set_title("OmegaZero — Search Depth vs Time", fontsize=15,
+    ax.set_xlabel("Search Time [s]", fontsize=12)
+    ax.set_ylabel("Search Depth", fontsize=12)
+    ax.set_title("Search Depth vs Time", fontsize=15,
                  fontweight="bold", pad=15)
 
     time_vals = sorted(set(float(r["search_time"]) for r in rows))

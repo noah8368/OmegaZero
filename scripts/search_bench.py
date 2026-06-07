@@ -45,6 +45,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 RESULTS_BASE = REPO_ROOT / "results" / "benchmarking"
 HISTORY_CSV = RESULTS_BASE / "version_nps_history.csv"
+DETAIL_CSV = RESULTS_BASE / "version_nps_by_position.csv"
 BENCH_BIN = REPO_ROOT / "build" / "bench_harness"
 
 
@@ -227,10 +228,38 @@ def append_to_history(version, avg_knps):
                      "avg_knps": avg_knps})
 
 
+def append_detail_rows(version, rows):
+    RESULTS_BASE.mkdir(parents=True, exist_ok=True)
+    file_exists = DETAIL_CSV.exists()
+    with open(DETAIL_CSV, "a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=[
+            "version", "position", "nps", "knps", "depth",
+        ])
+        if not file_exists:
+            w.writeheader()
+        for r in rows:
+            if r["position"] == "average":
+                continue
+            w.writerow({
+                "version": version,
+                "position": r["position"],
+                "nps": r["nps"],
+                "knps": int(r["nps"]) // 1000,
+                "depth": r.get("depth", 0),
+            })
+
+
 def load_history():
     if not HISTORY_CSV.exists():
         return []
     with open(HISTORY_CSV) as f:
+        return list(csv.DictReader(f))
+
+
+def load_detail_history():
+    if not DETAIL_CSV.exists():
+        return []
+    with open(DETAIL_CSV) as f:
         return list(csv.DictReader(f))
 
 
@@ -264,6 +293,7 @@ def generate_plots(current_version=None):
 
     RESULTS_BASE.mkdir(parents=True, exist_ok=True)
 
+    # Bar chart: average NPS per version
     fig, ax = plt.subplots(figsize=(max(8, len(versions) * 1.2), 5))
     colors = []
     for v in versions:
@@ -280,8 +310,8 @@ def generate_plots(current_version=None):
                 fontsize=11)
 
     ax.set_xlabel("Version")
-    ax.set_ylabel("kNPS (thousands of nodes per second)")
-    ax.set_title("OmegaZero — Nodes Per Second by Version")
+    ax.set_ylabel("Average NPS [kNPS]")
+    ax.set_title("Nodes Per Second by Version")
     ax.set_xticks(range(len(versions)))
     ax.set_xticklabels(versions,
                        rotation=45 if len(versions) > 6 else 0, ha="right")
@@ -292,7 +322,72 @@ def generate_plots(current_version=None):
     plot_path = RESULTS_BASE / "version_nps_plot.png"
     fig.savefig(plot_path, dpi=150)
     plt.close(fig)
-    print(f"  NPS plot: {plot_path}")
+    print(f"  NPS bar chart: {plot_path}")
+
+    # Line chart: NPS per position across versions
+    detail = load_detail_history()
+    if not detail:
+        return
+
+    detail_versions = []
+    seen = set()
+    for r in detail:
+        if r["version"] not in seen:
+            detail_versions.append(r["version"])
+            seen.add(r["version"])
+
+    positions = []
+    seen_pos = set()
+    for r in detail:
+        if r["position"] not in seen_pos:
+            positions.append(r["position"])
+            seen_pos.add(r["position"])
+
+    if len(detail_versions) < 2:
+        return
+
+    pos_colors = {
+        "opening": "#1976D2",
+        "midgame": "#D32F2F",
+        "kiwipete": "#388E3C",
+        "endgame": "#F57C00",
+    }
+    pos_markers = {
+        "opening": "o",
+        "midgame": "s",
+        "kiwipete": "D",
+        "endgame": "^",
+    }
+
+    fig, ax = plt.subplots(figsize=(max(8, len(detail_versions) * 1.5), 6))
+    x = list(range(len(detail_versions)))
+
+    for pos in positions:
+        knps = []
+        for ver in detail_versions:
+            row = next((r for r in detail
+                        if r["version"] == ver and r["position"] == pos), None)
+            knps.append(int(row["knps"]) if row else 0)
+
+        color = pos_colors.get(pos, "#333333")
+        marker = pos_markers.get(pos, "o")
+        ax.plot(x, knps, marker=marker, color=color,
+                linewidth=2, markersize=7, label=pos, zorder=5)
+
+    ax.set_xlabel("Version", fontsize=12)
+    ax.set_ylabel("NPS [kNPS]", fontsize=12)
+    ax.set_title("NPS by Position Across Versions", fontsize=15,
+                 fontweight="bold", pad=15)
+    ax.set_xticks(x)
+    ax.set_xticklabels(detail_versions, fontsize=10)
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3, axis="y")
+    fig.tight_layout()
+
+    line_path = RESULTS_BASE / "version_nps_by_position.png"
+    fig.savefig(line_path, dpi=150)
+    plt.close(fig)
+    print(f"  NPS line chart: {line_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +438,7 @@ def cmd_run(args):
 
     version = get_version_tag()
     append_to_history(version, avg_knps)
+    append_detail_rows(version, rows)
     generate_plots(version)
 
     print(f"\n  Results saved to: {run_dir}")
@@ -392,6 +488,7 @@ def cmd_gauntlet(args):
         print(f"\n  >> {tag}: {avg_knps}k NPS\n")
 
         append_to_history(tag, avg_knps)
+        append_detail_rows(tag, rows)
 
     print(f"{'=' * 64}")
     print(f"  Done! Results saved to {HISTORY_CSV}")

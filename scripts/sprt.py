@@ -558,7 +558,7 @@ def generate_plots():
     ax.set_yticklabels(labels, fontsize=9)
     ax.invert_yaxis()
     ax.set_xlabel("Games")
-    ax.set_title("OmegaZero — SPRT Version Gauntlet")
+    ax.set_title("SPRT Version Gauntlet")
     ax.legend(loc="lower right")
     ax.grid(True, alpha=0.2, axis="x")
 
@@ -597,8 +597,8 @@ def generate_plots():
     ax.set_xticks(x)
     ax.set_xticklabels(matchup_labels, fontsize=9, rotation=30, ha="right")
     ax.axhline(0, color="black", linewidth=0.8)
-    ax.set_ylabel("ELO difference")
-    ax.set_title("OmegaZero — SPRT ELO Gain Per Version")
+    ax.set_ylabel("Elo Difference")
+    ax.set_title("SPRT Elo Gain Per Version")
     ax.grid(True, alpha=0.2, axis="y")
 
     min_val = min(e - err for e, err in zip(elo_diffs, elo_errors))
