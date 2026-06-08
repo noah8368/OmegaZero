@@ -337,10 +337,16 @@ inline auto Engine::ShouldLateMovePrune(const Move& move,
                                         int num_quiet_searched, int depth,
                                         bool at_pv_node, bool gives_check,
                                         bool in_check, int ply) -> bool {
+  int lmpThreshold = 6 + 2 * depth * depth;
+  // Lower the move count threshold when not the line's evaluations aren't
+  // improving.
+  if (!improving_) {
+    lmpThreshold /= 2;
+  }
   return !at_pv_node && depth <= kMaxLateMovePruningDepth &&
-         num_quiet_searched > 6 + 2 * depth * depth &&
-         move.captured_piece == kNA && move.promoted_to_piece == kNA &&
-         !gives_check && !in_check && !IsKillerMove(move, ply);
+         num_quiet_searched > lmpThreshold && move.captured_piece == kNA &&
+         move.promoted_to_piece == kNA && !gives_check && !in_check &&
+         !IsKillerMove(move, ply);
 }
 
 constexpr int kMaxSeePruningDepth = 5;
@@ -375,6 +381,10 @@ inline auto Engine::TryReverseFutilityPrune(int static_eval, int depth,
   if (depth > 2 || at_pv_node || in_check) {
     return false;
   }
+  if (improving_) {
+    // Prune less aggressively when the line's static evaluations are improving.
+    return static_eval - (depth - 1) * kFutilityMargin >= beta;
+  }
   return static_eval - depth * kFutilityMargin >= beta;
 }
 
@@ -388,9 +398,13 @@ inline auto Engine::ComputeLmrReduction(int depth, int legal_moves,
   int history_score =
       history_heuristic_[player_to_move][move.moving_piece][move.target_sq];
   if (history_score > 0) {
-    reduction -= 1;
+    --reduction;
   } else if (history_score < kHistoryLmrThreshold) {
-    reduction += 1;
+    ++reduction;
+  }
+  if (!improving_) {
+    // Reduce depth more if the line's evaluations aren't improving.
+    ++reduction;
   }
   return std::max(1, reduction);
 }

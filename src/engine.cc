@@ -142,6 +142,8 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   return best_move;
 }
 
+constexpr S8 kHalfmoveClockLimit = 100;
+
 auto Engine::GetGameStatus() -> S8 {
   // Check for checks, checkmates, and draws.
   vector<Move> move_list = GenerateMoves();
@@ -169,7 +171,6 @@ auto Engine::GetGameStatus() -> S8 {
   }
 
   // Enforce the Fifty Move Rule.
-  constexpr S8 kHalfmoveClockLimit = 100;
   if (board_->GetHalfmoveClock() >= kHalfmoveClockLimit) {
     return kDraw;
   }
@@ -262,7 +263,6 @@ auto Engine::AspirationSearch(int prev_score, int depth, int ply,
 
 constexpr S8 kNumEarlyMoves = 3;
 constexpr S8 kMinReductionDepth = 3;
-constexpr S8 kHalfmoveClockLimit = 100;
 
 auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
                  bool null_move_allowed) -> int {
@@ -475,7 +475,6 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
   assert(alpha < beta);
   CheckSearchTime();
 
-  constexpr S8 kHalfmoveClockLimit = 100;
   if (board_->GetHalfmoveClock() >= kHalfmoveClockLimit || RepDetected()) {
     return kNeutralEval;
   }
@@ -831,6 +830,10 @@ auto Engine::TryNullMovePrune(int alpha, int beta, int depth, int ply,
   }
   board_->MakeNullMove();
   int R = (depth > kNullMoveDepthHighR) ? 3 : 2;
+  // Increase reduction when the line being explored isn't improving.
+  if (!improving_) {
+    ++R;
+  }
 #ifdef SEARCH_TRACE
   bool was_recording = TraceSuppressRecording();
 #endif
