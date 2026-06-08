@@ -263,7 +263,7 @@ auto Engine::AspirationSearch(int prev_score, int depth, int ply,
 
 constexpr S8 kNumEarlyMoves = 3;
 constexpr S8 kMinReductionDepth = 3;
-constexpr S8 kMinIirDepth = 6;
+constexpr S8 kMinIirDepth = 4;
 constexpr S8 kMaxRazoringDepth = 3;
 constexpr S8 kRazoringMargin = 350;
 
