@@ -25,7 +25,9 @@ using std::string;
 static void PrintUsage(const char* prog) {
   cout << "Usage: " << prog << " [OPTIONS]\n"
        << "  -p SIDE        Side to play: w, b, or r (default: w)\n"
-       << "  -t TIME        Search time in seconds (default: 5)\n"
+       << "  --st TIME      Search time per move in seconds (default: 5)\n"
+       << "  --tc TIME      Clock time in seconds (enables timed game)\n"
+       << "  --inc TIME     Increment in seconds (default: 0)\n"
        << "  -i FEN         Initial position as FEN string\n"
        << "  -o PATH        Opening book file path\n"
        << "  -n PATH        NNUE weights file path\n"
@@ -46,6 +48,8 @@ auto main(int argc, char* argv[]) -> int {
   string nnue_path = exe_dir + "../nnue/nnue.bin";
   string pgn_opponent;
   float search_time = 5.0f;
+  float clock_time = 0.0f;
+  float increment = 0.0f;
   char player_side = 'w';
   bool uci_mode = false;
   bool hce_mode = false;
@@ -64,8 +68,12 @@ auto main(int argc, char* argv[]) -> int {
       light_theme = true;
     } else if ((arg == "-p" || arg == "--player-side") && i + 1 < argc) {
       player_side = argv[++i][0];
-    } else if ((arg == "-t" || arg == "--time") && i + 1 < argc) {
+    } else if (arg == "--st" && i + 1 < argc) {
       search_time = std::atof(argv[++i]);
+    } else if (arg == "--tc" && i + 1 < argc) {
+      clock_time = std::atof(argv[++i]);
+    } else if (arg == "--inc" && i + 1 < argc) {
+      increment = std::atof(argv[++i]);
     } else if ((arg == "-i" || arg == "--initial-position") && i + 1 < argc) {
       init_pos = argv[++i];
     } else if ((arg == "-o" || arg == "--opening-book-path") && i + 1 < argc) {
@@ -99,6 +107,10 @@ auto main(int argc, char* argv[]) -> int {
         init_pos == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     omegazero::Game game(init_pos, opening_book_path, player_side, search_time,
                          on_opening, light_theme);
+
+    if (clock_time > 0.0f) {
+      game.SetClock(clock_time, increment);
+    }
 
     while (game.IsActive()) {
       game.Play();

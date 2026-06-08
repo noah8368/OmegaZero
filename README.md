@@ -276,14 +276,26 @@ make check-deps   # Verify g++ and python3 are installed
 
 To begin a game, a user invokes the program as follows:
 ```
-OmegaZero -p [SIDE] -t [TIME]
+OmegaZero -p [SIDE] --st [TIME]
 ```
 where `[SIDE]` is the side the user would like to play. This may be `w` for
-White, `b` for Black, or `r` for a random selection. `[TIME]` is the amount of time (in seconds) to give the engine during play. This defaults to `5s`.
+White, `b` for Black, or `r` for a random selection. `[TIME]` is the amount of time (in seconds) to give the engine per move. This defaults to `5s`.
+
+#### Clock Mode
+
+For timed games with a running clock and optional increment:
+```
+OmegaZero --tc 300 --inc 3 -p w    # 5 minutes + 3 second increment
+OmegaZero --tc 60 -p b             # 1 minute, no increment (bullet)
+OmegaZero --tc 900 --inc 10 -p w   # 15+10 (rapid)
+```
+In clock mode, the user's time is tracked while they think. The engine allocates its own think time from its remaining clock. Both sides receive the increment after each move. The game ends on flag (time reaching zero).
+
+#### Other Options
 
 To use the handcrafted eval instead of NNUE, add `--hce`:
 ```
-OmegaZero --hce -p b -t 1
+OmegaZero --hce -p b --st 1
 ```
 
 The board display defaults to dark terminal backgrounds (filled glyphs = white pieces). If using a light terminal, add `--light-theme`:

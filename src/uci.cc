@@ -27,7 +27,6 @@ namespace omegazero {
 using std::string;
 using std::vector;
 using std::min;
-using std::clamp;
 
 UciHandler::UciHandler(const string& book_path)
     : book_path_(book_path), turn_num_(1), move_index_(0),
@@ -186,14 +185,12 @@ auto UciHandler::HandleGo(const string& line) -> void {
 
 auto UciHandler::ComputeThinkTime(int wtime, int btime, int winc, int binc,
                                   int movetime, int movestogo) const -> float {
-  // All intermediate values in ms; result converted to seconds at the end.
   constexpr float kMinMs = 100.0f;
-  constexpr float kMaxMs = 5000.0f;
   constexpr float kMoveTimeMargin = 50.0f;
 
   if (movetime > 0) {
     float alloc = static_cast<float>(movetime) - kMoveTimeMargin;
-    return clamp(alloc, kMinMs, kMaxMs) / 1000.0f;
+    return std::max(alloc, kMinMs) / 1000.0f;
   }
 
   S8 side = board_->GetPlayerToMove();
@@ -202,15 +199,17 @@ auto UciHandler::ComputeThinkTime(int wtime, int btime, int winc, int binc,
 
   if (time_ms <= 0) return kMinMs / 1000.0f;
 
+  float alloc;
   if (movestogo > 0) {
-    float alloc = time_ms / (movestogo + 1) + inc_ms * 0.8f;
-    return clamp(alloc, kMinMs, kMaxMs) / 1000.0f;
+    alloc = time_ms / (movestogo + 1) + inc_ms * 0.8f;
+  } else {
+    alloc = min(time_ms * time_ms / 1800000.0f, time_ms / 30.0f)
+            + inc_ms * 0.8f;
   }
 
-  // Quadratic rolloff for low time, linear for high time.
-  float alloc = min(time_ms * time_ms / 1800000.0f, time_ms / 30.0f)
-                + inc_ms * 0.8f;
-  return clamp(alloc, kMinMs, kMaxMs) / 1000.0f;
+  float max_alloc = time_ms / 3.0f;
+  alloc = min(alloc, max_alloc);
+  return std::max(alloc, kMinMs) / 1000.0f;
 }
 
 auto UciHandler::MoveToUciStr(const Move& move) const -> string {

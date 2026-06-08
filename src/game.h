@@ -9,6 +9,7 @@
 #ifndef OMEGAZERO_SRC_GAME_H_
 #define OMEGAZERO_SRC_GAME_H_
 
+#include <chrono>
 #include <iostream>
 #include <map>
 #include <string>
@@ -36,6 +37,8 @@ class Game {
   Game(const string& init_pos, const string& opening_book_path,
        char player_side, float search_time, bool on_opening = true,
        bool light_theme = false);
+
+  auto SetClock(float base_time, float increment) -> void;
 
   auto IsActive() const -> bool;
   auto GetOpeningMove(Move& opening_move) -> bool;
@@ -70,15 +73,20 @@ class Game {
   auto RecordFinalScore() -> void;
   // NOTE: This should be called AFTER a move is made.
   auto UpdateMoveHistory(string move_str) -> void;
+  auto ComputeThinkTime(S8 side) const -> float;
+  auto DisplayClock() const -> void;
 
   Board board_;
 
   bool game_active_;
   bool on_opening_;
+  bool clock_mode_;
 
   Engine engine_;
 
   float search_time_;
+  float increment_;
+  float clock_[kNumPlayers];
 
   int turn_num_;
   // Each opening is a sequence of FIDE move strings.

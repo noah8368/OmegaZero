@@ -7,9 +7,12 @@
 
 #include "game.h"
 
+#include <algorithm>
+#include <chrono>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <random>
 #include <sstream>
@@ -33,6 +36,7 @@ using std::ios;
 using std::istringstream;
 using std::mt19937;
 using std::ofstream;
+using std::ostringstream;
 using std::random_device;
 using std::string;
 using std::uniform_int_distribution;
@@ -78,7 +82,11 @@ Game::Game(const string& init_pos, const string& opening_book_path,
     : board_(init_pos), engine_(&board_, player_side, search_time) {
   game_active_ = true;
   on_opening_ = on_opening;
+  clock_mode_ = false;
   search_time_ = search_time;
+  increment_ = 0.0f;
+  clock_[kWhite] = 0.0f;
+  clock_[kBlack] = 0.0f;
   turn_num_ = 1;
   winner_ = kNA;
   if (light_theme) {
@@ -159,6 +167,44 @@ Game::Game(const string& init_pos, const string& opening_book_path,
   } else {
     throw invalid_argument("Opening book can't be opened");
   }
+}
+
+auto Game::SetClock(float base_time, float increment) -> void {
+  clock_mode_ = true;
+  increment_ = increment;
+  clock_[kWhite] = base_time;
+  clock_[kBlack] = base_time;
+}
+
+auto Game::ComputeThinkTime(S8 side) const -> float {
+  float time_ms = clock_[side] * 1000.0f;
+  float inc_ms = increment_ * 1000.0f;
+  float alloc = std::min(time_ms * time_ms / 1800000.0f, time_ms / 30.0f)
+                + inc_ms * 0.8f;
+  float max_alloc = time_ms / 3.0f;
+  alloc = std::min(alloc, max_alloc);
+  return std::max(alloc, 100.0f) / 1000.0f;
+}
+
+auto Game::DisplayClock() const -> void {
+  auto format_time = [](float seconds) -> string {
+    int total = static_cast<int>(seconds);
+    int h = total / 3600;
+    int m = (total % 3600) / 60;
+    int s = total % 60;
+    int tenths = static_cast<int>((seconds - total) * 10);
+    ostringstream oss;
+    if (h > 0)
+      oss << h << ":" << std::setfill('0') << std::setw(2) << m << ":"
+          << std::setw(2) << s;
+    else if (m > 0)
+      oss << m << ":" << std::setfill('0') << std::setw(2) << s;
+    else
+      oss << s << "." << tenths;
+    return oss.str();
+  };
+  cout << "  Clock: White " << format_time(clock_[kWhite])
+       << " | Black " << format_time(clock_[kBlack]) << endl;
 }
 
 constexpr S8 kMaxMoveRep = 5;
@@ -244,6 +290,7 @@ constexpr S8 kNumMoveRepForOptionalDraw = 3;
 
 void Game::Play() {
   DisplayBoard();
+  if (clock_mode_) DisplayClock();
 
   // Record the current board state to enforce move repitition rules.
   RecordBoardState();
@@ -254,17 +301,13 @@ void Game::Play() {
   S8 player_to_move = board_.GetPlayerToMove();
   S8 user_side = engine_.GetUserSide();
   if (game_status == kPlayerInCheck) {
-    // Inform the user that a player is in check.
     cout << GetPlayerStr(player_to_move) << " is in check" << endl;
   } else if (game_status == kDraw || pos_history_[board_] == kMaxMoveRep) {
-    // End the game if a draw has occured.
     game_active_ = false;
     RecordFinalScore();
     return;
   } else if (pos_history_[board_] == kNumMoveRepForOptionalDraw &&
              player_to_move == user_side) {
-    // Inform the human user of an optional draw. Do not give the engine the
-    // option to draw if it may legally continue playing.
     string draw_decision;
     cout << "Threefold repitition detected. "
          << "Would you like to claim a draw? (y/): ";
@@ -275,7 +318,6 @@ void Game::Play() {
       return;
     }
   } else if (game_status == kPlayerCheckmated) {
-    // Inform the user that a player has been mated.
     cout << GetPlayerStr(player_to_move) << " has been checkmated" << endl;
     game_active_ = false;
     winner_ = GetOtherPlayer(player_to_move);
@@ -285,10 +327,13 @@ void Game::Play() {
 
   string move_str;
   if (player_to_move == user_side) {
-    // Allow the user to take their turn.
     string player_name = GetPlayerStr(player_to_move);
     Move user_move;
     cout << "\n\n" << player_name << " to move" << endl;
+
+    using clock = std::chrono::high_resolution_clock;
+    auto move_start = clock::now();
+
     for (;;) {
       cout << "Enter move: ";
       getline(cin, move_str);
@@ -307,11 +352,44 @@ void Game::Play() {
         cout << "ERROR: Bad Move: " << e.what() << endl;
       }
     }
+
+    if (clock_mode_) {
+      auto elapsed = std::chrono::duration<float>(clock::now() - move_start);
+      clock_[player_to_move] -= elapsed.count();
+      if (clock_[player_to_move] <= 0.0f) {
+        cout << GetPlayerStr(player_to_move) << " lost on time" << endl;
+        game_active_ = false;
+        winner_ = GetOtherPlayer(player_to_move);
+        RecordFinalScore();
+        return;
+      }
+      clock_[player_to_move] += increment_;
+    }
   } else {
-    // Allow the engine to take its turn.
     Move engine_move;
     if (!GetOpeningMove(engine_move)) {
+      if (clock_mode_) {
+        engine_.SetSearchTime(ComputeThinkTime(player_to_move));
+      }
+
+      using clock = std::chrono::high_resolution_clock;
+      auto move_start = clock::now();
       engine_move = engine_.GetBestMove();
+
+      if (clock_mode_) {
+        auto elapsed = std::chrono::duration<float>(clock::now() - move_start);
+        clock_[player_to_move] -= elapsed.count();
+        if (clock_[player_to_move] <= 0.0f) {
+          cout << GetPlayerStr(player_to_move) << " lost on time" << endl;
+          game_active_ = false;
+          winner_ = GetOtherPlayer(player_to_move);
+          RecordFinalScore();
+          return;
+        }
+      }
+    }
+    if (clock_mode_) {
+      clock_[player_to_move] += increment_;
     }
     move_str = GetFideMoveStr(engine_move);
     cout << "\n\n"
