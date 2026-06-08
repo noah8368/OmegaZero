@@ -191,7 +191,8 @@ To reduce the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect),
 
 ### Move Generation
 
-Precomputed attack tables are used for non-sliding pieces, and sliding piece attacks are generated using the [Magic Bitboard](http://pradu.us/old/Nov27_2008/Buzz/research/magic/Bitboards.pdf) technique. The engine generates [pseudo-legal moves](https://www.chessprogramming.org/Move_Generation#Pseudo-legal), with legality verified during move execution.
+Precomputed attack tables are used for non-sliding pieces, and sliding piece attacks are generated using the [Magic Bitboard](http://pradu.us/old/Nov27_2008/Buzz/research/magic/Bitboards.pdf) technique. The engine generates [pseudo-legal moves](https://www.chessprogramming.org/Move_Generation#Pseudo-legal), with legality verified during move execution. The correctness of the move generator was confirmed using [Perft](https://www.chessprogramming.org/Perft) with
+the positions from [this page](https://www.chessprogramming.org/Perft_Results).
 
 <p align="center">
   <img src="./figs/version_nps_by_position.png" width="600" alt="NPS by Position Across Versions">
