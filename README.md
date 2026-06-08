@@ -156,6 +156,7 @@ OmegaZero uses [Principle Variation Search (PVS) and Aspiration Windows](https:/
 - [Reverse Futility Pruning (RFP)](https://www.chessprogramming.org/Reverse_Futility_Pruning)
 - [Late Move Reductions (LMR)](https://www.chessprogramming.org/Late_Move_Reductions)
 - [Late Move Pruning (LMP)](https://www.chessprogramming.org/Futility_Pruning#Move_Count_Based_Pruning)
+- [Internal Iterative Reductions (IIR)](https://www.chessprogramming.org/Internal_Iterative_Reductions)
 
 NMP, RFP, LMR, and LMP prune more aggresively if the static evaluations of a
 search line aren't [improving](https://www.chessprogramming.org/Improving).
@@ -166,15 +167,15 @@ A custom [Transposition Table](https://www.chessprogramming.org/Transposition_Ta
 
 #### Move Ordering
 
-OmegaZero prioritizes moves using:
+During Aspiration + PV Search, OmegaZero prioritizes moves using:
 
 1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
 2. Promotions and favorable captures ordered by [Static Exchange Evaluation (SEE)](https://www.chessprogramming.org/Static_Exchange_Evaluation)
 3. [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
 4. Quiet moves ordered by the [History Heuristic](https://www.chessprogramming.org/History_Heuristic) and [Countermove Heuristic](https://www.chessprogramming.org/Countermove_Heuristic)
-5. Unfavorable captures ordered by SEE
+5. Unfavorable captures ordered by SEE 
 
-Efficient move ordering increases the likelihood of early beta cutoffs, reducing the number of nodes that must be searched.
+In [Quiescence Search](#quiescence-search), moves are ordered by putting captures first. Captures are sorted according to the [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA). Efficient move ordering increases the likelihood of early beta cutoffs, reducing the number of nodes that must be searched.
 
 #### Quiescence Search
 
