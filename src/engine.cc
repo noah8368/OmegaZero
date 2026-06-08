@@ -264,6 +264,8 @@ auto Engine::AspirationSearch(int prev_score, int depth, int ply,
 constexpr S8 kNumEarlyMoves = 3;
 constexpr S8 kMinReductionDepth = 3;
 constexpr S8 kMinIirDepth = 6;
+constexpr S8 kMaxRazoringDepth = 3;
+constexpr S8 kRazoringMargin = 350;
 
 auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
                  bool null_move_allowed) -> int {
@@ -325,6 +327,13 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     improving_ = static_eval > eval_history_[ply - 4];
   } else {
     improving_ = true;
+  }
+
+  // Drop into quiescence search immediately if the current position static
+  // evalustion doesn't look promising.
+  if (depth <= kMaxRazoringDepth && !at_pv_node && !in_check &&
+      static_eval + kRazoringMargin < alpha) {
+    return QuiescenceSearch(alpha, beta);
   }
 
   if (TryReverseFutilityPrune(static_eval, depth, beta, at_pv_node, in_check)) {
