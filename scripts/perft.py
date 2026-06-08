@@ -8,7 +8,7 @@ against known-correct values.
 
     https://www.chessprogramming.org/Perft_Results
 
-Requires the main engine binary (build/OmegaZero). Build with 'make'.
+Requires the perft harness binary (build/perft_harness). Build with 'make perft'.
 
 Subcommands:
     run   — Run perft tests up to a given depth and report pass/fail.
@@ -18,7 +18,7 @@ Parameters (run subcommand):
     --max-depth   Maximum depth to test (default: 5). Higher depths take
                   exponentially longer. Depth 5 covers millions of nodes
                   and catches virtually all move generation bugs.
-    --engine      Path to OmegaZero binary (default: build/OmegaZero).
+    --harness     Path to perft_harness binary (default: build/perft_harness).
     --positions   Comma-separated position numbers to test, e.g. "1,2,5".
                   Default: all six positions.
 
@@ -41,7 +41,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
-DEFAULT_ENGINE = REPO_ROOT / "build" / "OmegaZero"
+DEFAULT_HARNESS = REPO_ROOT / "build" / "perft_harness"
 
 POSITIONS = [
     {
@@ -115,12 +115,10 @@ POSITIONS = [
 ]
 
 
-def run_perft(engine, fen, depth):
-    """Run the engine's perft and return the total node count."""
-    cmd = [str(engine), "--hce", "-i", fen, "-d", str(depth)]
-    proc = subprocess.run(
-        cmd, input="q\n", capture_output=True, text=True, timeout=600,
-    )
+def run_perft(harness, fen, depth):
+    """Run the perft harness and return the total node count."""
+    cmd = [str(harness), str(depth), fen]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
     for line in proc.stdout.splitlines():
         if line.startswith("Total:"):
@@ -129,13 +127,26 @@ def run_perft(engine, fen, depth):
     return None
 
 
+def ensure_binary(harness, target):
+    if not harness.exists():
+        print(f"Binary not found, building with 'make {target}'...")
+        result = subprocess.run(
+            ["make", target, f"-j{__import__('os').cpu_count()}"],
+            cwd=REPO_ROOT, capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            print(result.stderr)
+            sys.exit(f"Build failed. Run 'make {target}' manually.")
+        if not harness.exists():
+            sys.exit(f"Build succeeded but binary not found at {harness}")
+
+
 def cmd_run(args):
-    engine = Path(args.engine)
-    if not engine.is_absolute():
-        engine = REPO_ROOT / engine
-    engine = engine.resolve()
-    if not engine.exists():
-        sys.exit(f"Engine not found: {engine}\nRun 'make' first.")
+    harness = Path(args.harness)
+    if not harness.is_absolute():
+        harness = REPO_ROOT / harness
+    harness = harness.resolve()
+    ensure_binary(harness, "perft")
 
     if args.positions:
         indices = [int(p) - 1 for p in args.positions.split(",")]
@@ -162,7 +173,7 @@ def cmd_run(args):
 
             expected = pos["nodes"][depth]
             try:
-                actual = run_perft(engine, fen, depth)
+                actual = run_perft(harness, fen, depth)
             except subprocess.TimeoutExpired:
                 print(f"    depth {depth}: TIMEOUT (>600s)")
                 failed += 1
@@ -213,8 +224,8 @@ def main():
     run_p = sub.add_parser("run", help="Run perft tests")
     run_p.add_argument("--max-depth", type=int, default=5,
                        help="Maximum depth to test (default: 5)")
-    run_p.add_argument("--engine", default="build/OmegaZero",
-                       help="Path to engine binary (default: build/OmegaZero)")
+    run_p.add_argument("--harness", default="build/perft_harness",
+                       help="Path to perft harness (default: build/perft_harness)")
     run_p.add_argument("--positions", default=None,
                        help="Comma-separated position numbers, e.g. '1,2,5'")
 

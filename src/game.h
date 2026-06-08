@@ -47,8 +47,6 @@ class Game {
   auto OutputWinner() const -> void;
   auto Play() -> void;
   auto SavePgn(const string& opponent_name) -> void;
-  // Output the results of Perft in readable format.
-  auto Test(int depth) -> void;
 
  private:
   // Construct a Move struct from a user command.

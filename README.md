@@ -258,10 +258,11 @@ brew install stockfish cutechess graphviz cairo
 
 ```
 make              # Optimized engine binary → build/OmegaZero
-make debug        # Debug harness (ASan, -O0) → build/debug_harness
+make debug        # Self-play harness (ASan, -O0) → build/debug_harness
 make bench        # NPS benchmark harness (-O3) → build/bench_harness
-make clean        # Remove all build artifacts
+make perft        # Perft harness (-O3) → build/perft_harness
 make datagen      # NNUE training data generation harness → build/datagen_harness
+make clean        # Remove all build artifacts
 make check-deps   # Verify g++ and python3 are installed
 ```
 
@@ -351,9 +352,9 @@ python3 scripts/elo.py plot results/elo/<run>/summary.csv
 
 Measures NPS (nodes per second) across four standard positions. 
 ```bash
-python3 scripts/search_bench.py run               # benchmark current build (5s/position)
-python3 scripts/search_bench.py gauntlet           # benchmark all tagged versions
-python3 scripts/search_bench.py plot               # regenerate NPS plot
+python3 scripts/benchmark.py run               # benchmark current build (5s/position)
+python3 scripts/benchmark.py gauntlet           # benchmark all tagged versions
+python3 scripts/benchmark.py plot               # regenerate NPS plot
 ```
 
 #### Perft
@@ -365,12 +366,13 @@ python3 scripts/perft.py run --max-depth 6         # deeper (slower)
 python3 scripts/perft.py list                      # show all positions and expected values
 ```
 
-#### Debug Harness
+#### Self-Play Crash Detection
 
-Runs perft regression, eval sanity, search sanity, and self-play crash detection:
-```
-make debug
-./build/debug_harness
+Plays the engine against itself to detect crashes, illegal moves, and search errors. Built with AddressSanitizer for memory error detection.
+```bash
+python3 scripts/debug.py                          # 10 games, 0.1s/move
+python3 scripts/debug.py --games 100              # longer soak test
+python3 scripts/debug.py --games 1000 --search-time 0.05  # fast stress test
 ```
 
 ### NNUE

@@ -382,59 +382,6 @@ auto Game::SavePgn(const string& opponent_name) -> void {
   cout << "PGN saved to " << filename << endl;
 }
 
-auto Game::Test(int depth) -> void {
-  if (depth < 1) {
-    throw invalid_argument("Perft depth must be at least one");
-  }
-
-  Move user_move;
-  string user_cmd;
-  U64 subtree_node_count;
-  U64 total_node_count = 0;
-  for (;;) {
-    DisplayBoard();
-    cout << endl;
-    // Generate a list of pseudo-legal moves.
-    vector<Move> move_list = engine_.GenerateMoves();
-    for (const Move& move : move_list) {
-      try {
-        board_.MakeMove(move);
-      } catch (BadMove& e) {
-        continue;
-      }
-      subtree_node_count = engine_.Perft(depth - 1);
-      board_.UnmakeMove(move);
-      cout << GetUciMoveStr(move) << ": " << subtree_node_count << endl;
-      total_node_count += subtree_node_count;
-    }
-    cout << endl << "Total: " << total_node_count << endl;
-
-    if (depth - 1 <= 0) {
-      cout << "Maximum depth has been reached. Rerun the program to re-walk "
-              "tree."
-           << endl;
-      break;
-    }
-
-    bool got_valid_move = false;
-    while (!got_valid_move) {
-      cout << endl << "Enter command: ";
-      getline(cin, user_cmd);
-
-      if (user_cmd == "q") return;
-      try {
-        user_move = ParseMoveCmd(user_cmd);
-        board_.MakeMove(user_move);
-        got_valid_move = true;
-      } catch (BadMove& e) {
-        cout << "ERROR: Bad Move: " << e.what() << endl;
-      }
-    }
-    --depth;
-    cout << endl;
-  }
-}
-
 // Implement private member functions.
 
 auto Game::ParseMoveCmd(const string& user_cmd) -> Move {

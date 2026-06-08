@@ -27,7 +27,6 @@ static void PrintUsage(const char* prog) {
        << "  -p SIDE        Side to play: w, b, or r (default: w)\n"
        << "  -t TIME        Search time in seconds (default: 5)\n"
        << "  -i FEN         Initial position as FEN string\n"
-       << "  -d DEPTH       Run perft to this depth\n"
        << "  -o PATH        Opening book file path\n"
        << "  -n PATH        NNUE weights file path\n"
        << "  --pgn NAME     Save game as PGN with given opponent name\n"
@@ -47,7 +46,6 @@ auto main(int argc, char* argv[]) -> int {
   string nnue_path = exe_dir + "../nnue/nnue.bin";
   string pgn_opponent;
   float search_time = 5.0f;
-  int depth = -1;
   char player_side = 'w';
   bool uci_mode = false;
   bool hce_mode = false;
@@ -70,8 +68,6 @@ auto main(int argc, char* argv[]) -> int {
       search_time = std::atof(argv[++i]);
     } else if ((arg == "-i" || arg == "--initial-position") && i + 1 < argc) {
       init_pos = argv[++i];
-    } else if ((arg == "-d" || arg == "--depth") && i + 1 < argc) {
-      depth = std::atoi(argv[++i]);
     } else if ((arg == "-o" || arg == "--opening-book-path") && i + 1 < argc) {
       opening_book_path = argv[++i];
     } else if ((arg == "-n" || arg == "--nnue") && i + 1 < argc) {
@@ -88,7 +84,8 @@ auto main(int argc, char* argv[]) -> int {
   if (hce_mode) {
     if (!uci_mode) cout << "Using HCE." << endl;
   } else if (!omegazero::g_nnue.Load(nnue_path)) {
-    if (!uci_mode) cout << "WARNING: NNUE weights not found. Using HCE instead." << endl;
+    if (!uci_mode)
+      cout << "WARNING: NNUE weights not found. Using HCE instead." << endl;
   }
 
   if (uci_mode) {
@@ -102,17 +99,14 @@ auto main(int argc, char* argv[]) -> int {
         init_pos == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     omegazero::Game game(init_pos, opening_book_path, player_side, search_time,
                          on_opening, light_theme);
-    if (depth >= 0) {
-      game.Test(depth);
-    } else {
-      while (game.IsActive()) {
-        game.Play();
-      }
-      game.OutputWinner();
 
-      if (!pgn_opponent.empty()) {
-        game.SavePgn(pgn_opponent);
-      }
+    while (game.IsActive()) {
+      game.Play();
+    }
+    game.OutputWinner();
+
+    if (!pgn_opponent.empty()) {
+      game.SavePgn(pgn_opponent);
     }
   } catch (invalid_argument& e) {
     cout << "ERROR: Invalid argument: " << e.what() << endl;

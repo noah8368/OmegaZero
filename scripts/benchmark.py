@@ -7,7 +7,7 @@ four standard positions (opening, midgame, kiwipete, endgame) for a fixed
 duration. Reports NPS and search depth per position plus an overall average.
 
 Subcommands:
-    run       — Benchmark the current build (requires 'make bench' first).
+    run       — Benchmark the current build (auto-builds if needed).
     gauntlet  — Benchmark all tagged versions (v1, v2, ..., vN).
                 Builds each from a git worktree automatically.
     plot      — Regenerate the NPS bar chart from version_nps_history.csv.
@@ -25,11 +25,11 @@ Results are saved to results/benchmarking/:
     version_nps_by_position.png   — per-position NPS line chart across versions.
 
 Usage:
-    python3 scripts/search_bench.py run               # 5s/position (default)
-    python3 scripts/search_bench.py run --st 10        # 10s for more stable results
-    python3 scripts/search_bench.py gauntlet           # benchmark all tagged versions
-    python3 scripts/search_bench.py gauntlet --resume  # skip already-done versions
-    python3 scripts/search_bench.py plot               # regenerate plots
+    python3 scripts/benchmark.py run               # 5s/position (default)
+    python3 scripts/benchmark.py run --st 10        # 10s for more stable results
+    python3 scripts/benchmark.py gauntlet           # benchmark all tagged versions
+    python3 scripts/benchmark.py gauntlet --resume  # skip already-done versions
+    python3 scripts/benchmark.py plot               # regenerate plots
 """
 
 import argparse
@@ -49,6 +49,21 @@ RESULTS_BASE = REPO_ROOT / "results" / "benchmarking"
 HISTORY_CSV = RESULTS_BASE / "version_nps_history.csv"
 DETAIL_CSV = RESULTS_BASE / "version_nps_by_position.csv"
 BENCH_BIN = REPO_ROOT / "build" / "bench_harness"
+
+
+def ensure_binary(binary, target, cwd=None):
+    if not binary.exists():
+        build_dir = cwd or REPO_ROOT
+        print(f"Binary not found, building with 'make {target}'...")
+        result = subprocess.run(
+            ["make", target, f"-j{os.cpu_count()}"],
+            cwd=build_dir, capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            print(result.stderr)
+            sys.exit(f"Build failed. Run 'make {target}' manually.")
+        if not binary.exists():
+            sys.exit(f"Build succeeded but binary not found at {binary}")
 
 
 # ---------------------------------------------------------------------------
@@ -397,9 +412,7 @@ def generate_plots(current_version=None):
 # ---------------------------------------------------------------------------
 
 def cmd_run(args):
-    if not BENCH_BIN.exists():
-        sys.exit(f"Benchmark binary not found: {BENCH_BIN}\n"
-                 f"Run 'make bench' first.")
+    ensure_binary(BENCH_BIN, "bench")
 
     run_name = f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{get_version_tag()}"
     run_dir = RESULTS_BASE / run_name

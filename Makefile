@@ -15,7 +15,7 @@ DEBUG_OBJECTS = build/debug/board.o build/debug/engine.o build/debug/game.o \
                 build/debug/piece_sq_tables.o
 
 BENCH_OBJECTS = build/bench/board.o build/bench/engine.o build/bench/game.o \
-                build/bench/magics.o build/bench/nnue.o build/bench/debug_harness.o \
+                build/bench/magics.o build/bench/nnue.o build/bench/bench_harness.o \
                 build/bench/masks.o build/bench/transposition_table.o \
                 build/bench/piece_sq_tables.o
 
@@ -29,6 +29,11 @@ DATAGEN_OBJECTS = build/datagen/board.o build/datagen/engine.o build/datagen/gam
                   build/datagen/masks.o build/datagen/transposition_table.o \
                   build/datagen/piece_sq_tables.o
 
+PERFT_OBJECTS = build/perft/board.o build/perft/engine.o build/perft/game.o \
+                build/perft/magics.o build/perft/nnue.o build/perft/perft_harness.o \
+                build/perft/masks.o build/perft/transposition_table.o \
+                build/perft/piece_sq_tables.o
+
 all : build/play $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS) $(OPT_FLAGS)
 debug : build/debug $(DEBUG_OBJECTS)
@@ -39,6 +44,8 @@ trace : build/trace $(TRACE_OBJECTS)
 	$(CC) -o build/trace_harness $(TRACE_OBJECTS) $(FLAGS) $(OPT_FLAGS) -DSEARCH_TRACE
 datagen : build/datagen $(DATAGEN_OBJECTS)
 	$(CC) -o build/datagen_harness $(DATAGEN_OBJECTS) $(FLAGS) $(OPT_FLAGS) -lpthread
+perft : build/perft $(PERFT_OBJECTS)
+	$(CC) -o build/perft_harness $(PERFT_OBJECTS) $(FLAGS) $(OPT_FLAGS)
 build/play/magics.o: src/magics.cc
 	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/play/%.o: src/%.cc
@@ -59,6 +66,10 @@ build/datagen/magics.o: src/magics.cc
 	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/datagen/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS) -DNDEBUG
+build/perft/magics.o: src/magics.cc
+	$(CC) -c -o $@ $< $(FLAGS) -O0
+build/perft/%.o: src/%.cc
+	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS)
 
 build :
 	mkdir $@
@@ -72,13 +83,15 @@ build/trace : build
 	mkdir -p $@
 build/datagen : build
 	mkdir -p $@
+build/perft : build
+	mkdir -p $@
 
 src/masks.cc :
 	python3 scripts/generate_masks.py
 src/magics.cc :
 	python3 scripts/mine_magics.py
 
--include build/play/*.d build/debug/*.d build/bench/*.d build/trace/*.d build/datagen/*.d
+-include build/play/*.d build/debug/*.d build/bench/*.d build/trace/*.d build/datagen/*.d build/perft/*.d
 
 .PHONY: check-deps
 check-deps:
