@@ -263,6 +263,7 @@ auto Engine::AspirationSearch(int prev_score, int depth, int ply,
 
 constexpr S8 kNumEarlyMoves = 3;
 constexpr S8 kMinReductionDepth = 3;
+constexpr S8 kMinIirDepth = 6;
 
 auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
                  bool null_move_allowed) -> int {
@@ -288,6 +289,12 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 #endif
 
     return tt_result;
+  }
+
+  // Reduce the depth of the entire node if no hash move is present.
+  if (depth >= kMinIirDepth && pv_move.moving_piece == kNA &&
+      pv_move.castling_type == kNA) {
+    --depth;
   }
 
   if (board_->GetHalfmoveClock() >= kHalfmoveClockLimit ||
