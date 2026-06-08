@@ -259,7 +259,9 @@ inline auto Engine::RepDetected() const -> bool {
   // Scan backwards checking every 2nd entry (same side to move).
   for (int pos_idx = static_cast<int>(pos_history_.size()) - 5; pos_idx >= 0;
        pos_idx -= 2) {
-    if (pos_history_[pos_idx] == current) return true;
+    if (pos_history_[pos_idx] == current) {
+      return true;
+    };
   }
   return false;
 }

@@ -151,11 +151,14 @@ See [NNUE](#nnue) for training instructions.
 
 OmegaZero uses [Principle Variation Search (PVS) and Aspiration Windows](https://www.chessprogramming.org/Principal_Variation_Search#PVS_and_Aspiration) alongside the following pruning alogrithms to minimize nodes searched:
 
-- [Null Move Pruning](https://www.chessprogramming.org/Null_Move_Pruning)
-- [Futility Pruning](https://www.chessprogramming.org/Futility_Pruning)
-- [Reverse Futility Pruning](https://www.chessprogramming.org/Reverse_Futility_Pruning)
+- [Null Move Pruning (NMP)](https://www.chessprogramming.org/Null_Move_Pruning)
+- [Futility Pruning (FP)](https://www.chessprogramming.org/Futility_Pruning)
+- [Reverse Futility Pruning (RFP)](https://www.chessprogramming.org/Reverse_Futility_Pruning)
 - [Late Move Reductions (LMR)](https://www.chessprogramming.org/Late_Move_Reductions)
 - [Late Move Pruning (LMP)](https://www.chessprogramming.org/Futility_Pruning#Move_Count_Based_Pruning)
+
+NMP, RFP, LMR, and LMP prune more aggresively if the static evaluations of a
+search line aren't [improving](https://www.chessprogramming.org/Improving).
 
 #### Transposition Table
 
