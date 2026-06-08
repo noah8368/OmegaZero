@@ -12,7 +12,7 @@
   <a href="./LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License">
   </a>
-  <img src="https://img.shields.io/badge/Elo-1790-orange.svg" alt="1900 Elo">
+  <img src="https://img.shields.io/badge/Elo-1800-orange.svg" alt="1900 Elo">
   <img src="https://img.shields.io/badge/UCI-Compatible-success.svg" alt="UCI Compatible">
   <img src="https://img.shields.io/badge/NNUE-HalfKP-blue.svg" alt="NNUE HalfKP">
   <img src="https://img.shields.io/github/v/release/noah8368/OmegaZero" alt="Latest Release">
@@ -115,12 +115,7 @@ The bot runs the same engine described below, connected via the UCI protocol.
 
 ### Evaluation
 
-OmegaZero primarily evaluates positions using an [NNUE](https://www.chessprogramming.org/NNUE) (Efficiently Updatable Neural Network).
-
-- Uses the [HalfKP](https://www.chessprogramming.org/Stockfish_NNUE) feature set.
-- Encodes 40,960 sparse `(king_square, piece_type, piece_square)` features per perspective.
-- Typically only ~30 features are active in a given position.
-- Network weights are quantized to `int16` and `int8` for fast integer inference.
+OmegaZero primarily evaluates positions using an [NNUE](https://www.chessprogramming.org/NNUE) (Efficiently Updatable Neural Network), specifically the [HalfKP](https://www.chessprogramming.org/Stockfish_NNUE) architecture. Network weights are quantized to `int16` and `int8` for fast integer inference.
 
 <p align="center">
   <img src="./figs/nnue_loss_and_accuracy.png" width="720" alt="NNUE Training Loss and Score Accuracy">
@@ -128,7 +123,7 @@ OmegaZero primarily evaluates positions using an [NNUE](https://www.chessprogram
   <em>Training loss and score accuracy on a <a href="https://drive.google.com/drive/folders/11guxluj5UL4BMaGmm0CqD-n7u5INT-EE?usp=sharing">6M-position HCE-generated dataset</a>.<sup>3</sup></em>
 </p>
 
-If no NNUE weights file is available, OmegaZero falls back to a handcrafted evaluation inspired by [Fruit](https://www.chessprogramming.org/Fruit), incorporating:
+If the expected NNUE weights file isn't found (`nnue/nnue.bin`), OmegaZero falls back to a handcrafted evaluation inspired by [Fruit](https://www.chessprogramming.org/Fruit), incorporating:
 
 - [Material balance](https://www.chessprogramming.org/Material)
 - [Piece-square tables](https://www.chessprogramming.org/Simplified_Evaluation_Function)
@@ -139,7 +134,7 @@ If no NNUE weights file is available, OmegaZero falls back to a handcrafted eval
 
 Additional positional bonuses include the [bishop pair](https://www.chessprogramming.org/Bishop_Pair), connected rooks, [castling rights](https://www.chessprogramming.org/Castling_Rights), and [rook behind passer](https://www.chessprogramming.org/Tarrasch_Rule).
 
-See [NNUE](#nnue) for training details.
+See [NNUE](#nnue) for training instructions.
 
 ### Search
 
@@ -154,7 +149,7 @@ See [NNUE](#nnue) for training details.
   </em>
 </p>
 
-#### Search Enhancements
+OmegaZero uses [Principle Variation Search (PVS) and Aspiration Windows](https://www.chessprogramming.org/Principal_Variation_Search#PVS_and_Aspiration) alongside the following pruning alogrithms to minimize nodes searched:
 
 - [Null Move Pruning](https://www.chessprogramming.org/Null_Move_Pruning)
 - [Futility Pruning](https://www.chessprogramming.org/Futility_Pruning)
@@ -164,14 +159,7 @@ See [NNUE](#nnue) for training details.
 
 #### Transposition Table
 
-A custom [Transposition Table](https://www.chessprogramming.org/Transposition_Table) is heavily integrated into search, allowing OmegaZero to avoid re-evaluating previously explored positions and efficiently track the principal variation between iterations.
-
-- [Zobrist Hashing](https://www.chessprogramming.org/Zobrist_Hashing) is used to uniquely identify positions.
-- Stores node types, search depths, and best moves.
-- Uses a [two-tier replacement scheme](https://www.chessprogramming.org/Transposition_Table#Two-tier_System):
-  - Always Replace
-  - Depth Preferred
-- Hash moves retrieved from the table are validated before use to guard against rare hash collisions.
+A custom [Transposition Table](https://www.chessprogramming.org/Transposition_Table) is heavily integrated into search, allowing OmegaZero to avoid re-evaluating previously explored positions and efficiently track the principal variation between iterations. [Zobrist Hashing](https://www.chessprogramming.org/Zobrist_Hashing) is used to hash positions efficiently. The table uses a [two-tier replacement scheme](https://www.chessprogramming.org/Transposition_Table#Two-tier_System). Table entries store node types, search depths, and best moves.
 
 #### Move Ordering
 
@@ -187,9 +175,7 @@ Efficient move ordering increases the likelihood of early beta cutoffs, reducing
 
 #### Quiescence Search
 
-To reduce the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect), OmegaZero extends leaf nodes with a [Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) over tactical moves.
-
-Additional pruning techniques include:
+To reduce the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect), OmegaZero extends leaf nodes with a [Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) over tactical moves. The following pruning algorithms are used to keep the search space from exploding:
 
 - [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning)
 - [SEE Pruning](https://www.chessprogramming.org/Static_Exchange_Evaluation#Pruning)
@@ -202,9 +188,7 @@ Additional pruning techniques include:
 
 ### Move Generation
 
-- Precomputed attack tables are used for non-sliding pieces.
-- Sliding piece attacks are generated using the [Magic Bitboard](http://pradu.us/old/Nov27_2008/Buzz/research/magic/Bitboards.pdf) technique.
-- The engine generates [pseudo-legal moves](https://www.chessprogramming.org/Move_Generation#Pseudo-legal), with legality verified during move execution.
+Precomputed attack tables are used for non-sliding pieces, and sliding piece attacks are generated using the [Magic Bitboard](http://pradu.us/old/Nov27_2008/Buzz/research/magic/Bitboards.pdf) technique. The engine generates [pseudo-legal moves](https://www.chessprogramming.org/Move_Generation#Pseudo-legal), with legality verified during move execution.
 
 <p align="center">
   <img src="./figs/version_nps_by_position.png" width="600" alt="NPS by Position Across Versions">
@@ -214,22 +198,28 @@ Additional pruning techniques include:
 
 ### Board Representation
 
-- Hybrid board representation using both [Bitboards](https://www.chessprogramming.org/Bitboards) and an [8×8 Board](https://www.chessprogramming.org/8x8_Board).
-- Squares are indexed using [Little Endian Rank File (LERF)](https://www.chessprogramming.org/Square_Mapping_Considerations#Little-Endian_Rank-File_Mapping) mapping.
-- Bitboards are used for efficient move generation and attack calculations, while the 8×8 board simplifies position updates and move validation.
+OmegaZero uses a hybrid board representation using both [Bitboards](https://www.chessprogramming.org/Bitboards) and an [8×8 Board](https://www.chessprogramming.org/8x8_Board). Bitboards are used for efficient move generation and attack calculations, while the 8×8 board simplifies position updates and move validation. Squares are indexed using [Little Endian Rank File (LERF)](https://www.chessprogramming.org/Square_Mapping_Considerations#Little-Endian_Rank-File_Mapping) mapping. 
 
 ### Opening Book
 
-- Uses a PGN opening book containing 2,678 openings spanning the full ECO classification (A00–E99).
-- During the opening phase, a line is selected randomly to improve game variety.
-- The opening book is derived from [`p3ECO.txt`](https://www.enpassant.dk/chess/palview/manual/p3eco.htm) by Paul Onstad, with contributions from Franz Hemmer and J.E.H. Shaw.
-- The same PGN format is used by cutechess-cli during automated testing to increase opening diversity.
+OmegaZero uses a PGN opening book containing 2,678 openings spanning the full ECO classification (A00–E99). The opening book is derived from [`p3ECO.txt`](https://www.enpassant.dk/chess/palview/manual/p3eco.htm) by Paul Onstad, with contributions from Franz Hemmer and J.E.H. Shaw. During the opening phase, a line is selected randomly to improve game variety.
 
 ## Usage
 
 ### Prerequisites
 
-The `Makefile` supports GNU/Linux and macOS. Install the core dependencies first, then add optional ones as needed.
+The `Makefile` supports GNU/Linux and macOS. The easiest way to install everything is with the setup script:
+
+```bash
+./scripts/setup.sh            # full install (build tools, venv, Python packages, Stockfish, cutechess)
+./scripts/setup.sh --datagen  # minimal install for datagen server (g++, make, python3 only)
+source .venv/bin/activate     # activate the Python environment
+```
+
+Both modes are idempotent — safe to re-run. The script detects your platform (macOS via Homebrew, Linux via apt/dnf/yum), creates a `.venv/` Python environment, and skips anything already installed.
+
+<details>
+<summary><strong>Manual installation</strong></summary>
 
 **Core (required to build and play)**
 
@@ -243,12 +233,13 @@ Verify everything is in place:
 make check-deps
 ```
 
-**NNUE training** (datagen + training scripts)
+**NNUE training**
+
 ```
-pip3 install torch tqdm
+pip3 install torch numpy matplotlib tqdm Pillow cairosvg graphviz python-chess
 ```
 
-**Elo testing** ([Stockfish](https://stockfishchess.org/) + [cutechess-cli](https://github.com/cutechess/cutechess) + [matplotlib](https://matplotlib.org/))
+**Elo testing**
 
 On Ubuntu:
 ```
@@ -256,16 +247,12 @@ sudo apt-get install stockfish cutechess qtbase5-dev cmake
 pip3 install matplotlib
 ```
 
-On macOS (cutechess must be built from source):
+On macOS:
 ```bash
-brew install stockfish qt cmake
-pip3 install matplotlib --break-system-packages
-
-cd ~/path/to/OmegaZero
-git clone https://github.com/cutechess/cutechess.git
-cd cutechess && mkdir build && cd build
-cmake .. && make -j8
+brew install stockfish cutechess graphviz cairo
 ```
+
+</details>
 
 ### Building
 
@@ -289,12 +276,12 @@ White, `b` for Black, or `r` for a random selection. `[TIME]` is the amount of t
 
 To use the handcrafted eval instead of NNUE, add `--hce`:
 ```
-OmegaZero --hce -p w -t 5
+OmegaZero --hce -p b -t 1
 ```
 
 The board display defaults to dark terminal backgrounds (filled glyphs = white pieces). If using a light terminal, add `--light-theme`:
 ```
-OmegaZero --light-theme -p w
+OmegaZero --light-theme
 ```
 
 <p align="center">
@@ -305,8 +292,8 @@ OmegaZero --light-theme -p w
 
 To start from a custom position, add `-i` with a [FEN](https://www.chessprogramming.org/Forsyth-Edwards_Notation) string. Use `w` or `b` in the FEN to set which side moves first:
 ```
-OmegaZero -i "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1" -p w -t 5  # white to move
-OmegaZero -i "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" -p b -t 5  # black to move
+OmegaZero -i "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1" -p w  # white to move
+OmegaZero -i "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" -p b # black to move
 ```
 
 The format used to denote entered moves is based around [FIDE standard algebraic
@@ -339,9 +326,11 @@ The engine is single-threaded; `stop` is a no-op (search completes before input 
 
 ### Testing
 
+Use the `--help` flag for all options of the Python scripts discussed here.
+
 #### SPRT
 
-[SPRT](https://www.chessprogramming.org/Match_Statistics#SPRT) determines whether a new version is stronger than a baseline, stopping automatically once statistically significant. Uses `openings.pgn` (2,678 ECO openings) by default. See `python3 scripts/sprt.py --help` for all options.
+[SPRT](https://www.chessprogramming.org/Match_Statistics#SPRT) determines whether a new version is stronger than a baseline, stopping automatically once statistically significant. Uses `openings.pgn` (2,678 ECO openings) by default. 
 ```bash
 python3 scripts/sprt.py match v1 v3              # compare any two git refs
 python3 scripts/sprt.py gauntlet                  # SPRT across all version tags
@@ -351,7 +340,7 @@ python3 scripts/sprt.py plot                      # regenerate Elo/W-D-L charts
 
 #### Elo Estimation
 
-Fits the standard Elo logistic curve to match results against multiple Stockfish levels, producing a statistically grounded rating estimate with bootstrap confidence intervals. See `python3 scripts/elo.py --help` for all options.
+Fits the standard Elo logistic curve to match results against multiple Stockfish levels, producing a statistically grounded rating estimate with bootstrap confidence intervals.
 ```bash
 python3 scripts/elo.py run               # 500 games × 7 levels (1700–2300), 1s/move
 python3 scripts/elo.py run --games 50 --st 0.5  # quick smoke test
@@ -360,7 +349,7 @@ python3 scripts/elo.py plot results/elo/<run>/summary.csv
 
 #### Search Benchmarking
 
-Measures NPS (nodes per second) across four standard positions. See `python3 scripts/search_bench.py --help` for all options.
+Measures NPS (nodes per second) across four standard positions. 
 ```bash
 python3 scripts/search_bench.py run               # benchmark current build (5s/position)
 python3 scripts/search_bench.py gauntlet           # benchmark all tagged versions
@@ -369,7 +358,7 @@ python3 scripts/search_bench.py plot               # regenerate NPS plot
 
 #### Perft
 
-Verifies move generator correctness using [Perft](https://www.chessprogramming.org/Perft) node counting against [six standard positions](https://www.chessprogramming.org/Perft_Results). See `python3 scripts/perft.py --help` for all options.
+Verifies move generator correctness using [Perft](https://www.chessprogramming.org/Perft) node counting against [six standard positions](https://www.chessprogramming.org/Perft_Results). 
 ```bash
 python3 scripts/perft.py run                      # all 6 positions, depth 1-5
 python3 scripts/perft.py run --max-depth 6         # deeper (slower)

@@ -30,10 +30,10 @@ using std::endl;
 using std::ifstream;
 using std::invalid_argument;
 using std::ios;
+using std::istringstream;
 using std::mt19937;
 using std::ofstream;
 using std::random_device;
-using std::istringstream;
 using std::string;
 using std::uniform_int_distribution;
 using std::vector;
@@ -125,9 +125,8 @@ Game::Game(const string& init_pos, const string& opening_book_path,
           string token;
           while (iss >> token) {
             // Skip move numbers (e.g. "1.", "12."), result markers, and NAGs.
-            if (token.back() == '.' || token == "1/2-1/2" ||
-                token == "1-0" || token == "0-1" || token == "*" ||
-                token[0] == '$') {
+            if (token.back() == '.' || token == "1/2-1/2" || token == "1-0" ||
+                token == "0-1" || token == "*" || token[0] == '$') {
               continue;
             }
             moves.push_back(token);
@@ -148,9 +147,8 @@ Game::Game(const string& init_pos, const string& opening_book_path,
       istringstream iss(move_text);
       string token;
       while (iss >> token) {
-        if (token.back() == '.' || token == "1/2-1/2" ||
-            token == "1-0" || token == "0-1" || token == "*" ||
-            token[0] == '$') {
+        if (token.back() == '.' || token == "1/2-1/2" || token == "1-0" ||
+            token == "0-1" || token == "*" || token[0] == '$') {
           continue;
         }
         moves.push_back(token);
@@ -162,6 +160,8 @@ Game::Game(const string& init_pos, const string& opening_book_path,
     throw invalid_argument("Opening book can't be opened");
   }
 }
+
+constexpr S8 kMaxMoveRep = 5;
 
 auto Game::MakeEngineMove() -> Move {
   DisplayBoard();
@@ -197,32 +197,6 @@ auto Game::MakeEngineMove() -> Move {
        << "'s move: " << GetFideMoveStr(engine_move) << endl;
   board_.MakeMove(engine_move);
   return engine_move;
-}
-
-auto Game::MakeOtherEngineMove(const Move& move) -> void {
-  // Record the current board state to enforce move repitition rules.
-  RecordBoardState();
-  engine_.AddPosToHistory();
-
-  // Check the status of the game.
-  S8 game_status = engine_.GetGameStatus();
-  S8 player_to_move = board_.GetPlayerToMove();
-  if (game_status == kPlayerInCheck) {
-    // Inform the user that a player is in check.
-    cout << GetPlayerStr(player_to_move) << " is in check" << endl;
-  } else if (game_status == kDraw || pos_history_[board_] == kMaxMoveRep) {
-    // End the game if a draw has occured.
-    game_active_ = false;
-    return;
-  } else if (game_status == kPlayerCheckmated) {
-    // Inform the user that a player has been mated.
-    cout << GetPlayerStr(player_to_move) << " has been checkmated" << endl;
-    game_active_ = false;
-    winner_ = GetOtherPlayer(player_to_move);
-    return;
-  }
-
-  board_.MakeMove(move);
 }
 
 auto Game::GetOpeningMove(Move& opening_move) -> bool {
@@ -266,6 +240,8 @@ auto Game::GetOpeningMove(Move& opening_move) -> bool {
   return on_opening_;
 }
 
+constexpr S8 kNumMoveRepForOptionalDraw = 3;
+
 void Game::Play() {
   DisplayBoard();
 
@@ -286,7 +262,7 @@ void Game::Play() {
     RecordFinalScore();
     return;
   } else if (pos_history_[board_] == kNumMoveRepForOptionalDraw &&
-             player_to_move != user_side) {
+             player_to_move == user_side) {
     // Inform the human user of an optional draw. Do not give the engine the
     // option to draw if it may legally continue playing.
     string draw_decision;
@@ -360,18 +336,23 @@ auto Game::SavePgn(const string& opponent_name) -> void {
   string black = (user_side == kBlack) ? opponent_name : "OmegaZero";
 
   string result;
-  if (winner_ == kWhite) result = "1-0";
-  else if (winner_ == kBlack) result = "0-1";
-  else result = "1/2-1/2";
+  if (winner_ == kWhite)
+    result = "1-0";
+  else if (winner_ == kBlack)
+    result = "0-1";
+  else
+    result = "1/2-1/2";
 
   std::filesystem::create_directory("games");
-  string filename = "games/" + opponent_name + "_v_OmegaZero_" + datetime_str + ".pgn";
+  string filename =
+      "games/" + opponent_name + "_v_OmegaZero_" + datetime_str + ".pgn";
   ofstream f(filename);
   if (!f.is_open()) {
     throw invalid_argument("PGN file can't be created");
   }
 
-  f << "[Event \"" << opponent_name << " v OmegaZero " << date_str << " " << time_str << "\"]\n";
+  f << "[Event \"" << opponent_name << " v OmegaZero " << date_str << " "
+    << time_str << "\"]\n";
   f << "[Site \"?\"]\n";
   f << "[Date \"" << date_str << "\"]\n";
   f << "[White \"" << white << "\"]\n";
@@ -429,7 +410,8 @@ auto Game::Test(int depth) -> void {
     cout << endl << "Total: " << total_node_count << endl;
 
     if (depth - 1 <= 0) {
-      cout << "Maximum depth has been reached. Rerun the program to re-walk tree."
+      cout << "Maximum depth has been reached. Rerun the program to re-walk "
+              "tree."
            << endl;
       break;
     }
@@ -487,8 +469,8 @@ auto Game::ParseMoveCmd(const string& user_cmd) -> Move {
   S8 target_rank;
   S8 target_file;
   // Collect info from a move command formatted in FIDE algebraic notation.
-  InterpAlgNotation(cmd, move, start_rank, start_file, target_rank,
-                    target_file, capture_indicated);
+  InterpAlgNotation(cmd, move, start_rank, start_file, target_rank, target_file,
+                    capture_indicated);
   // Check a few requirements for the move's pseudo-legality.
   CheckMove(move, start_rank, start_file, target_rank, target_file,
             capture_indicated);

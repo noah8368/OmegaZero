@@ -50,11 +50,12 @@ enum GameStatus : S8 {
 
 constexpr int kSearchLimit = 128;
 
-constexpr int kBestEval = INT32_MAX;
+constexpr int kBestEval = INT32_MAX - 1;
 constexpr int kNeutralEval = -25;
 // Use -INT32_MAX rather than INT32_MIN to avoid integer overflow when
 // multipying by -1 during the search function.
-constexpr int kWorstEval = -INT32_MAX;
+constexpr int kWorstEval = 1 - INT32_MAX;
+constexpr int kInvalidEval = INT32_MAX;
 
 class Engine {
  public:
@@ -137,7 +138,6 @@ class Engine {
       -> bool;
   auto TryNullMovePrune(int alpha, int beta, int depth, int ply,
                         bool at_pv_node, bool in_check) -> bool;
-  auto ComputeStaticEval(int depth, bool at_pv_node, bool in_check) -> int;
   auto TryReverseFutilityPrune(int static_eval, int depth, int beta,
                                bool at_pv_node, bool in_check) -> bool;
   auto ShouldFutilityPrune(const Move& move, int static_eval, int depth,
@@ -172,6 +172,9 @@ class Engine {
   auto TraceIsActive(int ply) const -> bool;
 #endif
 
+  // Track if a board evaluation is improving as a line is being seared.
+  bool improving_;
+
   Board* board_;
 
   float search_time_;
@@ -180,6 +183,7 @@ class Engine {
 
   int history_heuristic_[kNumPlayers][kNumPieceTypes][kNumSq];
   int nodes_since_time_check_;
+  int eval_history_[kSearchLimit];
 
 #ifdef BENCHMARK
   uint64_t total_nodes_;
@@ -195,7 +199,7 @@ class Engine {
 
 #ifdef SEARCH_TRACE
   SearchTrace search_trace_;
-  std::vector<int> trace_path_;
+  vector<int> trace_path_;
 #endif
 
   // Keep track of information for positions that've already been evaluated.
@@ -363,14 +367,6 @@ inline auto Engine::ValidateTtMove(const Move& move) const -> bool {
   }
   return board_->GetPieceOnSq(move.start_sq) == move.moving_piece &&
          board_->GetPlayerOnSq(move.start_sq) == board_->GetPlayerToMove();
-}
-
-inline auto Engine::ComputeStaticEval(int depth, bool at_pv_node, bool in_check)
-    -> int {
-  if (depth <= kMaxFutilityPruningDepth && !at_pv_node && !in_check) {
-    return board_->Evaluate();
-  }
-  return kWorstEval;
 }
 
 inline auto Engine::TryReverseFutilityPrune(int static_eval, int depth,

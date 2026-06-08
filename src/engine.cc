@@ -24,6 +24,9 @@
 
 namespace omegazero {
 
+using std::begin;
+using std::end;
+using std::fill;
 using std::max;
 using std::min;
 using std::pair;
@@ -37,6 +40,7 @@ using std::chrono::high_resolution_clock;
 
 Engine::Engine(Board* board, S8 player_side, float search_time) {
   assert(board != nullptr);
+  improving_ = false;
   board_ = board;
 
   constexpr float kMinSearchTime = 0.1f;
@@ -57,9 +61,11 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
     throw invalid_argument("invalid side choice");
   }
 
-  // Initialize the history heuristic table to 0.
   memset(history_heuristic_, 0, sizeof(history_heuristic_));
+  fill(begin(eval_history_), end(eval_history_), kInvalidEval);
 }
+
+constexpr int kRootNodePly = 0;
 
 auto Engine::GetBestMove(int& score_out) -> Move {
   assert(!pos_history_.empty());
@@ -69,7 +75,6 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   Move best_move;
   Move move;
   board_->SavePos();
-  constexpr int kRootNodePly = 0;
 
   auto fallback_start = high_resolution_clock::now();
   vector<Move> fallback_moves = GenerateMoves();
@@ -90,11 +95,12 @@ auto Engine::GetBestMove(int& score_out) -> Move {
 
   search_start_ = high_resolution_clock::now();
   nodes_since_time_check_ = 0;
+  int prev_score = 0;
+  int search_depth = 1;
 #ifdef BENCHMARK
   total_nodes_ = 0;
 #endif
-  int prev_score = 0;
-  int search_depth = 1;
+
 #ifdef SEARCH_TRACE
   SearchTrace last_complete_trace;
   TraceInitSearch();
@@ -139,7 +145,7 @@ auto Engine::GetBestMove(int& score_out) -> Move {
 auto Engine::GetGameStatus() -> S8 {
   // Check for checks, checkmates, and draws.
   vector<Move> move_list = GenerateMoves();
-  bool no_legal_moves = true;
+  bool no_made_moves_counter = true;
   for (const Move& move : move_list) {
     try {
       board_->MakeMove(move);
@@ -148,17 +154,17 @@ auto Engine::GetGameStatus() -> S8 {
       continue;
     }
     board_->UnmakeMove(move);
-    no_legal_moves = false;
+    no_made_moves_counter = false;
     break;
   }
 
   if (board_->KingInCheck()) {
     string player_name = GetPlayerStr(board_->GetPlayerToMove());
-    if (no_legal_moves) {
+    if (no_made_moves_counter) {
       return kPlayerCheckmated;
     }
     return kPlayerInCheck;
-  } else if (no_legal_moves) {
+  } else if (no_made_moves_counter) {
     return kDraw;
   }
 
@@ -256,6 +262,7 @@ auto Engine::AspirationSearch(int prev_score, int depth, int ply,
 
 constexpr S8 kNumEarlyMoves = 3;
 constexpr S8 kMinReductionDepth = 3;
+constexpr S8 kHalfmoveClockLimit = 100;
 
 auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
                  bool null_move_allowed) -> int {
@@ -277,12 +284,12 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     if (search_trace_.recording && ply == 0) {
       alpha = pre_tt_alpha;
       beta = pre_tt_beta;
-    } else
+    }
 #endif
-      return tt_result;
+
+    return tt_result;
   }
 
-  constexpr S8 kHalfmoveClockLimit = 100;
   if (board_->GetHalfmoveClock() >= kHalfmoveClockLimit ||
       (ply > 0 && RepDetected())) {
     return kNeutralEval;
@@ -293,16 +300,26 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 
   bool in_check = board_->KingInCheck();
   bool at_pv_node = transposition_table_.PosIsPvNode(board_);
-
   if (null_move_allowed &&
       TryNullMovePrune(alpha, beta, depth, ply, at_pv_node, in_check)) {
     return beta;
   }
 
-  int static_eval = ComputeStaticEval(depth, at_pv_node, in_check);
-  if (static_eval == kWorstEval && depth <= 2 && !at_pv_node && !in_check) {
-    static_eval = board_->Evaluate();
+  // Look for the first ply we weren't in check between 2 and 4 plies ago. If
+  // the static eval has improved, or we were in check both 2 and 4 plies ago,
+  // set the improving flag to true.
+  int static_eval = in_check ? kInvalidEval : board_->Evaluate();
+  eval_history_[ply] = static_eval;
+  if (in_check)
+    improving_ = false;
+  else if (ply >= 2 && eval_history_[ply - 2] != kInvalidEval) {
+    improving_ = static_eval > eval_history_[ply - 2];
+  } else if (ply >= 4 && eval_history_[ply - 4] != kInvalidEval) {
+    improving_ = static_eval > eval_history_[ply - 4];
+  } else {
+    improving_ = true;
   }
+
   if (TryReverseFutilityPrune(static_eval, depth, beta, at_pv_node, in_check)) {
     return beta;
   }
@@ -314,7 +331,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   S8 player_to_move = board_->GetPlayerToMove();
   Move best_move;
   int best_eval = kWorstEval;
-  int legal_moves = 0;
+  int made_moves_counter = 0;
   bool futility_pruned = false;
 #ifdef SEARCH_TRACE
   int best_trace_idx = -1;
@@ -333,7 +350,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       continue;
     }
 
-    int see_val = kWorstEval;
+    int see_val = kInvalidEval;
     if (move.captured_piece != kNA) {
       see_val = board_->GetSee(move);
     }
@@ -343,7 +360,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     } catch (BadMove& e) {
       continue;
     }
-    ++legal_moves;
+    ++made_moves_counter;
     AddPosToHistory();
     bool gives_check = board_->KingInCheck();
     S8 check_ext = gives_check ? 1 : 0;
@@ -373,7 +390,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     int this_trace_idx = TraceBeginMove(move, player_to_move, ply);
 #endif
     int search_eval;
-    if (legal_moves == 1) {
+    if (made_moves_counter == 1) {
       // Search the first move (presumed to be the best) with a full window
       // and full depth.
       search_eval = -Pvs(-beta, -alpha, depth - 1 + check_ext, ply + 1, true);
@@ -382,12 +399,12 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       // and quiet to verify that the move probably isn't better than the
       // first move searched.
       bool reduced = false;
-      if (legal_moves > kNumEarlyMoves && !at_pv_node &&
+      if (made_moves_counter > kNumEarlyMoves && !at_pv_node &&
           move.castling_type == kNA && move.promoted_to_piece == kNA &&
           !gives_check && depth >= kMinReductionDepth &&
           (move.captured_piece == kNA || see_val < 0)) {
-        int depth_reduction =
-            ComputeLmrReduction(depth, legal_moves, player_to_move, move);
+        int depth_reduction = ComputeLmrReduction(depth, made_moves_counter,
+                                                  player_to_move, move);
         search_eval = -Pvs(-alpha - 1, -alpha, depth - depth_reduction - 1,
                            ply + 1, true);
         reduced = true;
@@ -397,16 +414,15 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       // null window, indicating higher depth is needed to determine if this
       // could be a good move.
       if (!reduced || search_eval > alpha) {
-        search_eval = -Pvs(-alpha - 1, -alpha, depth - 1 + check_ext, ply + 1,
-                           true);
+        search_eval =
+            -Pvs(-alpha - 1, -alpha, depth - 1 + check_ext, ply + 1, true);
       }
 
       // Re-search with the full window and full depth if the move doesn't
       // fail high or low on the full depth search, indicating the move
       // could be good.
       if (search_eval > alpha && search_eval < beta) {
-        search_eval =
-            -Pvs(-beta, -alpha, depth - 1 + check_ext, ply + 1, true);
+        search_eval = -Pvs(-beta, -alpha, depth - 1 + check_ext, ply + 1, true);
       }
     }
 
@@ -443,13 +459,12 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   TraceMarkPv(best_trace_idx, ply);
 #endif
 
-  if (legal_moves == 0) {
+  if (made_moves_counter == 0) {
     if (futility_pruned) {
       return alpha;
     }
     return board_->KingInCheck() ? kWorstEval : kNeutralEval;
   }
-
   StoreTtEntry(best_eval, orig_alpha, beta, depth, best_move);
   return best_eval;
 }
@@ -493,7 +508,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
   vector<Move> move_list = GenerateMoves(/* captures_only = */ !in_check);
   move_list = OrderMoves(move_list);
   size_t history_size_before_qmoves = pos_history_.size();
-  int legal_moves = 0;
+  int made_moves_counter = 0;
   for (const Move& move : move_list) {
     // Skip searching captures that are likely to lose material when not in
     // check.
@@ -506,7 +521,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
     } catch (BadMove& e) {
       continue;
     }
-    ++legal_moves;
+    ++made_moves_counter;
     AddPosToHistory();
     int eval = -QuiescenceSearch(-beta, -alpha, qs_depth - 1);
     board_->UnmakeMove(move);
@@ -518,7 +533,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
     alpha = max(eval, alpha);
   }
 
-  if (in_check && legal_moves == 0) {
+  if (in_check && made_moves_counter == 0) {
     return kWorstEval;
   }
 
@@ -820,6 +835,7 @@ auto Engine::TryNullMovePrune(int alpha, int beta, int depth, int ply,
   bool was_recording = TraceSuppressRecording();
 #endif
   int null_move_eval = -Pvs(-beta, -alpha, depth - R - 1, ply + 1, false);
+
 #ifdef SEARCH_TRACE
   TraceResumeRecording(was_recording);
 #endif
