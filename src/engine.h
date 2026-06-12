@@ -33,6 +33,7 @@ using std::clamp;
 using std::copy;
 using std::end;
 using std::invalid_argument;
+using std::min;
 using std::numeric_limits;
 using std::pair;
 using std::unordered_map;
@@ -49,6 +50,9 @@ enum GameStatus : S8 {
 };
 
 constexpr int kSearchLimit = 128;
+constexpr int kCorrHistSize = 16384;
+constexpr int kCorrHistGrain = 256;
+constexpr int kCorrHistMax = 256;
 
 constexpr int kBestEval = INT32_MAX - 1;
 constexpr int kNeutralEval = -25;
@@ -153,6 +157,9 @@ class Engine {
                         const vector<Move>& searched_quiet_moves) -> void;
   auto StoreTtEntry(int best_eval, int orig_alpha, int beta, int depth,
                     const Move& best_move) -> void;
+  auto UpdateCorrectionHistory(int static_eval, int search_score, int depth)
+      -> void;
+  auto GetCorrectedEval(int static_eval) const -> int;
 
 #ifdef SEARCH_TRACE
   auto TraceInitSearch() -> void;
@@ -184,6 +191,7 @@ class Engine {
   int history_heuristic_[kNumPlayers][kNumPieceTypes][kNumSq];
   int nodes_since_time_check_;
   int eval_history_[kSearchLimit];
+  int correction_history_[kNumPlayers][kCorrHistSize];
 
 #ifdef BENCHMARK
   uint64_t total_nodes_;
@@ -420,6 +428,24 @@ inline auto Engine::StoreTtEntry(int best_eval, int orig_alpha, int beta,
   } else {
     transposition_table_.Update(board_, depth, best_eval, kPvNode, best_move);
   }
+}
+
+inline auto Engine::GetCorrectedEval(int static_eval) const -> int {
+  S8 player = board_->GetPlayerToMove();
+  int idx = board_->GetPawnHash() % kCorrHistSize;
+  int correction = correction_history_[player][idx];
+  return static_eval + correction / kCorrHistGrain;
+}
+
+inline auto Engine::UpdateCorrectionHistory(int static_eval, int search_score,
+                                            int depth) -> void {
+  S8 player = board_->GetPlayerToMove();
+  int idx = board_->GetPawnHash() % kCorrHistSize;
+  int diff = search_score - static_eval;
+  int weight = min(depth + 1, 16);
+  int& entry = correction_history_[player][idx];
+  entry += (diff * kCorrHistGrain - entry) * weight / 256;
+  entry = clamp(entry, -kCorrHistMax * kCorrHistGrain, kCorrHistMax * kCorrHistGrain);
 }
 
 }  // namespace omegazero

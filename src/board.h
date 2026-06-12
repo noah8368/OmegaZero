@@ -203,6 +203,7 @@ class Board {
 
   // Return an (almost) unique hash that represents the current board state.
   auto GetBoardHash() const -> U64;
+  auto GetPawnHash() const -> U64;
 
   auto ClearPawnTable() -> void;
   // Resets information edited during search after a search is interrupted
@@ -249,9 +250,6 @@ class Board {
                              Bitboard black_attackspan,
                              Bitboard black_attack_map,
                              Bitboard black_defender_map) const -> int;
-
-  // Get a hash of the current pawn structure;
-  auto GetPawnHash() const -> U64;
 
   auto AddPiece(S8 piece_type, S8 player, S8 sq) -> void;
   auto InitHash() -> void;

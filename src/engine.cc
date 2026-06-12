@@ -62,6 +62,7 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   }
 
   memset(history_heuristic_, 0, sizeof(history_heuristic_));
+  memset(correction_history_, 0, sizeof(correction_history_));
   fill(begin(eval_history_), end(eval_history_), kInvalidEval);
 }
 
@@ -317,7 +318,8 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   // Look for the first ply we weren't in check between 2 and 4 plies ago. If
   // the static eval has improved, or we were in check both 2 and 4 plies ago,
   // set the improving flag to true.
-  int static_eval = in_check ? kInvalidEval : board_->Evaluate();
+  int raw_static_eval = in_check ? kInvalidEval : board_->Evaluate();
+  int static_eval = in_check ? kInvalidEval : GetCorrectedEval(raw_static_eval);
   eval_history_[ply] = static_eval;
   if (in_check)
     improving_ = false;
@@ -482,6 +484,9 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     return board_->KingInCheck() ? kWorstEval : kNeutralEval;
   }
   StoreTtEntry(best_eval, orig_alpha, beta, depth, best_move);
+  if (!in_check && best_eval < beta) {
+    UpdateCorrectionHistory(raw_static_eval, best_eval, depth);
+  }
   return best_eval;
 }
 
