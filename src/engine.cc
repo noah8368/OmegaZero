@@ -62,6 +62,7 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   }
 
   memset(history_heuristic_, 0, sizeof(history_heuristic_));
+  memset(continuation_history_, 0, sizeof(continuation_history_));
   memset(correction_history_, 0, sizeof(correction_history_));
   fill(begin(eval_history_), end(eval_history_), kInvalidEval);
 }
@@ -602,10 +603,17 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
       int move_bonus =
           history_heuristic_[player_to_move][move.moving_piece][move.target_sq];
       Move prev_move;
-      if (board_->GetPrevMove(prev_move) && prev_move.castling_type == kNA &&
-          move ==
-              countermove_table_[prev_move.moving_piece][prev_move.target_sq]) {
-        move_bonus += kCountermoveBonus;
+      if (board_->GetPrevMove(prev_move) && prev_move.castling_type == kNA) {
+        // Add continuation history bonus.
+        move_bonus +=
+            continuation_history_[prev_move.moving_piece][prev_move.target_sq]
+                                 [move.moving_piece][move.target_sq];
+
+        // Add countermove history bonus.
+        if (move ==
+            countermove_table_[prev_move.moving_piece][prev_move.target_sq]) {
+          move_bonus += kCountermoveBonus;
+        }
       }
       history_silent_move_pairs.emplace_back(move, move_bonus);
     }
@@ -876,12 +884,18 @@ auto Engine::RecordBetaCutoff(const Move& move, int depth, int ply,
   RecordKillerMove(move, ply);
   if (move.castling_type == kNA) {
     Move prev_move;
-    if (board_->GetPrevMove(prev_move) && prev_move.castling_type == kNA) {
+    bool prev_move_exists =
+        board_->GetPrevMove(prev_move) && prev_move.castling_type == kNA;
+    if (prev_move_exists) {
       countermove_table_[prev_move.moving_piece][prev_move.target_sq] = move;
+      UpdateContinuationHistory(prev_move, move, depth * depth);
     }
     UpdateHistoryHeuristic(move, depth * depth);
     for (const Move& quiet_move : searched_quiet_moves) {
       UpdateHistoryHeuristic(quiet_move, -depth * depth);
+      if (prev_move_exists) {
+        UpdateContinuationHistory(prev_move, quiet_move, -depth * depth);
+      }
     }
   }
 }

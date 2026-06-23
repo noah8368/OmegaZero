@@ -160,7 +160,12 @@ OmegaZero uses [Principle Variation Search (PVS) and Aspiration Windows](https:/
 - [Razoring](https://www.chessprogramming.org/Razoring)
 
 NMP, RFP, LMR, and LMP prune more aggresively if the static evaluations of a
-search line aren't [improving](https://www.chessprogramming.org/Improving).
+search line aren't [improving](https://www.chessprogramming.org/Improving). The
+static evaluations driving these decisions are further refined by a
+[Correction History](https://www.chessprogramming.org/Static_Evaluation_Correction_History),
+which learns the systematic error between the handcrafted evaluation and deeper
+search results (indexed by pawn structure) and adjusts future evaluations
+accordingly.
 
 #### Transposition Table
 
@@ -173,7 +178,7 @@ During Aspiration + PV Search, OmegaZero prioritizes moves using:
 1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
 2. Promotions and favorable captures ordered by [Static Exchange Evaluation (SEE)](https://www.chessprogramming.org/Static_Exchange_Evaluation)
 3. [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
-4. Quiet moves ordered by the [History Heuristic](https://www.chessprogramming.org/History_Heuristic) and [Countermove Heuristic](https://www.chessprogramming.org/Countermove_Heuristic)
+4. Quiet moves ordered by the [History Heuristic](https://www.chessprogramming.org/History_Heuristic) and [Countermove Heuristic](https://www.chessprogramming.org/Countermove_Heuristic), refined by a Continuation History that scores each quiet move in the context of the previous move
 5. Unfavorable captures ordered by SEE 
 
 In [Quiescence Search](#quiescence-search), moves are ordered by putting captures first. Captures are sorted according to the [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA). Efficient move ordering increases the likelihood of early beta cutoffs, reducing the number of nodes that must be searched.
@@ -441,4 +446,4 @@ python3 scripts/mine_magics.py
 <sup>1</sup> Lichess rating
 <sup>2</sup> Chess.com rating
 <sup>3</sup> All plots use [OmegaZero v3](https://github.com/noah8368/OmegaZero/releases/tag/v3)
-<sup>3</sup> All example games use [OmegaZero v1](https://github.com/noah8368/OmegaZero/releases/tag/v1)
+<sup>4</sup> All example games use [OmegaZero v1](https://github.com/noah8368/OmegaZero/releases/tag/v1)
