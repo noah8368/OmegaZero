@@ -178,7 +178,7 @@ During Aspiration + PV Search, OmegaZero prioritizes moves using:
 1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
 2. Promotions and favorable captures ordered by [Static Exchange Evaluation (SEE)](https://www.chessprogramming.org/Static_Exchange_Evaluation)
 3. [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
-4. Quiet moves ordered by the [History Heuristic](https://www.chessprogramming.org/History_Heuristic) and [Countermove Heuristic](https://www.chessprogramming.org/Countermove_Heuristic), refined by a Continuation History that scores each quiet move in the context of the previous move
+4. Quiet moves ordered by [History Heuristic](https://www.chessprogramming.org/History_Heuristic), [Countermove Heuristic](https://www.chessprogramming.org/Countermove_Heuristic), and [Continuation History](https://www.chessprogramming.org/History_Heuristic#Continuation_History).
 5. Unfavorable captures ordered by SEE 
 
 In [Quiescence Search](#quiescence-search), moves are ordered by putting captures first. Captures are sorted according to the [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA). Efficient move ordering increases the likelihood of early beta cutoffs, reducing the number of nodes that must be searched.
