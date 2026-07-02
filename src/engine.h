@@ -54,12 +54,10 @@ constexpr int kCorrHistSize = 16384;
 constexpr int kCorrHistGrain = 256;
 constexpr int kCorrHistMax = 256;
 
-constexpr int kBestEval = INT32_MAX - 1;
+constexpr int kBestEval = 32000;
 constexpr int kNeutralEval = -25;
-// Use -INT32_MAX rather than INT32_MIN to avoid integer overflow when
-// multipying by -1 during the search function.
-constexpr int kWorstEval = 1 - INT32_MAX;
-constexpr int kInvalidEval = INT32_MAX;
+constexpr int kWorstEval = -32000;
+constexpr int kInvalidEval = 32001;
 
 class Engine {
  public:
@@ -111,10 +109,10 @@ class Engine {
   auto ValidateTtMove(const Move& move) const -> bool;
   auto ProbeTt(Move& pv_move, int& alpha, int& beta, int depth, int& result)
       -> bool;
-  auto TryNullMovePrune(int alpha, int beta, int depth, int ply,
-                        bool at_pv_node, bool in_check) -> bool;
-  auto TryReverseFutilityPrune(int static_eval, int depth, int beta,
-                               bool at_pv_node, bool in_check) -> bool;
+  auto ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
+                           bool at_pv_node, bool in_check) -> bool;
+  auto ShouldReverseFutilityPrune(int static_eval, int depth, int beta,
+                                  bool at_pv_node, bool in_check) -> bool;
   auto ShouldFutilityPrune(const Move& move, int static_eval, int depth,
                            bool at_pv_node, bool in_check, int alpha) -> bool;
   auto ShouldLateMovePrune(const Move& move, int num_quiet_searched, int depth,
@@ -139,6 +137,7 @@ class Engine {
   auto GetCorrectedEval(int static_eval) const -> int;
   auto ComputeLmrReduction(int depth, int legal_moves, S8 player_to_move,
                            const Move& move) -> int;
+  auto TrySingularExtension(int depth, int ply) -> bool;
 
   // Move ordering (vector<Move>).
   // Attempts to predict which moves are likely to be better, and order those
@@ -204,6 +203,7 @@ class Engine {
 #endif
 
   Move countermove_table_[kNumPieceTypes][kNumSq];
+  Move excluded_move_;
 
   pair<Move, Move> killer_moves_[kSearchLimit];
 
@@ -310,9 +310,9 @@ inline auto Engine::ValidateTtMove(const Move& move) const -> bool {
 constexpr int kFutilityMargin = 200;
 constexpr int kMaxFutilityPruningDepth = 2;
 
-inline auto Engine::TryReverseFutilityPrune(int static_eval, int depth,
-                                            int beta, bool at_pv_node,
-                                            bool in_check) -> bool {
+inline auto Engine::ShouldReverseFutilityPrune(int static_eval, int depth,
+                                               int beta, bool at_pv_node,
+                                               bool in_check) -> bool {
   if (depth > 2 || at_pv_node || in_check) {
     return false;
   }

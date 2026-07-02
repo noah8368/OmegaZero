@@ -281,8 +281,10 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   if (search_trace_.recording && ply == 0) {
     trace_path_.clear();
   }
-  int pre_tt_alpha = alpha, pre_tt_beta = beta;
+  int pre_tt_alpha = alpha;
+  int pre_tt_beta = beta;
 #endif
+
   int tt_result;
   if (ProbeTt(pv_move, alpha, beta, depth, tt_result)) {
 #ifdef SEARCH_TRACE
@@ -312,7 +314,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   bool in_check = board_->KingInCheck();
   bool at_pv_node = transposition_table_.PosIsPvNode(board_);
   if (null_move_allowed &&
-      TryNullMovePrune(alpha, beta, depth, ply, at_pv_node, in_check)) {
+      ShouldNullMovePrune(alpha, beta, depth, ply, at_pv_node, in_check)) {
     return beta;
   }
 
@@ -339,9 +341,12 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     return QuiescenceSearch(alpha, beta);
   }
 
-  if (TryReverseFutilityPrune(static_eval, depth, beta, at_pv_node, in_check)) {
+  if (ShouldReverseFutilityPrune(static_eval, depth, beta, at_pv_node,
+                                 in_check)) {
     return beta;
   }
+
+  // TODO: Call TrySingularExtension(int depth, int ply).
 
   vector<Move> move_list = GenerateMoves();
   move_list = OrderMoves(move_list, ply);
@@ -359,6 +364,11 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   // --- Move loop ---
   for (size_t move_idx = 0; move_idx < move_list.size(); ++move_idx) {
     Move move = move_list[move_idx];
+    // Skip a candidate singular move during null window searches for singular
+    // search extensions.
+    if (move == excluded_move_) {
+      continue;
+    }
 
     if (ShouldFutilityPrune(move, static_eval, depth, at_pv_node, in_check,
                             alpha)) {
@@ -559,6 +569,22 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
   }
 
   return alpha;
+}
+
+constexpr int kSingularDepthMin = 6;
+
+auto Engine::TrySingularExtension(int depth, int ply) -> bool {
+  // bool not_in_extension =
+  //     excluded_move_.moving_piece == kNA && excluded_move_.castling_type ==
+  //     kNA;
+  // bool pv_move_valid =
+  //     pv_move.moving_piece != kNA || pv_move.castling_type != kNA;
+  // bool not_mate_line = abs(tt_result) < kBestEval - kSearchLimit;
+
+  // return (depth >= kSingularDepthMin && not_in_extension && pv_move_valid &&
+  //         not_mate_line && tt_depth >= depth - 3 &&
+  //         (tt_node_type == kPvNode || tt_node_type == kCutNode));
+  return false;
 }
 
 // --- Private member functions: move ordering ---
@@ -849,8 +875,8 @@ auto Engine::ProbeTt(Move& pv_move, int& alpha, int& beta, int depth,
   return false;
 }
 
-auto Engine::TryNullMovePrune(int alpha, int beta, int depth, int ply,
-                              bool at_pv_node, bool in_check) -> bool {
+auto Engine::ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
+                                 bool at_pv_node, bool in_check) -> bool {
   constexpr int kNullMoveDepthMin = 4;
   constexpr int kNullMoveDepthHighR = 6;
   if (depth < kNullMoveDepthMin || at_pv_node || !ZugzwangUnlikely() ||
