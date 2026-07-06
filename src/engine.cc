@@ -75,7 +75,7 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   for (auto& km : killer_moves_) km = {};
   size_t saved_history_size = pos_history_.size();
   Move best_move;
-  Move move;
+  Move move = {};
   board_->SavePos();
 
   auto fallback_start = high_resolution_clock::now();
@@ -286,20 +286,20 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 #endif
 
   int tt_result;
-  if (ProbeTt(pv_move, alpha, beta, depth, tt_result)) {
+  TableEntry hash_entry = transposition_table_.GetHashEntry(board_);
+  if (ProbeTt(alpha, beta, depth, tt_result)) {
 #ifdef SEARCH_TRACE
     if (search_trace_.recording && ply == 0) {
       alpha = pre_tt_alpha;
       beta = pre_tt_beta;
     }
 #endif
-
+    pv_move = hash_entry.hash_move;
     return tt_result;
   }
 
   // Reduce the depth of the entire node if no hash move is present.
-  if (depth >= kMinIirDepth && pv_move.moving_piece == kNA &&
-      pv_move.castling_type == kNA) {
+  if (depth >= kMinIirDepth && !ValidateTtMove(hash_entry.hash_move)) {
     --depth;
   }
 
@@ -346,7 +346,10 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     return beta;
   }
 
-  // TODO: Call TrySingularExtension(int depth, int ply).
+  int singular_ext = TrySingularExtension(hash_entry, depth, ply, beta);
+  if (singular_ext == kNA) {
+    return beta;
+  }
 
   vector<Move> move_list = GenerateMoves();
   move_list = OrderMoves(move_list, ply);
@@ -392,7 +395,11 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     ++made_moves_counter;
     AddPosToHistory();
     bool gives_check = board_->KingInCheck();
-    S8 check_ext = gives_check ? 1 : 0;
+    int check_ext = gives_check ? 1 : 0;
+    int ext = check_ext;
+    if (move == hash_entry.hash_move) {
+      ext = max(singular_ext, check_ext);
+    }
 
     int num_quiet_searched = static_cast<int>(searched_quiet_moves.size());
     if (ShouldLateMovePrune(move, num_quiet_searched, depth, at_pv_node,
@@ -422,7 +429,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     if (made_moves_counter == 1) {
       // Search the first move (presumed to be the best) with a full window
       // and full depth.
-      search_eval = -Pvs(-beta, -alpha, depth - 1 + check_ext, ply + 1, true);
+      search_eval = -Pvs(-beta, -alpha, depth - 1 + ext, ply + 1, true);
     } else {
       // Search with a reduced depth and null window for moves that are late
       // and quiet to verify that the move probably isn't better than the
@@ -443,15 +450,14 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       // null window, indicating higher depth is needed to determine if this
       // could be a good move.
       if (!reduced || search_eval > alpha) {
-        search_eval =
-            -Pvs(-alpha - 1, -alpha, depth - 1 + check_ext, ply + 1, true);
+        search_eval = -Pvs(-alpha - 1, -alpha, depth - 1 + ext, ply + 1, true);
       }
 
       // Re-search with the full window and full depth if the move doesn't
       // fail high or low on the full depth search, indicating the move
       // could be good.
       if (search_eval > alpha && search_eval < beta) {
-        search_eval = -Pvs(-beta, -alpha, depth - 1 + check_ext, ply + 1, true);
+        search_eval = -Pvs(-beta, -alpha, depth - 1 + ext, ply + 1, true);
       }
     }
 
@@ -573,18 +579,33 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
 
 constexpr int kSingularDepthMin = 6;
 
-auto Engine::TrySingularExtension(int depth, int ply) -> bool {
-  // bool not_in_extension =
-  //     excluded_move_.moving_piece == kNA && excluded_move_.castling_type ==
-  //     kNA;
-  // bool pv_move_valid =
-  //     pv_move.moving_piece != kNA || pv_move.castling_type != kNA;
-  // bool not_mate_line = abs(tt_result) < kBestEval - kSearchLimit;
+auto Engine::TrySingularExtension(const TableEntry& hash_entry, int depth,
+                                  int ply, int beta) -> int {
+  bool not_in_extension =
+      excluded_move_.moving_piece == kNA && excluded_move_.castling_type == kNA;
+  bool not_mate = abs(hash_entry.eval) < kBestEval - kSearchLimit;
+  bool deep_enough = hash_entry.search_depth >= depth - 3;
+  bool not_all_node =
+      (hash_entry.node_type == kPvNode || hash_entry.node_type == kCutNode);
 
-  // return (depth >= kSingularDepthMin && not_in_extension && pv_move_valid &&
-  //         not_mate_line && tt_depth >= depth - 3 &&
-  //         (tt_node_type == kPvNode || tt_node_type == kCutNode));
-  return false;
+  bool should_extend = (depth >= kSingularDepthMin && not_in_extension &&
+                        ValidateTtMove(hash_entry.hash_move) && not_mate &&
+                        deep_enough && not_all_node);
+  if (should_extend) {
+    int singular_beta = hash_entry.eval - 2 * depth;
+    excluded_move_ = hash_entry.hash_move;
+    int half_depth = (depth - 1) / 2;
+    int singular_score =
+        Pvs(singular_beta - 1, singular_beta, half_depth, ply + 1, false);
+    excluded_move_ = Move{};
+
+    if (singular_score < singular_beta) {
+      return 1;
+    } else if (singular_score >= beta) {
+      return kNA;
+    }
+  }
+  return 0;
 }
 
 // --- Private member functions: move ordering ---
@@ -843,19 +864,13 @@ auto Engine::AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
 
 // --- Private member functions: transposition table & pruning helpers ---
 
-auto Engine::ProbeTt(Move& pv_move, int& alpha, int& beta, int depth,
-                     int& result) -> bool {
+auto Engine::ProbeTt(int& alpha, int& beta, int depth, int& result) -> bool {
   int stored_eval;
   S8 node_type;
   if (!transposition_table_.Access(board_, depth, stored_eval, node_type)) {
     return false;
   }
   if (node_type == kPvNode) {
-    Move hash_move = transposition_table_.GetHashMove(board_);
-    if (!ValidateTtMove(hash_move)) {
-      return false;
-    }
-    pv_move = hash_move;
     result = stored_eval;
     return true;
   }
@@ -865,10 +880,6 @@ auto Engine::ProbeTt(Move& pv_move, int& alpha, int& beta, int depth,
     beta = min(beta, stored_eval);
   }
   if (alpha >= beta) {
-    Move hash_move = transposition_table_.GetHashMove(board_);
-    if (ValidateTtMove(hash_move)) {
-      pv_move = hash_move;
-    }
     result = stored_eval;
     return true;
   }

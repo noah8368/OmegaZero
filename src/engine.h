@@ -107,8 +107,7 @@ class Engine {
   // used.
   auto ZugzwangUnlikely() const -> bool;
   auto ValidateTtMove(const Move& move) const -> bool;
-  auto ProbeTt(Move& pv_move, int& alpha, int& beta, int depth, int& result)
-      -> bool;
+  auto ProbeTt(int& alpha, int& beta, int depth, int& result) -> bool;
   auto ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
                            bool at_pv_node, bool in_check) -> bool;
   auto ShouldReverseFutilityPrune(int static_eval, int depth, int beta,
@@ -137,7 +136,8 @@ class Engine {
   auto GetCorrectedEval(int static_eval) const -> int;
   auto ComputeLmrReduction(int depth, int legal_moves, S8 player_to_move,
                            const Move& move) -> int;
-  auto TrySingularExtension(int depth, int ply) -> bool;
+  auto TrySingularExtension(const TableEntry& hash_entry, int depth, int ply,
+                            int beta) -> int;
 
   // Move ordering (vector<Move>).
   // Attempts to predict which moves are likely to be better, and order those

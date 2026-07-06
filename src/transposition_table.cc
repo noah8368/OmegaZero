@@ -66,33 +66,33 @@ auto TranspositionTable::PosIsPvNode(const Board* board) const -> bool {
   return false;
 }
 
-auto TranspositionTable::GetHashMove(const Board* board) const -> Move {
+auto TranspositionTable::GetHashEntry(const Board* board) const -> TableEntry {
   assert(board != nullptr);
   U64 board_hash = board->GetBoardHash();
   int index = board_hash & kHashMask;
-  Move hash_move;
+  TableEntry hash_entry = {};
   if (occupancy_table_[index]) {
     TableEntry table_entry = depth_pref_entries_[index];
     // Check the "depth preferred" table first.
     if (table_entry.board_hash == board_hash) {
-      hash_move = table_entry.hash_move;
+      hash_entry = table_entry;
     } else {
       // Check the "always replace" table if a collision was detected in the
       // "depth preferred" table.
       table_entry = always_replace_entries_[index];
       if (table_entry.board_hash == board_hash) {
-        hash_move = table_entry.hash_move;
+        hash_entry = table_entry;
       }
     }
   }
-  return hash_move;
+  return hash_entry;
 }
 
 auto TranspositionTable::Update(const Board* board, int depth, int eval,
-                                S8 node_type, const Move& hash_move) -> void {
+                                S8 node_type, const Move& hash_entry) -> void {
   assert(board != nullptr);
   TableEntry new_entry;
-  new_entry.hash_move = hash_move;
+  new_entry.hash_move = hash_entry;
   U64 board_hash = board->GetBoardHash();
   new_entry.board_hash = board_hash;
   new_entry.search_depth = depth;

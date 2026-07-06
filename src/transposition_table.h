@@ -53,6 +53,7 @@ class TranspositionTable {
   // Return if the given board position has been stored as a PV node.
   auto PosIsPvNode(const Board* board) const -> bool;
 
+  auto GetHashEntry(const Board* board) const -> TableEntry;
   auto GetHashMove(const Board* board) const -> Move;
 
   auto Update(const Board* board, int depth, int eval, S8 node_type,
@@ -72,6 +73,11 @@ inline TranspositionTable::TranspositionTable() {
   always_replace_entries_.resize(kTableSize);
   depth_pref_entries_.resize(kTableSize);
   occupancy_table_.resize(kTableSize, false);
+}
+
+inline auto TranspositionTable::GetHashMove(const Board* board) const -> Move {
+  TableEntry entry = GetHashEntry(board);
+  return entry.hash_move;
 }
 
 inline auto TranspositionTable::Update(const Board* board, int depth, int eval,
