@@ -158,6 +158,7 @@ OmegaZero uses [Principle Variation Search (PVS) and Aspiration Windows](https:/
 - [Late Move Pruning (LMP)](https://www.chessprogramming.org/Futility_Pruning#Move_Count_Based_Pruning)
 - [Internal Iterative Reductions (IIR)](https://www.chessprogramming.org/Internal_Iterative_Reductions)
 - [Razoring](https://www.chessprogramming.org/Razoring)
+- [Singular Extensions](https://www.chessprogramming.org/Singular_Extensions)
 
 NMP, RFP, LMR, and LMP prune more aggresively if the static evaluations of a
 search line aren't [improving](https://www.chessprogramming.org/Improving). The
