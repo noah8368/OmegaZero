@@ -355,6 +355,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   vector<Move> move_list = GenerateMoves();
   move_list = OrderMoves(move_list, ply);
   vector<Move> searched_quiet_moves;
+  vector<Move> searched_captures;
   size_t history_size_before_moves = pos_history_.size();
   S8 player_to_move = board_->GetPlayerToMove();
   Move best_move;
@@ -479,15 +480,21 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 
     alpha = max(alpha, search_eval);
     if (alpha >= beta) {
-      RecordBetaCutoff(move, depth, ply, searched_quiet_moves);
+      RecordBetaCutoff(move, depth, ply, searched_quiet_moves,
+                       searched_captures);
 #ifdef SEARCH_TRACE
       TraceMarkBetaCutoff(move_list, move_idx, player_to_move, ply);
 #endif
       break;
     }
 
-    if (move.captured_piece == kNA && move.castling_type == kNA) {
-      searched_quiet_moves.push_back(move);
+    // Keep track of searched moves for history and capture maluses.
+    if (move.castling_type == kNA) {
+      if (move.captured_piece == kNA) {
+        searched_quiet_moves.push_back(move);
+      } else {
+        searched_captures.push_back(move);
+      }
     }
   }
 
@@ -534,8 +541,8 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
     alpha = max(stand_pat_eval, alpha);
 
     if (!InEndgame()) {
-      // Perfrom Delta Pruninhg if the position is extremely poor. It is assumed
-      // it won't improve enough to exceed alpha.
+      // Perform Delta Pruning if the position is extremely poor. It is
+      // assumed it won't improve enough to exceed alpha.
       if (stand_pat_eval < alpha - kDelta) {
         return alpha;
       }
@@ -921,8 +928,13 @@ auto Engine::ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
 }
 
 auto Engine::RecordBetaCutoff(const Move& move, int depth, int ply,
-                              const vector<Move>& searched_quiet_moves)
-    -> void {
+                              const vector<Move>& searched_quiet_moves,
+                              const vector<Move>& searched_captures) -> void {
+  // Penalize captures that were searched but didn't cause the cutoff.
+  for (const Move& searched_capture : searched_captures) {
+    UpdateCaptureHistory(searched_capture, -depth * depth);
+  }
+  // Reward captures that caused a beta-cutoff.
   if (move.captured_piece != kNA) {
     UpdateCaptureHistory(move, depth * depth);
     return;

@@ -33,6 +33,7 @@ using std::clamp;
 using std::copy;
 using std::end;
 using std::invalid_argument;
+using std::max;
 using std::min;
 using std::numeric_limits;
 using std::pair;
@@ -162,7 +163,8 @@ class Engine {
       -> void;
   auto UpdateCaptureHistory(const Move& move, int bonus) -> void;
   auto RecordBetaCutoff(const Move& move, int depth, int ply,
-                        const vector<Move>& searched_quiet_moves) -> void;
+                        const vector<Move>& searched_quiet_moves,
+                        const vector<Move>& searched_captures) -> void;
   auto StoreTtEntry(int best_eval, int orig_alpha, int beta, int depth,
                     const Move& best_move) -> void;
 
@@ -396,7 +398,7 @@ inline auto Engine::ComputeLmrReduction(int depth, int legal_moves,
     // Reduce depth more if the line's evaluations aren't improving.
     ++reduction;
   }
-  return std::max(1, reduction);
+  return max(1, reduction);
 }
 
 // --- Move generation and state updates (void) ---
