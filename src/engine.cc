@@ -64,6 +64,7 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   memset(history_heuristic_, 0, sizeof(history_heuristic_));
   memset(continuation_history_, 0, sizeof(continuation_history_));
   memset(correction_history_, 0, sizeof(correction_history_));
+  memset(capture_history_, 0, sizeof(capture_history_));
   fill(begin(eval_history_), end(eval_history_), kInvalidEval);
 }
 
@@ -611,6 +612,7 @@ auto Engine::TrySingularExtension(const TableEntry& hash_entry, int depth,
 // --- Private member functions: move ordering ---
 
 constexpr int kCountermoveBonus = 5000;
+constexpr int kCaptureSeeWeight = 32;
 
 auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
     -> vector<Move> {
@@ -623,20 +625,27 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
   vector<Move> ordered_moves;
   ordered_moves.reserve(move_list.size());
   int see_val;
+  S8 player_to_move = board_->GetPlayerToMove();
   for (const Move& move : move_list) {
     // Prioritize a move if it's the previously calculated best move of a
     // node.
     if (move == hash_move) {
       ordered_moves.push_back(move);
     } else if (move.promoted_to_piece != kNA) {
-      high_see_capture_pairs.emplace_back(
-          move, kPieceVals[move.promoted_to_piece] - kPieceVals[kPawn]);
+      int promotion_bonus =
+          kCaptureSeeWeight *
+          (kPieceVals[move.promoted_to_piece] - kPieceVals[kPawn]);
+      high_see_capture_pairs.emplace_back(move, promotion_bonus);
     } else if (move.captured_piece != kNA) {
       see_val = board_->GetSee(move);
+      int capture_history_val =
+          capture_history_[player_to_move][move.moving_piece][move.target_sq]
+                          [move.captured_piece];
+      int capture_bonus = kCaptureSeeWeight * see_val + capture_history_val;
       if (see_val >= 0) {
-        high_see_capture_pairs.emplace_back(move, see_val);
+        high_see_capture_pairs.emplace_back(move, capture_bonus);
       } else {
-        low_see_capture_pairs.emplace_back(move, see_val);
+        low_see_capture_pairs.emplace_back(move, capture_bonus);
       }
     } else if (IsKillerMove(move, ply)) {
       // Use the Killer Move heuristic to order quiet moves.
@@ -646,7 +655,6 @@ auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
     } else {
       // Use history and countermove heuristics to order silent, non-killer
       // moves.
-      S8 player_to_move = board_->GetPlayerToMove();
       int move_bonus =
           history_heuristic_[player_to_move][move.moving_piece][move.target_sq];
       Move prev_move;
@@ -916,6 +924,7 @@ auto Engine::RecordBetaCutoff(const Move& move, int depth, int ply,
                               const vector<Move>& searched_quiet_moves)
     -> void {
   if (move.captured_piece != kNA) {
+    UpdateCaptureHistory(move, depth * depth);
     return;
   }
   RecordKillerMove(move, ply);

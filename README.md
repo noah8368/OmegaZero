@@ -149,7 +149,7 @@ See [NNUE](#nnue) for training instructions.
   </em>
 </p>
 
-OmegaZero uses [Principle Variation Search (PVS) and Aspiration Windows](https://www.chessprogramming.org/Principal_Variation_Search#PVS_and_Aspiration) alongside the following pruning alogrithms to minimize nodes searched:
+OmegaZero uses [Principle Variation Search (PVS) and Aspiration Windows](https://www.chessprogramming.org/Principal_Variation_Search#PVS_and_Aspiration) alongside the following pruning alogrithms to maximize search depth:
 
 - [Null Move Pruning (NMP)](https://www.chessprogramming.org/Null_Move_Pruning)
 - [Futility Pruning (FP)](https://www.chessprogramming.org/Futility_Pruning)
@@ -163,10 +163,7 @@ OmegaZero uses [Principle Variation Search (PVS) and Aspiration Windows](https:/
 NMP, RFP, LMR, and LMP prune more aggresively if the static evaluations of a
 search line aren't [improving](https://www.chessprogramming.org/Improving). The
 static evaluations driving these decisions are further refined by a
-[Correction History](https://www.chessprogramming.org/Static_Evaluation_Correction_History),
-which learns the systematic error between the handcrafted evaluation and deeper
-search results (indexed by pawn structure) and adjusts future evaluations
-accordingly.
+[Correction History](https://www.chessprogramming.org/Static_Evaluation_Correction_History).
 
 #### Transposition Table
 
@@ -177,19 +174,16 @@ A custom [Transposition Table](https://www.chessprogramming.org/Transposition_Ta
 During Aspiration + PV Search, OmegaZero prioritizes moves using:
 
 1. [Hash Move](https://www.chessprogramming.org/Hash_Move)
-2. Promotions and favorable captures ordered by [Static Exchange Evaluation (SEE)](https://www.chessprogramming.org/Static_Exchange_Evaluation)
+2. Promotions and favorable captures ordered by [Static Exchange Evaluation (SEE)](https://www.chessprogramming.org/Static_Exchange_Evaluation) and [Capture History](https://www.chessprogramming.org/History_Heuristic#Capture_History)
 3. [Killer Moves](https://www.chessprogramming.org/Killer_Heuristic)
 4. Quiet moves ordered by [History Heuristic](https://www.chessprogramming.org/History_Heuristic), [Countermove Heuristic](https://www.chessprogramming.org/Countermove_Heuristic), and [Continuation History](https://www.chessprogramming.org/History_Heuristic#Continuation_History).
-5. Unfavorable captures ordered by SEE 
+5. Unfavorable captures ordered by SEE and Capture History
 
 In [Quiescence Search](#quiescence-search), moves are ordered by putting captures first. Captures are sorted according to the [MVV-LVA Heuristic](https://www.chessprogramming.org/MVV-LVA). Efficient move ordering increases the likelihood of early beta cutoffs, reducing the number of nodes that must be searched.
 
 #### Quiescence Search
 
-To reduce the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect), OmegaZero extends leaf nodes with a [Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) over tactical moves. The following pruning algorithms are used to keep the search space from exploding:
-
-- [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning)
-- [SEE Pruning](https://www.chessprogramming.org/Static_Exchange_Evaluation#Pruning)
+To reduce the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect), OmegaZero extends leaf nodes with a [Quiescence Search](https://www.chessprogramming.org/Quiescence_Search) over tactical moves. [Delta Pruning](https://www.chessprogramming.org/Delta_Pruning) and [SEE Pruning](https://www.chessprogramming.org/Static_Exchange_Evaluation#Pruning) are used to keep the search space from exploding.
 
 <p align="center">
   <img src="./figs/depth_vs_time.png" width="600" alt="Search Depth vs Time">

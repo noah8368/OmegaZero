@@ -160,6 +160,7 @@ class Engine {
                                  int bonus) -> void;
   auto UpdateCorrectionHistory(int static_eval, int search_score, int depth)
       -> void;
+  auto UpdateCaptureHistory(const Move& move, int bonus) -> void;
   auto RecordBetaCutoff(const Move& move, int depth, int ply,
                         const vector<Move>& searched_quiet_moves) -> void;
   auto StoreTtEntry(int best_eval, int orig_alpha, int beta, int depth,
@@ -192,11 +193,12 @@ class Engine {
 
   high_resolution_clock::time_point search_start_;
 
+  int nodes_since_time_check_;
   int history_heuristic_[kNumPlayers][kNumPieceTypes][kNumSq];
   int continuation_history_[kNumPieceTypes][kNumSq][kNumPieceTypes][kNumSq];
-  int nodes_since_time_check_;
   int eval_history_[kSearchLimit];
   int correction_history_[kNumPlayers][kCorrHistSize];
+  int capture_history_[kNumPlayers][kNumPieceTypes][kNumSq][kNumPieceTypes];
 
 #ifdef BENCHMARK
   uint64_t total_nodes_;
@@ -459,6 +461,19 @@ inline auto Engine::UpdateCorrectionHistory(int static_eval, int search_score,
   entry += (diff * kCorrHistGrain - entry) * weight / 256;
   entry = clamp(entry, -kCorrHistMax * kCorrHistGrain,
                 kCorrHistMax * kCorrHistGrain);
+}
+
+inline auto Engine::UpdateCaptureHistory(const Move& move, int bonus) -> void {
+  S8 player_to_move = board_->GetPlayerToMove();
+  bonus = clamp(bonus, -kMaxHistoryBonus, kMaxHistoryBonus);
+  if (move.captured_piece == kNA) {
+    throw invalid_argument(
+        "move.captured_piece in Engine::UpdateCaptureHistory()");
+  }
+  int& history = capture_history_[player_to_move][move.moving_piece]
+                                 [move.target_sq][move.captured_piece];
+  // Update the history heuristic value using the history gravity formula.
+  history += (bonus - history * abs(bonus) / kMaxHistoryBonus);
 }
 
 inline auto Engine::StoreTtEntry(int best_eval, int orig_alpha, int beta,
