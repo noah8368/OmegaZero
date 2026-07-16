@@ -51,7 +51,9 @@ install_system_deps_macos() {
         info "Homebrew: already installed"
     fi
 
-    BREW_PACKAGES=(python3 stockfish graphviz cairo cutechess)
+    # cutechess is built from source (see build_cutechess_from_source); we only
+    # need its build deps (Qt + cmake) here.
+    BREW_PACKAGES=(python3 stockfish graphviz cairo qt cmake)
     for pkg in "${BREW_PACKAGES[@]}"; do
         if brew list "$pkg" &>/dev/null; then
             info "$pkg: already installed"
@@ -63,16 +65,27 @@ install_system_deps_macos() {
 }
 
 install_system_deps_linux() {
+    # cutechess build deps (Qt + cmake) are only needed for a full dev install,
+    # not on a headless datagen server.
     if command -v apt-get &>/dev/null; then
         info "Installing system packages (apt)..."
         apt-get update -qq
         apt-get install -y -qq g++ make python3 python3-venv git
+        if [[ "$SERVER_ONLY" != true ]]; then
+            apt-get install -y -qq cmake qtbase5-dev
+        fi
     elif command -v dnf &>/dev/null; then
         info "Installing system packages (dnf)..."
         dnf install -y gcc-c++ make python3 git
+        if [[ "$SERVER_ONLY" != true ]]; then
+            dnf install -y cmake qt5-qtbase-devel
+        fi
     elif command -v yum &>/dev/null; then
         info "Installing system packages (yum)..."
         yum install -y gcc-c++ make python3 git
+        if [[ "$SERVER_ONLY" != true ]]; then
+            yum install -y cmake qt5-qtbase-devel
+        fi
     else
         error "Unsupported package manager. Install manually: g++, make, python3, git"
         exit 1
@@ -111,22 +124,58 @@ setup_venv() {
 
 # ---------- Build ----------
 
-build_engine() {
-    if [[ "$OS" == "Darwin" ]]; then
-        local jobs
-        jobs="$(sysctl -n hw.ncpu)"
-    else
-        local jobs
-        jobs="$(nproc)"
+# Number of parallel build jobs, computed once for engine + cutechess builds.
+if [[ "$OS" == "Darwin" ]]; then
+    JOBS="$(sysctl -n hw.ncpu)"
+else
+    JOBS="$(nproc)"
+fi
+
+build_cutechess_from_source() {
+    local cutechess_dir="$REPO_ROOT/cutechess"
+    local cutechess_bin="$cutechess_dir/build/cutechess-cli"
+
+    if [[ -x "$cutechess_bin" ]]; then
+        info "cutechess-cli: already built at cutechess/build/"
+        return
     fi
 
+    if [[ -d "$cutechess_dir/.git" ]]; then
+        info "Updating existing cutechess checkout..."
+        git -C "$cutechess_dir" pull --ff-only \
+            || warn "Could not fast-forward cutechess; building existing checkout"
+    else
+        info "Cloning cutechess..."
+        git clone --depth 1 https://github.com/cutechess/cutechess.git "$cutechess_dir"
+    fi
+
+    info "Building cutechess-cli from source..."
+    local cmake_args=(-S "$cutechess_dir" -B "$cutechess_dir/build" -DCMAKE_BUILD_TYPE=Release)
+    if [[ "$OS" == "Darwin" ]]; then
+        # Point CMake at Homebrew's Qt so find_package(Qt) succeeds.
+        cmake_args+=(-DCMAKE_PREFIX_PATH="$(brew --prefix qt)")
+    fi
+    cmake "${cmake_args[@]}"
+    # The CLI target is named "cli"; its output binary is "cutechess-cli".
+    # Building only this target avoids the GUI's extra Qt (Widgets/Svg) deps.
+    cmake --build "$cutechess_dir/build" --target cli -j"$JOBS"
+
+    if [[ -x "$cutechess_bin" ]]; then
+        info "cutechess-cli built at cutechess/build/cutechess-cli"
+    else
+        error "cutechess build finished but cutechess-cli was not produced"
+        exit 1
+    fi
+}
+
+build_engine() {
     if [[ "$SERVER_ONLY" == true ]]; then
         info "Building datagen harness..."
-        make datagen -j"$jobs" 2>&1 | tail -3
+        make datagen -j"$JOBS" 2>&1 | tail -3
     else
         info "Building OmegaZero (all targets)..."
-        make -j"$jobs" 2>&1 | tail -3
-        make datagen -j"$jobs" 2>&1 | tail -3
+        make -j"$JOBS" 2>&1 | tail -3
+        make datagen -j"$JOBS" 2>&1 | tail -3
     fi
 }
 
@@ -144,6 +193,9 @@ else
 fi
 
 setup_venv
+if [[ "$SERVER_ONLY" != true ]]; then
+    build_cutechess_from_source
+fi
 build_engine
 
 echo ""

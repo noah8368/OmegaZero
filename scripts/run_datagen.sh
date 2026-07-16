@@ -165,7 +165,11 @@ start_datagen() {
         exit 1
     fi
     echo "Starting datagen harness..."
-    "$DATAGEN_BIN" >> "$REPO_ROOT/datagen.log" 2>&1 &
+    # Pass cumulative campaign context so milestone/heartbeat/ETA emails reflect
+    # overall progress across restarts, not just this process's batch (the
+    # harness reads OZ_TOTAL_GAMES / OZ_BASE_COMPLETED; see datagen.cc).
+    OZ_TOTAL_GAMES="$TOTAL_GAMES" OZ_BASE_COMPLETED="$(count_completed_games)" \
+        "$DATAGEN_BIN" >> "$REPO_ROOT/datagen.log" 2>&1 &
     DATAGEN_PID=$!
     echo "  PID: $DATAGEN_PID"
 }

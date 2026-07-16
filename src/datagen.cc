@@ -274,6 +274,9 @@ static void SignalHandler(int /*sig*/) {
   g_shutdown.store(true);
 }
 static std::atomic<int> g_total_games{0};
+// Games completed in prior runs of this campaign (passed in via env by the
+// watchdog). Lets progress accounting span restarts instead of resetting.
+static std::atomic<int> g_base_completed{0};
 static string g_email;
 static string g_name;
 static string g_output_dir_global;
@@ -330,7 +333,11 @@ static auto GetEtaString(int done, int total) -> string {
   auto now = std::chrono::high_resolution_clock::now();
   float elapsed = std::chrono::duration<float>(now - g_start_time).count();
   if (elapsed <= 0) return "";
-  float rate = done / elapsed;
+  // `done` is cumulative across the campaign, but only games played this run
+  // count toward the rate — base_completed games predate this process's clock.
+  int run_done = done - g_base_completed.load();
+  if (run_done <= 0) return "";
+  float rate = run_done / elapsed;
   int remaining = total - done;
   if (remaining <= 0) return "ETA: complete";
   int eta_seconds = static_cast<int>(remaining / rate);
@@ -347,7 +354,7 @@ static auto WriteCrashLog(const string& crash_type, int worker_id,
                           int game, const string& error,
                           const WorkerStats* stats) -> string {
   string ts = GetTimestamp();
-  int total_done = g_games_done.load();
+  int total_done = g_base_completed.load() + g_games_done.load();
   int total = g_total_games.load();
 
   string entry = "=== CRASH LOG ===\n"
@@ -524,7 +531,9 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
       }
     }
 
-    int done = g_games_done.fetch_add(1) + 1;
+    int run_done = g_games_done.fetch_add(1) + 1;
+    // Report progress against the whole campaign, not just this process's batch.
+    int done = g_base_completed.load() + run_done;
     CheckMilestones(done);
     if (!g_email.empty() && done >= kStartupEmailThreshold) {
       bool expected = false;
@@ -560,7 +569,7 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
       if (now_s - last_hb >= kHeartbeatIntervalSeconds &&
           g_last_heartbeat_time.compare_exchange_strong(last_hb, now_s)) {
         int total = g_total_games.load();
-        int total_done = g_games_done.load();
+        int total_done = g_base_completed.load() + g_games_done.load();
         string tag = g_name.empty() ? "" : " [" + g_name + "]";
         string body = (g_name.empty() ? "" : "Machine: " + g_name + "\n")
             + std::to_string(total_done) + "/" + std::to_string(total)
@@ -646,7 +655,37 @@ auto main() -> int {
   int ret = std::system(mkdir_cmd.c_str());
   (void)ret;
 
-  g_total_games.store(total_games);
+  // Resume-aware progress accounting. The watchdog passes cumulative campaign
+  // context via env vars so milestone/heartbeat/ETA emails reflect overall
+  // progress across restarts. Absent (a standalone run) => behave as before.
+  int base_completed = 0;
+  int campaign_total = total_games;
+  if (const char* env = std::getenv("OZ_BASE_COMPLETED")) base_completed = std::atoi(env);
+  if (const char* env = std::getenv("OZ_TOTAL_GAMES")) campaign_total = std::atoi(env);
+  if (base_completed < 0) base_completed = 0;
+  if (campaign_total < total_games) campaign_total = total_games;  // sanity floor
+  g_base_completed.store(base_completed);
+  g_total_games.store(campaign_total);
+
+  // Suppress milestone emails for thresholds already crossed before this run,
+  // so a resume picks up where the last run left off instead of re-firing 0->N%.
+  if (campaign_total > 0) {
+    int base_pct = (base_completed * 100) / campaign_total;
+    auto seed = [&](int threshold, std::atomic<bool>& flag) {
+      if (base_pct >= threshold) flag.store(true);
+    };
+    seed(10, g_milestone_10);
+    seed(20, g_milestone_20);
+    seed(30, g_milestone_30);
+    seed(40, g_milestone_40);
+    seed(50, g_milestone_50);
+    seed(60, g_milestone_60);
+    seed(70, g_milestone_70);
+    seed(80, g_milestone_80);
+    seed(90, g_milestone_90);
+    seed(100, g_milestone_100);
+  }
+
   g_output_dir_global = output_dir;
   long long now_epoch = std::chrono::duration_cast<std::chrono::seconds>(
       std::chrono::system_clock::now().time_since_epoch()).count();
