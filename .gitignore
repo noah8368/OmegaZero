@@ -21,3 +21,4 @@ scripts/ssh_hetzner.sh
 scripts/sync_from_server.sh
 compile_commands.json
 .clang-format
+.cache/**

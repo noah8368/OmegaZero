@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Path-2 validation hygiene for NNUE datagen.
 #
 # Makes the validation set strictly disjoint from training at the position
 # (FEN) level: any position that also occurs anywhere in training is dropped
