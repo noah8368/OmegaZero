@@ -73,7 +73,6 @@ class Game {
   auto RecordFinalScore() -> void;
   // NOTE: This should be called AFTER a move is made.
   auto UpdateMoveHistory(string move_str) -> void;
-  auto ComputeThinkTime(S8 side) const -> float;
   auto DisplayClock() const -> void;
 
   Board board_;

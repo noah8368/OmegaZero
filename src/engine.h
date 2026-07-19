@@ -86,12 +86,17 @@ class Engine {
   // the number of times the current board state has been encountered.
   auto AddPosToHistory() -> void;
   auto ClearHistory() -> void;
+  // Set a fixed per-move budget (soft and hard bounds coincide). Used by the
+  // fixed-time harnesses and `--st` play.
   auto SetSearchTime(float t) -> void;
+  // Set distinct soft/hard bounds for clock-based play.
+  auto SetTimeBounds(float soft, float hard) -> void;
 
-#ifdef BENCHMARK
   auto GetTotalNodes() const -> uint64_t {
     return total_nodes_ + nodes_since_time_check_;
   }
+
+#ifdef BENCHMARK
   auto BenchmarkReport(int search_depth) -> void;
 #endif
 
@@ -191,7 +196,10 @@ class Engine {
 
   Board* board_;
 
-  float search_time_;
+  // Stop starting new iterative-deepening iterations past `soft_time_`; abort a
+  // search in progress once `hard_time_` is reached. Equal in fixed-time modes.
+  float soft_time_;
+  float hard_time_;
 
   high_resolution_clock::time_point search_start_;
 
@@ -202,9 +210,7 @@ class Engine {
   int correction_history_[kNumPlayers][kCorrHistSize];
   int capture_history_[kNumPlayers][kNumPieceTypes][kNumSq][kNumPieceTypes];
 
-#ifdef BENCHMARK
   uint64_t total_nodes_;
-#endif
 
   Move countermove_table_[kNumPieceTypes][kNumSq];
   Move excluded_move_;
@@ -242,7 +248,14 @@ inline auto Engine::ClearHistory() -> void { pos_history_.clear(); }
 inline auto Engine::SetSearchTime(float t) -> void {
   constexpr float kMinSearchTime = 0.01f;
   if (t < kMinSearchTime) t = kMinSearchTime;
-  search_time_ = t;
+  soft_time_ = t;
+  hard_time_ = t;
+}
+
+inline auto Engine::SetTimeBounds(float soft, float hard) -> void {
+  constexpr float kMinSearchTime = 0.01f;
+  soft_time_ = std::max(soft, kMinSearchTime);
+  hard_time_ = std::max(hard, kMinSearchTime);
 }
 
 // Implement private inline member functions.
@@ -408,16 +421,13 @@ inline auto Engine::CheckSearchTime() -> void {
     return;
   }
 
-#ifdef BENCHMARK
   total_nodes_ += 4096;
-#endif
-
   nodes_since_time_check_ = 0;
   float time_since_search_started =
       duration_cast<duration<float>>(high_resolution_clock::now() -
                                      search_start_)
           .count();
-  if (time_since_search_started >= search_time_) {
+  if (time_since_search_started >= hard_time_) {
     throw OutOfTime();
   }
 }

@@ -24,6 +24,7 @@
 #include "board.h"
 #include "engine.h"
 #include "move.h"
+#include "time_control.h"
 
 namespace omegazero {
 
@@ -174,16 +175,6 @@ auto Game::SetClock(float base_time, float increment) -> void {
   increment_ = increment;
   clock_[kWhite] = base_time;
   clock_[kBlack] = base_time;
-}
-
-auto Game::ComputeThinkTime(S8 side) const -> float {
-  float time_ms = clock_[side] * 1000.0f;
-  float inc_ms = increment_ * 1000.0f;
-  float alloc = std::min(time_ms * time_ms / 1800000.0f, time_ms / 30.0f)
-                + inc_ms * 0.8f;
-  float max_alloc = time_ms / 3.0f;
-  alloc = std::min(alloc, max_alloc);
-  return std::max(alloc, 100.0f) / 1000.0f;
 }
 
 auto Game::DisplayClock() const -> void {
@@ -369,7 +360,9 @@ void Game::Play() {
     Move engine_move;
     if (!GetOpeningMove(engine_move)) {
       if (clock_mode_) {
-        engine_.SetSearchTime(ComputeThinkTime(player_to_move));
+        TimeBounds bounds = ComputeTimeBounds(clock_[player_to_move] * 1000.0f,
+                                              increment_ * 1000.0f, 0, 0);
+        engine_.SetTimeBounds(bounds.soft, bounds.hard);
       }
 
       using clock = std::chrono::high_resolution_clock;

@@ -8,7 +8,6 @@
 
 #include "uci.h"
 
-#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -21,12 +20,12 @@
 #include "engine.h"
 #include "game.h"
 #include "move.h"
+#include "time_control.h"
 
 namespace omegazero {
 
 using std::string;
 using std::vector;
-using std::min;
 
 UciHandler::UciHandler(const string& book_path)
     : book_path_(book_path), turn_num_(1), move_index_(0),
@@ -171,9 +170,12 @@ auto UciHandler::HandleGo(const string& line) -> void {
     return;
   }
 
-  float think_time = ComputeThinkTime(wtime, btime, winc, binc,
-                                       movetime, movestogo);
-  engine_->SetSearchTime(think_time);
+  S8 side = board_->GetPlayerToMove();
+  float remaining_ms = static_cast<float>((side == kWhite) ? wtime : btime);
+  float inc_ms = static_cast<float>((side == kWhite) ? winc : binc);
+  TimeBounds bounds =
+      ComputeTimeBounds(remaining_ms, inc_ms, movestogo, movetime);
+  engine_->SetTimeBounds(bounds.soft, bounds.hard);
 
   Move best_move = engine_->GetBestMove();
   if (best_move.moving_piece == kNA && best_move.castling_type == kNA) {
@@ -181,35 +183,6 @@ auto UciHandler::HandleGo(const string& line) -> void {
   } else {
     std::cout << "bestmove " << MoveToUciStr(best_move) << std::endl;
   }
-}
-
-auto UciHandler::ComputeThinkTime(int wtime, int btime, int winc, int binc,
-                                  int movetime, int movestogo) const -> float {
-  constexpr float kMinMs = 100.0f;
-  constexpr float kMoveTimeMargin = 50.0f;
-
-  if (movetime > 0) {
-    float alloc = static_cast<float>(movetime) - kMoveTimeMargin;
-    return std::max(alloc, kMinMs) / 1000.0f;
-  }
-
-  S8 side = board_->GetPlayerToMove();
-  float time_ms = static_cast<float>((side == kWhite) ? wtime : btime);
-  float inc_ms = static_cast<float>((side == kWhite) ? winc : binc);
-
-  if (time_ms <= 0) return kMinMs / 1000.0f;
-
-  float alloc;
-  if (movestogo > 0) {
-    alloc = time_ms / (movestogo + 1) + inc_ms * 0.8f;
-  } else {
-    alloc = min(time_ms * time_ms / 1800000.0f, time_ms / 30.0f)
-            + inc_ms * 0.8f;
-  }
-
-  float max_alloc = time_ms / 3.0f;
-  alloc = min(alloc, max_alloc);
-  return std::max(alloc, kMinMs) / 1000.0f;
 }
 
 auto UciHandler::MoveToUciStr(const Move& move) const -> string {

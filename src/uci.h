@@ -35,8 +35,6 @@ class UciHandler {
   auto MoveToUciStr(const Move& move) const -> std::string;
   auto MoveToFideStr(const Move& move) const -> std::string;
   auto ParseUciMove(const std::string& uci_move) const -> Move;
-  auto ComputeThinkTime(int wtime, int btime, int winc, int binc,
-                        int movetime, int movestogo) const -> float;
   auto SetPosition(const std::string& fen,
                    const std::vector<std::string>& moves) -> void;
   auto LoadOpeningBook(const std::string& path) -> void;

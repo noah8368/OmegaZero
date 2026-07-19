@@ -47,7 +47,8 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   if (search_time < kMinSearchTime) {
     throw invalid_argument("Search time must be at least 0.1s");
   }
-  search_time_ = search_time;
+  soft_time_ = search_time;
+  hard_time_ = search_time;
 
   if (tolower(player_side) == 'w') {
     user_side_ = kWhite;
@@ -94,15 +95,14 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   auto fallback_end = high_resolution_clock::now();
   float fallback_secs =
       std::chrono::duration<float>(fallback_end - fallback_start).count();
-  search_time_ = std::max(0.01f, search_time_ - fallback_secs);
+  soft_time_ = std::max(0.01f, soft_time_ - fallback_secs);
+  hard_time_ = std::max(0.01f, hard_time_ - fallback_secs);
 
   search_start_ = high_resolution_clock::now();
   nodes_since_time_check_ = 0;
   int prev_score = 0;
   int search_depth = 1;
-#ifdef BENCHMARK
   total_nodes_ = 0;
-#endif
 
 #ifdef SEARCH_TRACE
   SearchTrace last_complete_trace;
@@ -125,6 +125,16 @@ auto Engine::GetBestMove(int& score_out) -> Move {
 #ifdef SEARCH_TRACE
       TraceRestoreAfterTimeout(last_complete_trace);
 #endif
+      break;
+    }
+
+    // Stop before starting a new iteration once the soft bound is crossed: the
+    // next iteration almost never finishes within the remaining budget, and the
+    // partial result would be discarded on the eventual hard-bound timeout.
+    float elapsed = duration_cast<duration<float>>(
+                        high_resolution_clock::now() - search_start_)
+                        .count();
+    if (elapsed >= soft_time_) {
       break;
     }
   }
@@ -252,11 +262,16 @@ auto Engine::AspirationSearch(int prev_score, int depth, int ply,
 
   for (;;) {
     int score = Pvs(best_move, alpha, beta, depth, ply, true);
-    if (score <= alpha) {
-      delta *= 2;
+    // Only widen a bound that isn't already pinned to the evaluation limit. A
+    // decisive (mate) score can equal a clamped bound (e.g. score == beta ==
+    // kBestEval), which would otherwise spin this loop forever and overflow
+    // `delta` via repeated doubling, producing garbage bounds. `delta` is also
+    // capped so it can never overflow.
+    if (score <= alpha && alpha > kWorstEval) {
+      delta = min(delta * 2, kBestEval);
       alpha = max(score - delta, kWorstEval);
-    } else if (score >= beta) {
-      delta *= 2;
+    } else if (score >= beta && beta < kBestEval) {
+      delta = min(delta * 2, kBestEval);
       beta = min(score + delta, kBestEval);
     } else {
       return score;
