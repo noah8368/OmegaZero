@@ -310,7 +310,12 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       beta = pre_tt_beta;
     }
 #endif
-    pv_move = hash_entry.hash_move;
+    // Only surface the hash move as the PV move if it is actually legal in the
+    // current position. An unvalidated hash move can be illegal here (e.g. a
+    // stale/colliding entry), and at the root it would be returned and played
+    // verbatim.
+    pv_move = ValidateTtMove(hash_entry.hash_move) ? hash_entry.hash_move
+                                                   : Move{};
     return tt_result;
   }
 

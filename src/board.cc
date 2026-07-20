@@ -1024,17 +1024,20 @@ auto Board::InitHash() -> void {
     S8 ep_target_file = GetFileFromSq(ep_target_sq_);
     board_hash_ ^= ep_file_rand_nums_[ep_target_file];
   }
-  for (S8 piece = kPawn; piece <= kKing; ++piece) {
-    for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
-      piece_rand_nums_[piece][sq] = rand_num_gen();
+  for (S8 player = kWhite; player < kNumPlayers; ++player) {
+    for (S8 piece = kPawn; piece <= kKing; ++piece) {
+      for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
+        piece_rand_nums_[player][piece][sq] = rand_num_gen();
+      }
     }
   }
   for (S8 sq = kSqA1; sq <= kSqH8; ++sq) {
     S8 piece_type = piece_layout_[sq];
     if (piece_type != kNA) {
-      board_hash_ ^= piece_rand_nums_[piece_type][sq];
+      S8 owner = player_layout_[sq];
+      board_hash_ ^= piece_rand_nums_[owner][piece_type][sq];
       if (piece_type == kPawn) {
-        pawn_hash_ ^= piece_rand_nums_[kPawn][sq];
+        pawn_hash_ ^= piece_rand_nums_[owner][kPawn][sq];
       }
     }
   }
@@ -1382,17 +1385,18 @@ auto Board::MakeNonCastlingMove(const Move& move) -> void {
       pieces_[kPawn] &= ep_capture_mask;
       player_pieces_[other_player] &= ep_capture_mask;
       // Update the board hash to reflect piece removal.
-      board_hash_ ^= piece_rand_nums_[kPawn][ep_capture_sq];
-      pawn_hash_ ^= piece_rand_nums_[kPawn][ep_capture_sq];
+      board_hash_ ^= piece_rand_nums_[other_player][kPawn][ep_capture_sq];
+      pawn_hash_ ^= piece_rand_nums_[other_player][kPawn][ep_capture_sq];
     } else {
       // Remove the captured piece from the board.
       Bitboard piece_capture_mask = ~(1ULL << move.target_sq);
       pieces_[move.captured_piece] &= piece_capture_mask;
       player_pieces_[other_player] &= piece_capture_mask;
       // Update the board hash to reflect piece removal.
-      board_hash_ ^= piece_rand_nums_[move.captured_piece][move.target_sq];
+      board_hash_ ^=
+          piece_rand_nums_[other_player][move.captured_piece][move.target_sq];
       if (move.captured_piece == kPawn) {
-        pawn_hash_ ^= piece_rand_nums_[kPawn][move.target_sq];
+        pawn_hash_ ^= piece_rand_nums_[other_player][kPawn][move.target_sq];
       }
     }
   }
@@ -1423,9 +1427,9 @@ auto Board::MovePiece(S8 piece, S8 start_sq, S8 target_sq, S8 promoted_to_piece)
   pieces_[piece] &= rm_piece_mask;
   player_pieces_[player_to_move_] &= rm_piece_mask;
   // Update the board hash to reflect piece removal.
-  board_hash_ ^= piece_rand_nums_[piece][start_sq];
+  board_hash_ ^= piece_rand_nums_[player_to_move_][piece][start_sq];
   if (piece == kPawn) {
-    pawn_hash_ ^= piece_rand_nums_[kPawn][start_sq];
+    pawn_hash_ ^= piece_rand_nums_[player_to_move_][kPawn][start_sq];
   }
 
   // Add the selected piece back at its target position on the board and
@@ -1434,16 +1438,16 @@ auto Board::MovePiece(S8 piece, S8 start_sq, S8 target_sq, S8 promoted_to_piece)
   if (promoted_to_piece == kNA) {
     pieces_[piece] |= new_piece_pos_mask;
     piece_layout_[target_sq] = piece;
-    board_hash_ ^= piece_rand_nums_[piece][target_sq];
+    board_hash_ ^= piece_rand_nums_[player_to_move_][piece][target_sq];
     if (piece == kPawn) {
-      pawn_hash_ ^= piece_rand_nums_[kPawn][target_sq];
+      pawn_hash_ ^= piece_rand_nums_[player_to_move_][kPawn][target_sq];
     }
   } else {
     // Add a piece back as the type it promotes to if move is a pawn
     // promotion.
     pieces_[promoted_to_piece] |= new_piece_pos_mask;
     piece_layout_[target_sq] = promoted_to_piece;
-    board_hash_ ^= piece_rand_nums_[promoted_to_piece][target_sq];
+    board_hash_ ^= piece_rand_nums_[player_to_move_][promoted_to_piece][target_sq];
   }
 
   player_layout_[target_sq] = player_to_move_;
@@ -1463,7 +1467,8 @@ auto Board::UnmakeNonCastlingMove(const Move& move) -> void {
     piece_layout_[move.target_sq] = kNA;
     player_layout_[move.target_sq] = kNA;
     // Update the board hash to reflect piece removal.
-    board_hash_ ^= piece_rand_nums_[move.promoted_to_piece][move.target_sq];
+    board_hash_ ^=
+        piece_rand_nums_[player_to_move_][move.promoted_to_piece][move.target_sq];
 
     // Add the original pawn back to its start position.
     Bitboard og_piece_pos_mask = 1ULL << move.start_sq;
@@ -1472,8 +1477,8 @@ auto Board::UnmakeNonCastlingMove(const Move& move) -> void {
     piece_layout_[move.start_sq] = kPawn;
     player_layout_[move.start_sq] = player_to_move_;
     // Update the board hash to reflect piece addition.
-    board_hash_ ^= piece_rand_nums_[kPawn][move.start_sq];
-    pawn_hash_ ^= piece_rand_nums_[kPawn][move.start_sq];
+    board_hash_ ^= piece_rand_nums_[player_to_move_][kPawn][move.start_sq];
+    pawn_hash_ ^= piece_rand_nums_[player_to_move_][kPawn][move.start_sq];
   }
 
   // Place a captured piece back onto the board.
@@ -1496,8 +1501,8 @@ auto Board::UnmakeNonCastlingMove(const Move& move) -> void {
       pieces_[kPawn] |= undo_ep_capture_mask;
       player_pieces_[other_player] |= undo_ep_capture_mask;
       // Update the board hash to reflect piece addition.
-      board_hash_ ^= piece_rand_nums_[kPawn][ep_capture_sq];
-      pawn_hash_ ^= piece_rand_nums_[kPawn][ep_capture_sq];
+      board_hash_ ^= piece_rand_nums_[other_player][kPawn][ep_capture_sq];
+      pawn_hash_ ^= piece_rand_nums_[other_player][kPawn][ep_capture_sq];
     } else {
       Bitboard undo_capture_mask = 1ULL << move.target_sq;
       // Add the captured piece back to its original position.
@@ -1506,9 +1511,10 @@ auto Board::UnmakeNonCastlingMove(const Move& move) -> void {
       piece_layout_[move.target_sq] = move.captured_piece;
       player_layout_[move.target_sq] = other_player;
       // Update the board hash to reflect piece addition.
-      board_hash_ ^= piece_rand_nums_[move.captured_piece][move.target_sq];
+      board_hash_ ^=
+          piece_rand_nums_[other_player][move.captured_piece][move.target_sq];
       if (move.captured_piece == kPawn) {
-        pawn_hash_ ^= piece_rand_nums_[kPawn][move.target_sq];
+        pawn_hash_ ^= piece_rand_nums_[other_player][kPawn][move.target_sq];
       }
     }
   }

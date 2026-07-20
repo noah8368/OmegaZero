@@ -163,8 +163,8 @@ auto GetRankFromSq(S8 sq) -> S8;
 auto GetSqFromRankFile(S8 rank, S8 file) -> S8;
 auto GetSqOfFirstPiece(Bitboard board) -> S8;
 
-// Clear the least significant bit set of the passed in bitboard.
-auto RemoveFirstSq(Bitboard& board) -> void;
+// Clear the least significant set bit of the passed-in bitboard.
+auto RemoveFirstPiece(Bitboard& board) -> void;
 
 class Board {
  public:
@@ -329,7 +329,7 @@ class Board {
   U64 pawn_hash_;
   U64 castling_rights_rand_nums_[kNumPlayers][kNumBoardSides];
   U64 ep_file_rand_nums_[kNumFiles];
-  U64 piece_rand_nums_[kNumPieceTypes][kNumSq];
+  U64 piece_rand_nums_[kNumPlayers][kNumPieceTypes][kNumSq];
   U64 black_to_move_rand_num_;
 
   // NNUE accumulators for incremental updates.
