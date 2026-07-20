@@ -60,6 +60,21 @@ constexpr int kNeutralEval = -25;
 constexpr int kWorstEval = -32000;
 constexpr int kInvalidEval = 32001;
 
+// --- Dynamic time-management tuning ---
+// Number of recent iterations considered for best-move stability.
+constexpr int kTmWindow = 5;
+// Geometric decay weighting recent best-move changes more heavily.
+constexpr double kTmMoveDecay = 0.6;
+// Coefficient of the (signed) best-move-stability term in the difficulty factor.
+constexpr double kTmMoveWeight = 0.5;
+// Clamp bounds on the overall difficulty multiplier.
+constexpr double kTmDifficultyMin = 0.45;
+constexpr double kTmDifficultyMax = 2.5;
+// Effective branching factor bounds for the predictive early-stop.
+constexpr double kTmEbfMin = 1.5;
+constexpr double kTmEbfMax = 4.0;
+constexpr double kTmEbfFallback = 2.0;
+
 class Engine {
  public:
   Engine(Board* board, S8 player_side, float search_time);
@@ -89,8 +104,9 @@ class Engine {
   // Set a fixed per-move budget (soft and hard bounds coincide). Used by the
   // fixed-time harnesses and `--st` play.
   auto SetSearchTime(float t) -> void;
-  // Set distinct soft/hard bounds for clock-based play.
-  auto SetTimeBounds(float soft, float hard) -> void;
+  // Set soft/hard bounds and the neutral base budget for clock-based play;
+  // enables difficulty-scaled dynamic time management.
+  auto SetTimeBounds(float soft, float hard, float base) -> void;
 
   auto GetTotalNodes() const -> uint64_t {
     return total_nodes_ + nodes_since_time_check_;
@@ -125,6 +141,16 @@ class Engine {
                            int ply) -> bool;
   auto ShouldSeePrune(const Move& move, int depth, bool at_pv_node,
                       bool gives_check, bool in_check, int see_val) -> bool;
+
+  // Dynamic time management (used between iterative-deepening iterations).
+  // Signed [-1, +1] best-move-stability signal over the last kTmWindow depths
+  // (negative = stable, positive = churning).
+  auto MoveStabilitySignal(int depth) const -> double;
+  // Difficulty multiplier applied to base_time_ to get the soft bound.
+  auto ComputeDifficulty(int depth) const -> double;
+  // Whether the next iteration is predicted to exceed the soft bound (and so
+  // shouldn't be started).
+  auto PredictNextIterExceeds(int depth) const -> bool;
 
   // Search and scoring (int).
   // Computes best evaluation resulting from a legal move for the moving
@@ -197,9 +223,19 @@ class Engine {
   Board* board_;
 
   // Stop starting new iterative-deepening iterations past `soft_time_`; abort a
-  // search in progress once `hard_time_` is reached. Equal in fixed-time modes.
+  // search in progress once `hard_time_` is reached. `base_time_` is the neutral
+  // budget the soft bound is rescaled from by search difficulty. In fixed-time
+  // modes the three coincide and dynamic scaling is disabled.
   float soft_time_;
   float hard_time_;
+  float base_time_;
+  bool dynamic_tm_;
+
+  // Per-iteration signal state for dynamic time management (reset each search).
+  // `root_best_history_[d]` is the root best move after completing depth d;
+  // `iter_elapsed_[d]` is the cumulative search time at the end of depth d.
+  Move root_best_history_[kSearchLimit + 1];
+  float iter_elapsed_[kSearchLimit + 1];
 
   high_resolution_clock::time_point search_start_;
 
@@ -250,12 +286,16 @@ inline auto Engine::SetSearchTime(float t) -> void {
   if (t < kMinSearchTime) t = kMinSearchTime;
   soft_time_ = t;
   hard_time_ = t;
+  base_time_ = t;
+  dynamic_tm_ = false;
 }
 
-inline auto Engine::SetTimeBounds(float soft, float hard) -> void {
+inline auto Engine::SetTimeBounds(float soft, float hard, float base) -> void {
   constexpr float kMinSearchTime = 0.01f;
   soft_time_ = std::max(soft, kMinSearchTime);
   hard_time_ = std::max(hard, kMinSearchTime);
+  base_time_ = std::max(base, kMinSearchTime);
+  dynamic_tm_ = true;
 }
 
 // Implement private inline member functions.

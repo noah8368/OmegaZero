@@ -175,7 +175,12 @@ auto UciHandler::HandleGo(const string& line) -> void {
   float inc_ms = static_cast<float>((side == kWhite) ? winc : binc);
   TimeBounds bounds =
       ComputeTimeBounds(remaining_ms, inc_ms, movestogo, movetime);
-  engine_->SetTimeBounds(bounds.soft, bounds.hard);
+  if (movetime > 0) {
+    // A fixed per-move request is honored exactly, not difficulty-scaled.
+    engine_->SetSearchTime(bounds.hard);
+  } else {
+    engine_->SetTimeBounds(bounds.soft, bounds.hard, bounds.base);
+  }
 
   Move best_move = engine_->GetBestMove();
   if (best_move.moving_piece == kNA && best_move.castling_type == kNA) {

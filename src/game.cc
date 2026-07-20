@@ -362,7 +362,7 @@ void Game::Play() {
       if (clock_mode_) {
         TimeBounds bounds = ComputeTimeBounds(clock_[player_to_move] * 1000.0f,
                                               increment_ * 1000.0f, 0, 0);
-        engine_.SetTimeBounds(bounds.soft, bounds.hard);
+        engine_.SetTimeBounds(bounds.soft, bounds.hard, bounds.base);
       }
 
       using clock = std::chrono::high_resolution_clock;

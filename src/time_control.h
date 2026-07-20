@@ -15,16 +15,14 @@
 
 namespace omegazero {
 
-// Per-move search bounds, in seconds.
+// Per-move search bounds, in seconds. `base` is the neutral per-move budget the
+// engine scales by a difficulty factor to get the soft bound each iteration.
 struct TimeBounds {
   float soft;
   float hard;
+  float base;
 };
 
-// Fraction of the baseline budget at which we stop starting new iterative-
-// deepening iterations. (Placeholder for the difficulty-scaled soft limit; a
-// neutral position uses ~this fraction of the baseline.)
-constexpr float kSoftTimeFraction = 0.6f;
 // Fraction of the increment banked into each move's baseline budget.
 constexpr float kIncrementFraction = 0.5f;
 // Assumed moves-to-go for a sudden-death control: baseline uses remaining/this.
@@ -50,12 +48,12 @@ inline auto ComputeTimeBounds(float remaining_ms, float inc_ms, int movestogo,
     float alloc =
         std::max(static_cast<float>(movetime) - kMoveTimeMargin, kMinSoftMs);
     float secs = alloc / 1000.0f;
-    return {secs, secs};
+    return {secs, secs, secs};
   }
 
   if (remaining_ms <= 0.0f) {
     float secs = kMinSoftMs / 1000.0f;
-    return {secs, secs};
+    return {secs, secs, secs};
   }
 
   // Baseline per-move budget. Sudden death assumes a fixed moves-to-go
@@ -76,9 +74,10 @@ inline auto ComputeTimeBounds(float remaining_ms, float inc_ms, int movestogo,
   hard_ms = std::min(hard_ms, remaining_ms - reserve_ms);
   hard_ms = std::max(hard_ms, kMinSoftMs);
 
-  // Soft bound: target used to decide whether to start another iteration.
-  float soft_ms = std::clamp(kSoftTimeFraction * base_ms, kMinSoftMs, hard_ms);
-  return {soft_ms / 1000.0f, hard_ms / 1000.0f};
+  // Neutral soft bound (difficulty 1). The engine rescales this by a per-move
+  // difficulty factor each iteration, bounded by the hard bound.
+  float soft_ms = std::clamp(base_ms, kMinSoftMs, hard_ms);
+  return {soft_ms / 1000.0f, hard_ms / 1000.0f, base_ms / 1000.0f};
 }
 
 }  // namespace omegazero

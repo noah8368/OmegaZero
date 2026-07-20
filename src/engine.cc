@@ -49,6 +49,8 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   }
   soft_time_ = search_time;
   hard_time_ = search_time;
+  base_time_ = search_time;
+  dynamic_tm_ = false;
 
   if (tolower(player_side) == 'w') {
     user_side_ = kWhite;
@@ -97,12 +99,14 @@ auto Engine::GetBestMove(int& score_out) -> Move {
       std::chrono::duration<float>(fallback_end - fallback_start).count();
   soft_time_ = std::max(0.01f, soft_time_ - fallback_secs);
   hard_time_ = std::max(0.01f, hard_time_ - fallback_secs);
+  base_time_ = std::max(0.01f, base_time_ - fallback_secs);
 
   search_start_ = high_resolution_clock::now();
   nodes_since_time_check_ = 0;
   int prev_score = 0;
   int search_depth = 1;
   total_nodes_ = 0;
+  iter_elapsed_[0] = 0.0f;
 
 #ifdef SEARCH_TRACE
   SearchTrace last_complete_trace;
@@ -128,13 +132,26 @@ auto Engine::GetBestMove(int& score_out) -> Move {
       break;
     }
 
-    // Stop before starting a new iteration once the soft bound is crossed: the
-    // next iteration almost never finishes within the remaining budget, and the
-    // partial result would be discarded on the eventual hard-bound timeout.
+    // Record this iteration's result and rescale the soft bound by search
+    // difficulty (stable positions spend less, unstable ones more). Then stop
+    // if the soft bound is crossed, or if the next iteration is unlikely to
+    // finish before it.
     float elapsed = duration_cast<duration<float>>(
                         high_resolution_clock::now() - search_start_)
                         .count();
+    root_best_history_[search_depth] = best_move;
+    iter_elapsed_[search_depth] = elapsed;
+
+    if (dynamic_tm_) {
+      double difficulty = ComputeDifficulty(search_depth);
+      soft_time_ = static_cast<float>(std::clamp(
+          static_cast<double>(base_time_) * difficulty, 0.01,
+          static_cast<double>(hard_time_)));
+    }
     if (elapsed >= soft_time_) {
+      break;
+    }
+    if (dynamic_tm_ && PredictNextIterExceeds(search_depth)) {
       break;
     }
   }
@@ -246,6 +263,43 @@ auto Engine::GenerateMoves(bool captures_only) const -> vector<Move> {
   }
 
   return move_list;
+}
+
+// --- Private member functions: dynamic time management ---
+
+auto Engine::MoveStabilitySignal(int depth) const -> double {
+  // Weighted fraction of recent iterations whose root best move changed from
+  // the previous iteration, with recent changes weighted more heavily. Mapped
+  // to [-1, +1]: fully stable across the window -> -1 (spend less), constantly
+  // changing -> +1 (spend more).
+  int window = std::min(depth - 1, kTmWindow);
+  if (window <= 0) return 0.0;  // not enough history yet -> neutral
+  double changed_weight = 0.0;
+  double total_weight = 0.0;
+  double w = 1.0;
+  for (int j = 0; j < window; ++j) {
+    int d = depth - j;  // transition between completed depths d and d-1
+    total_weight += w;
+    if (root_best_history_[d] != root_best_history_[d - 1]) changed_weight += w;
+    w *= kTmMoveDecay;
+  }
+  return 2.0 * (changed_weight / total_weight) - 1.0;
+}
+
+auto Engine::ComputeDifficulty(int depth) const -> double {
+  double difficulty = 1.0 + kTmMoveWeight * MoveStabilitySignal(depth);
+  return std::clamp(difficulty, kTmDifficultyMin, kTmDifficultyMax);
+}
+
+auto Engine::PredictNextIterExceeds(int depth) const -> bool {
+  if (depth < 2) return false;  // need two completed iterations to estimate
+  float t_d = iter_elapsed_[depth] - iter_elapsed_[depth - 1];
+  float t_prev = iter_elapsed_[depth - 1] - iter_elapsed_[depth - 2];
+  double ebf = (t_prev > 0.0f) ? static_cast<double>(t_d) / t_prev
+                               : kTmEbfFallback;
+  ebf = std::clamp(ebf, kTmEbfMin, kTmEbfMax);
+  double predicted_end = static_cast<double>(iter_elapsed_[depth]) + ebf * t_d;
+  return predicted_end > static_cast<double>(soft_time_);
 }
 
 // --- Private member functions: search ---
