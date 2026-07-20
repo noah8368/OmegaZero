@@ -140,6 +140,7 @@ auto Engine::GetBestMove(int& score_out) -> Move {
                         high_resolution_clock::now() - search_start_)
                         .count();
     root_best_history_[search_depth] = best_move;
+    root_score_history_[search_depth] = prev_score;
     iter_elapsed_[search_depth] = elapsed;
 
     if (dynamic_tm_) {
@@ -286,8 +287,40 @@ auto Engine::MoveStabilitySignal(int depth) const -> double {
   return 2.0 * (changed_weight / total_weight) - 1.0;
 }
 
+auto Engine::ScoreStabilitySignal(int depth) const -> double {
+  // Combine the weighted mean absolute root-score change with an oscillation
+  // (sign-flip) bonus, recent iterations weighted more. Mapped to [-1, +1]:
+  // flat/smooth scores -> negative (spend less), large or oscillating -> +1.
+  int window = std::min(depth - 1, kTmWindow);
+  if (window <= 0) return 0.0;  // not enough history yet -> neutral
+  double weighted_abs = 0.0;
+  double total_weight = 0.0;
+  double oscillation = 0.0;
+  double w = 1.0;
+  int prev_sign = 0;
+  for (int j = 0; j < window; ++j) {
+    int d = depth - j;  // delta between completed depths d and d-1
+    int delta = root_score_history_[d] - root_score_history_[d - 1];
+    weighted_abs += w * std::abs(delta);
+    total_weight += w;
+    int sign = (delta > 0) - (delta < 0);
+    if (sign != 0 && prev_sign != 0 && sign != prev_sign) oscillation += w;
+    if (sign != 0) prev_sign = sign;
+    w *= kTmMoveDecay;
+  }
+  double magnitude = std::min((weighted_abs / total_weight) / kTmScoreScale, 1.0);
+  double instability =
+      std::min(magnitude + kTmOscWeight * (oscillation / total_weight), 1.0);
+  return 2.0 * instability - 1.0;
+}
+
 auto Engine::ComputeDifficulty(int depth) const -> double {
-  double difficulty = 1.0 + kTmMoveWeight * MoveStabilitySignal(depth);
+  // A found or faced forced mate: the result is decided, so move quickly.
+  if (std::abs(root_score_history_[depth]) > kBestEval - kSearchLimit) {
+    return kTmMateDifficulty;
+  }
+  double difficulty = 1.0 + kTmMoveWeight * MoveStabilitySignal(depth) +
+                      kTmScoreWeight * ScoreStabilitySignal(depth);
   return std::clamp(difficulty, kTmDifficultyMin, kTmDifficultyMax);
 }
 

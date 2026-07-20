@@ -67,6 +67,16 @@ constexpr int kTmWindow = 5;
 constexpr double kTmMoveDecay = 0.6;
 // Coefficient of the (signed) best-move-stability term in the difficulty factor.
 constexpr double kTmMoveWeight = 0.5;
+// Coefficient of the (signed) score-stability term in the difficulty factor.
+constexpr double kTmScoreWeight = 0.3;
+// Mean absolute per-iteration score swing (centipawns) mapping to full
+// magnitude-instability. Pawn ~= 100.
+constexpr double kTmScoreScale = 100.0;
+// Extra instability weight for score oscillation (sign-flipping deltas) on top
+// of raw magnitude.
+constexpr double kTmOscWeight = 0.5;
+// Difficulty used once a forced mate is found or faced: move quickly.
+constexpr double kTmMateDifficulty = 0.5;
 // Clamp bounds on the overall difficulty multiplier.
 constexpr double kTmDifficultyMin = 0.45;
 constexpr double kTmDifficultyMax = 2.5;
@@ -146,6 +156,9 @@ class Engine {
   // Signed [-1, +1] best-move-stability signal over the last kTmWindow depths
   // (negative = stable, positive = churning).
   auto MoveStabilitySignal(int depth) const -> double;
+  // Signed [-1, +1] score-stability signal over the last kTmWindow depths
+  // (negative = flat/smooth, positive = large swings / oscillation).
+  auto ScoreStabilitySignal(int depth) const -> double;
   // Difficulty multiplier applied to base_time_ to get the soft bound.
   auto ComputeDifficulty(int depth) const -> double;
   // Whether the next iteration is predicted to exceed the soft bound (and so
@@ -235,6 +248,7 @@ class Engine {
   // `root_best_history_[d]` is the root best move after completing depth d;
   // `iter_elapsed_[d]` is the cumulative search time at the end of depth d.
   Move root_best_history_[kSearchLimit + 1];
+  int root_score_history_[kSearchLimit + 1];
   float iter_elapsed_[kSearchLimit + 1];
 
   high_resolution_clock::time_point search_start_;
