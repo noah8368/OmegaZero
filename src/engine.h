@@ -77,9 +77,17 @@ constexpr double kTmScoreScale = 100.0;
 constexpr double kTmOscWeight = 0.5;
 // Difficulty used once a forced mate is found or faced: move quickly.
 constexpr double kTmMateDifficulty = 0.5;
+// Coefficient of the (signed) subtree/node-effort term in the difficulty factor.
+constexpr double kTmSubtreeWeight = 0.2;
+// EMA smoothing factor for the best-move node share across iterations.
+constexpr double kTmSubtreeEmaAlpha = 0.5;
 // Clamp bounds on the overall difficulty multiplier.
 constexpr double kTmDifficultyMin = 0.45;
 constexpr double kTmDifficultyMax = 2.5;
+
+// Upper bound on legal moves in a position (max ~218), sizing the per-root-move
+// node-count table.
+constexpr int kMaxRootMoves = 256;
 // Effective branching factor bounds for the predictive early-stop.
 constexpr double kTmEbfMin = 1.5;
 constexpr double kTmEbfMax = 4.0;
@@ -159,6 +167,11 @@ class Engine {
   // Signed [-1, +1] score-stability signal over the last kTmWindow depths
   // (negative = flat/smooth, positive = large swings / oscillation).
   auto ScoreStabilitySignal(int depth) const -> double;
+  // Fold the last root search's best-move node share into the EMA.
+  auto UpdateSubtreeShare() -> void;
+  // Signed [-1, +1] subtree/node-effort signal (negative = one move dominates
+  // the search, positive = effort spread across root moves).
+  auto SubtreeStabilitySignal() const -> double;
   // Difficulty multiplier applied to base_time_ to get the soft bound.
   auto ComputeDifficulty(int depth) const -> double;
   // Whether the next iteration is predicted to exceed the soft bound (and so
@@ -250,6 +263,14 @@ class Engine {
   Move root_best_history_[kSearchLimit + 1];
   int root_score_history_[kSearchLimit + 1];
   float iter_elapsed_[kSearchLimit + 1];
+
+  // Per-root-move node counts for the last root search, its move count, and the
+  // index of the best root move; plus the EMA-smoothed best-move node share.
+  uint64_t root_move_nodes_[kMaxRootMoves];
+  int root_move_count_;
+  int best_root_idx_;
+  double subtree_share_ema_;
+  bool subtree_ema_init_;
 
   high_resolution_clock::time_point search_start_;
 

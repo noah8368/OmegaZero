@@ -107,6 +107,7 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   int search_depth = 1;
   total_nodes_ = 0;
   iter_elapsed_[0] = 0.0f;
+  subtree_ema_init_ = false;
 
 #ifdef SEARCH_TRACE
   SearchTrace last_complete_trace;
@@ -144,6 +145,7 @@ auto Engine::GetBestMove(int& score_out) -> Move {
     iter_elapsed_[search_depth] = elapsed;
 
     if (dynamic_tm_) {
+      UpdateSubtreeShare();
       double difficulty = ComputeDifficulty(search_depth);
       soft_time_ = static_cast<float>(std::clamp(
           static_cast<double>(base_time_) * difficulty, 0.01,
@@ -274,15 +276,20 @@ auto Engine::MoveStabilitySignal(int depth) const -> double {
   // to [-1, +1]: fully stable across the window -> -1 (spend less), constantly
   // changing -> +1 (spend more).
   int window = std::min(depth - 1, kTmWindow);
-  if (window <= 0) return 0.0;  // not enough history yet -> neutral
+  if (window <= 0) {
+    return 0.0;  // not enough history yet -> neutral
+  }
   double changed_weight = 0.0;
   double total_weight = 0.0;
-  double w = 1.0;
-  for (int j = 0; j < window; ++j) {
-    int d = depth - j;  // transition between completed depths d and d-1
-    total_weight += w;
-    if (root_best_history_[d] != root_best_history_[d - 1]) changed_weight += w;
-    w *= kTmMoveDecay;
+  double weight = 1.0;
+  for (int offset = 0; offset < window; ++offset) {
+    // Transition between completed depths `recent` and `recent - 1`.
+    int recent = depth - offset;
+    total_weight += weight;
+    if (root_best_history_[recent] != root_best_history_[recent - 1]) {
+      changed_weight += weight;
+    }
+    weight *= kTmMoveDecay;
   }
   return 2.0 * (changed_weight / total_weight) - 1.0;
 }
@@ -292,26 +299,67 @@ auto Engine::ScoreStabilitySignal(int depth) const -> double {
   // (sign-flip) bonus, recent iterations weighted more. Mapped to [-1, +1]:
   // flat/smooth scores -> negative (spend less), large or oscillating -> +1.
   int window = std::min(depth - 1, kTmWindow);
-  if (window <= 0) return 0.0;  // not enough history yet -> neutral
+  if (window <= 0) {
+    return 0.0;  // not enough history yet -> neutral
+  }
   double weighted_abs = 0.0;
   double total_weight = 0.0;
   double oscillation = 0.0;
-  double w = 1.0;
+  double weight = 1.0;
   int prev_sign = 0;
-  for (int j = 0; j < window; ++j) {
-    int d = depth - j;  // delta between completed depths d and d-1
-    int delta = root_score_history_[d] - root_score_history_[d - 1];
-    weighted_abs += w * std::abs(delta);
-    total_weight += w;
+  for (int offset = 0; offset < window; ++offset) {
+    // Score delta between completed depths `recent` and `recent - 1`.
+    int recent = depth - offset;
+    int delta = root_score_history_[recent] - root_score_history_[recent - 1];
+    weighted_abs += weight * std::abs(delta);
+    total_weight += weight;
     int sign = (delta > 0) - (delta < 0);
-    if (sign != 0 && prev_sign != 0 && sign != prev_sign) oscillation += w;
-    if (sign != 0) prev_sign = sign;
-    w *= kTmMoveDecay;
+    if (sign != 0 && prev_sign != 0 && sign != prev_sign) {
+      oscillation += weight;
+    }
+    if (sign != 0) {
+      prev_sign = sign;
+    }
+    weight *= kTmMoveDecay;
   }
-  double magnitude = std::min((weighted_abs / total_weight) / kTmScoreScale, 1.0);
+  double magnitude =
+      std::min((weighted_abs / total_weight) / kTmScoreScale, 1.0);
   double instability =
       std::min(magnitude + kTmOscWeight * (oscillation / total_weight), 1.0);
   return 2.0 * instability - 1.0;
+}
+
+auto Engine::UpdateSubtreeShare() -> void {
+  // Fold the fraction of root nodes spent on the best move (from the last root
+  // search) into an EMA. A dominant best move -> share near 1; effort spread
+  // across root moves -> lower share.
+  if (best_root_idx_ < 0 || best_root_idx_ >= root_move_count_) {
+    return;
+  }
+  uint64_t total = 0;
+  for (int i = 0; i < root_move_count_; ++i) {
+    total += root_move_nodes_[i];
+  }
+  if (total == 0) {
+    return;
+  }
+  double share = static_cast<double>(root_move_nodes_[best_root_idx_]) / total;
+  if (!subtree_ema_init_) {
+    subtree_share_ema_ = share;
+    subtree_ema_init_ = true;
+  } else {
+    subtree_share_ema_ = kTmSubtreeEmaAlpha * share +
+                         (1.0 - kTmSubtreeEmaAlpha) * subtree_share_ema_;
+  }
+}
+
+auto Engine::SubtreeStabilitySignal() const -> double {
+  // Map best-move node share to [-1, +1]: dominant move (share -> 1) -> -1
+  // (spend less), effort spread (share -> 0) -> +1 (spend more).
+  if (!subtree_ema_init_) {
+    return 0.0;
+  }
+  return 1.0 - 2.0 * subtree_share_ema_;
 }
 
 auto Engine::ComputeDifficulty(int depth) const -> double {
@@ -320,12 +368,15 @@ auto Engine::ComputeDifficulty(int depth) const -> double {
     return kTmMateDifficulty;
   }
   double difficulty = 1.0 + kTmMoveWeight * MoveStabilitySignal(depth) +
-                      kTmScoreWeight * ScoreStabilitySignal(depth);
+                      kTmScoreWeight * ScoreStabilitySignal(depth) +
+                      kTmSubtreeWeight * SubtreeStabilitySignal();
   return std::clamp(difficulty, kTmDifficultyMin, kTmDifficultyMax);
 }
 
 auto Engine::PredictNextIterExceeds(int depth) const -> bool {
-  if (depth < 2) return false;  // need two completed iterations to estimate
+  if (depth < 2) {
+    return false;  // need two completed iterations to estimate
+  }
   float t_d = iter_elapsed_[depth] - iter_elapsed_[depth - 1];
   float t_prev = iter_elapsed_[depth - 1] - iter_elapsed_[depth - 2];
   double ebf = (t_prev > 0.0f) ? static_cast<double>(t_d) / t_prev
@@ -378,6 +429,13 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     return board_->Evaluate();
   }
   CheckSearchTime();
+
+  // Reset per-root-move node accounting so an early return (e.g. TT cutoff)
+  // leaves no stale data for the dynamic-TM subtree signal.
+  if (ply == kRootNodePly) {
+    best_root_idx_ = -1;
+    root_move_count_ = 0;
+  }
 
   int orig_alpha = alpha;
 #ifdef SEARCH_TRACE
@@ -473,6 +531,16 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   int best_trace_idx = -1;
 #endif
 
+  // Reset per-root-move node accounting for this root search (dynamic TM).
+  if (ply == kRootNodePly) {
+    root_move_count_ = std::min(static_cast<int>(move_list.size()),
+                                kMaxRootMoves);
+    for (int i = 0; i < root_move_count_; ++i) {
+      root_move_nodes_[i] = 0;
+    }
+    best_root_idx_ = -1;
+  }
+
   // --- Move loop ---
   for (size_t move_idx = 0; move_idx < move_list.size(); ++move_idx) {
     Move move = move_list[move_idx];
@@ -534,6 +602,11 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 #ifdef SEARCH_TRACE
     int this_trace_idx = TraceBeginMove(move, player_to_move, ply);
 #endif
+    // Node count before this root move's subtree is searched (dynamic TM).
+    uint64_t root_nodes_before = 0;
+    if (ply == kRootNodePly) {
+      root_nodes_before = GetTotalNodes();
+    }
     int search_eval;
     if (made_moves_counter == 1) {
       // Search the first move (presumed to be the best) with a full window
@@ -572,6 +645,9 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 
     board_->UnmakeMove(move);
     pos_history_.resize(history_size_before_moves);
+    if (ply == kRootNodePly && move_idx < static_cast<size_t>(kMaxRootMoves)) {
+      root_move_nodes_[move_idx] += GetTotalNodes() - root_nodes_before;
+    }
 #ifdef SEARCH_TRACE
     TraceEndMove(search_eval, ply);
 #endif
@@ -580,6 +656,9 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       best_move = move;
       pv_move = best_move;
       best_eval = search_eval;
+      if (ply == kRootNodePly) {
+        best_root_idx_ = static_cast<int>(move_idx);
+      }
 #ifdef SEARCH_TRACE
       best_trace_idx = this_trace_idx;
 #endif
