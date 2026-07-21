@@ -35,6 +35,8 @@ class UciHandler {
   auto HandleGo(const std::string& line) -> void;
   // UCI `ponderhit`: hand the running ponder search its real time budget.
   auto HandlePonderHit() -> void;
+  // UCI `setoption name <N> value <V>`: update the runtime search parameter <N>.
+  auto HandleSetOption(const std::string& line) -> void;
   // Body of the search worker thread: runs the search and prints `bestmove`.
   auto RunSearch() -> void;
   // Stop any in-progress search worker and join it (no-op if none running).
@@ -59,6 +61,9 @@ class UciHandler {
 
   std::unique_ptr<Board> board_;
   std::unique_ptr<Engine> engine_;
+  // Current values of the tunable search parameters (UCI spin options). Source of
+  // truth across engine_ re-creation; pushed into engine_ before each search.
+  SearchParams uci_params_;
   std::vector<std::vector<std::string>> opening_book_;
   std::string book_path_;
   int turn_num_;

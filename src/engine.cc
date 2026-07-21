@@ -309,7 +309,7 @@ auto Engine::MoveStabilitySignal(int depth) const -> double {
   // the previous iteration, with recent changes weighted more heavily. Mapped
   // to [-1, +1]: fully stable across the window -> -1 (spend less), constantly
   // changing -> +1 (spend more).
-  int window = std::min(depth - 1, kTmWindow);
+  int window = std::min(depth - 1, params_.tm_window);
   if (window <= 0) {
     return 0.0;  // not enough history yet -> neutral
   }
@@ -323,7 +323,7 @@ auto Engine::MoveStabilitySignal(int depth) const -> double {
     if (root_best_history_[recent] != root_best_history_[recent - 1]) {
       changed_weight += weight;
     }
-    weight *= kTmMoveDecay;
+    weight *= params_.tm_move_decay;
   }
   return 2.0 * (changed_weight / total_weight) - 1.0;
 }
@@ -332,7 +332,7 @@ auto Engine::ScoreStabilitySignal(int depth) const -> double {
   // Combine the weighted mean absolute root-score change with an oscillation
   // (sign-flip) bonus, recent iterations weighted more. Mapped to [-1, +1]:
   // flat/smooth scores -> negative (spend less), large or oscillating -> +1.
-  int window = std::min(depth - 1, kTmWindow);
+  int window = std::min(depth - 1, params_.tm_window);
   if (window <= 0) {
     return 0.0;  // not enough history yet -> neutral
   }
@@ -354,12 +354,12 @@ auto Engine::ScoreStabilitySignal(int depth) const -> double {
     if (sign != 0) {
       prev_sign = sign;
     }
-    weight *= kTmMoveDecay;
+    weight *= params_.tm_move_decay;
   }
   double magnitude =
-      std::min((weighted_abs / total_weight) / kTmScoreScale, 1.0);
+      std::min((weighted_abs / total_weight) / params_.tm_score_scale, 1.0);
   double instability =
-      std::min(magnitude + kTmOscWeight * (oscillation / total_weight), 1.0);
+      std::min(magnitude + params_.tm_osc_weight * (oscillation / total_weight), 1.0);
   return 2.0 * instability - 1.0;
 }
 
@@ -417,8 +417,8 @@ auto Engine::UpdateSubtreeShare() -> void {
     subtree_share_ema_ = share;
     subtree_ema_init_ = true;
   } else {
-    subtree_share_ema_ = kTmSubtreeEmaAlpha * share +
-                         (1.0 - kTmSubtreeEmaAlpha) * subtree_share_ema_;
+    subtree_share_ema_ = params_.tm_subtree_ema_alpha * share +
+                         (1.0 - params_.tm_subtree_ema_alpha) * subtree_share_ema_;
   }
 }
 
@@ -434,18 +434,18 @@ auto Engine::SubtreeStabilitySignal() const -> double {
 auto Engine::ComputeDifficulty(int depth) const -> double {
   // A found or faced forced mate: the result is decided, so move quickly.
   if (std::abs(root_score_history_[depth]) > kBestEval - kSearchLimit) {
-    return kTmMateDifficulty;
+    return params_.tm_mate_difficulty;
   }
   // An obvious recapture that has stayed best for at least one full iteration:
   // it is nearly forced, so spend very little.
   if (has_obvious_recapture_ && depth >= 2 &&
       root_best_history_[depth] == obvious_recapture_) {
-    return kTmObviousDifficulty;
+    return params_.tm_obvious_difficulty;
   }
-  double difficulty = 1.0 + kTmMoveWeight * MoveStabilitySignal(depth) +
-                      kTmScoreWeight * ScoreStabilitySignal(depth) +
-                      kTmSubtreeWeight * SubtreeStabilitySignal();
-  return std::clamp(difficulty, kTmDifficultyMin, kTmDifficultyMax);
+  double difficulty = 1.0 + params_.tm_move_weight * MoveStabilitySignal(depth) +
+                      params_.tm_score_weight * ScoreStabilitySignal(depth) +
+                      params_.tm_subtree_weight * SubtreeStabilitySignal();
+  return std::clamp(difficulty, params_.tm_difficulty_min, params_.tm_difficulty_max);
 }
 
 auto Engine::PredictNextIterExceeds(int depth) const -> bool {
@@ -455,8 +455,8 @@ auto Engine::PredictNextIterExceeds(int depth) const -> bool {
   float t_d = iter_elapsed_[depth] - iter_elapsed_[depth - 1];
   float t_prev = iter_elapsed_[depth - 1] - iter_elapsed_[depth - 2];
   double ebf =
-      (t_prev > 0.0f) ? static_cast<double>(t_d) / t_prev : kTmEbfFallback;
-  ebf = std::clamp(ebf, kTmEbfMin, kTmEbfMax);
+      (t_prev > 0.0f) ? static_cast<double>(t_d) / t_prev : params_.tm_ebf_fallback;
+  ebf = std::clamp(ebf, params_.tm_ebf_min, params_.tm_ebf_max);
   double predicted_end = static_cast<double>(iter_elapsed_[depth]) + ebf * t_d;
   return predicted_end > static_cast<double>(soft_time_);
 }
@@ -469,9 +469,9 @@ auto Engine::AspirationSearch(int prev_score, int depth, int ply,
   if (depth == 1) {
     return Pvs(best_move, kWorstEval, kBestEval, depth, ply, true);
   }
-  int alpha = max(prev_score - 25, kWorstEval);
-  int beta = min(prev_score + 25, kBestEval);
-  int delta = 25;
+  int alpha = max(prev_score - params_.aspiration_delta, kWorstEval);
+  int beta = min(prev_score + params_.aspiration_delta, kBestEval);
+  int delta = params_.aspiration_delta;
 
   for (;;) {
     int score = Pvs(best_move, alpha, beta, depth, ply, true);
@@ -492,10 +492,6 @@ auto Engine::AspirationSearch(int prev_score, int depth, int ply,
   }
 }
 
-constexpr S8 kNumEarlyMoves = 3;
-constexpr S8 kMinReductionDepth = 3;
-constexpr S8 kMinIirDepth = 4;
-constexpr S8 kMaxRazoringDepth = 3;
 constexpr S8 kRazoringMargin = 350;
 
 auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
@@ -532,7 +528,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   }
 
   // Reduce the depth of the entire node if no hash move is present.
-  if (depth >= kMinIirDepth && !ValidateTtMove(hash_entry.hash_move)) {
+  if (depth >= params_.min_iir_depth && !ValidateTtMove(hash_entry.hash_move)) {
     --depth;
   }
 
@@ -569,7 +565,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 
   // Drop into quiescence search immediately if the current position static
   // evalustion doesn't look promising.
-  if (depth <= kMaxRazoringDepth && !at_pv_node && !in_check &&
+  if (depth <= params_.max_razoring_depth && !at_pv_node && !in_check &&
       static_eval + kRazoringMargin < alpha) {
     return QuiescenceSearch(alpha, beta, ply);
   }
@@ -686,9 +682,9 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       // and quiet to verify that the move probably isn't better than the
       // first move searched.
       bool reduced = false;
-      if (made_moves_counter > kNumEarlyMoves && !at_pv_node &&
+      if (made_moves_counter > params_.num_early_moves && !at_pv_node &&
           move.castling_type == kNA && move.promoted_to_piece == kNA &&
-          !gives_check && depth >= kMinReductionDepth &&
+          !gives_check && depth >= params_.min_reduction_depth &&
           (move.captured_piece == kNA || see_val < 0)) {
         int depth_reduction = ComputeLmrReduction(depth, made_moves_counter,
                                                   player_to_move, move);
@@ -755,7 +751,6 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     }
   }
 
-
   if (made_moves_counter == 0) {
     if (futility_pruned) {
       return alpha;
@@ -770,8 +765,6 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   }
   return best_eval;
 }
-
-constexpr int kDelta = 900;
 
 auto Engine::QuiescenceSearch(int alpha, int beta, int ply, int qs_depth)
     -> int {
@@ -800,7 +793,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int ply, int qs_depth)
     if (!InEndgame()) {
       // Perform Delta Pruning if the position is extremely poor. It is
       // assumed it won't improve enough to exceed alpha.
-      if (stand_pat_eval < alpha - kDelta) {
+      if (stand_pat_eval < alpha - params_.qs_delta) {
         return alpha;
       }
     }
@@ -842,8 +835,6 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int ply, int qs_depth)
   return alpha;
 }
 
-constexpr int kSingularDepthMin = 6;
-
 auto Engine::TrySingularExtension(const TableEntry& hash_entry, int depth,
                                   int ply, int beta) -> int {
   bool not_in_extension = excluded_move_.IsEmpty();
@@ -852,7 +843,7 @@ auto Engine::TrySingularExtension(const TableEntry& hash_entry, int depth,
   bool not_all_node =
       (hash_entry.node_type == kPvNode || hash_entry.node_type == kCutNode);
 
-  bool should_extend = (depth >= kSingularDepthMin && not_in_extension &&
+  bool should_extend = (depth >= params_.singular_depth_min && not_in_extension &&
                         ValidateTtMove(hash_entry.hash_move) && not_mate &&
                         deep_enough && not_all_node);
   if (should_extend) {
@@ -1162,14 +1153,12 @@ auto Engine::ProbeTt(int& alpha, int& beta, int depth, int ply, int& result)
 
 auto Engine::ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
                                  bool at_pv_node, bool in_check) -> bool {
-  constexpr int kNullMoveDepthMin = 4;
-  constexpr int kNullMoveDepthHighR = 6;
-  if (depth < kNullMoveDepthMin || at_pv_node || !ZugzwangUnlikely() ||
+  if (depth < params_.null_move_depth_min || at_pv_node || !ZugzwangUnlikely() ||
       in_check) {
     return false;
   }
   board_->MakeNullMove();
-  int R = (depth > kNullMoveDepthHighR) ? 3 : 2;
+  int R = (depth > params_.null_move_depth_high_r) ? 3 : 2;
   // Increase reduction when the line being explored isn't improving.
   if (!improving_) {
     ++R;
@@ -1226,6 +1215,5 @@ auto Engine::BenchmarkReport(int search_depth) -> void {
 #endif
 
 // --- Guarded: search trace ---
-
 
 }  // namespace omegazero

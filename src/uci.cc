@@ -8,6 +8,7 @@
 
 #include "uci.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -27,6 +28,65 @@ namespace omegazero {
 
 using std::string;
 using std::vector;
+
+namespace {
+
+// The tunable search parameters, exposed as UCI `spin` options. `def`/`min`/`max`
+// are the integer values shown to the GUI. For DblOpt the stored double equals
+// the UCI integer divided by `divisor` (so a weight of 0.50 is surfaced as 50).
+struct IntOpt {
+  const char* name;
+  int SearchParams::* field;
+  int def, min, max;
+};
+struct DblOpt {
+  const char* name;
+  double SearchParams::* field;
+  int divisor;
+  int def, min, max;
+};
+
+constexpr IntOpt kIntOpts[] = {
+    {"TmWindow", &SearchParams::tm_window, 5, 1, 30},
+    {"AspirationDelta", &SearchParams::aspiration_delta, 25, 1, 200},
+    {"FutilityMargin", &SearchParams::futility_margin, 200, 20, 600},
+    {"MaxFutilityPruningDepth", &SearchParams::max_futility_pruning_depth, 2, 0,
+     8},
+    {"MaxLateMovePruningDepth", &SearchParams::max_late_move_pruning_depth, 2, 0,
+     8},
+    {"MaxSeePruningDepth", &SearchParams::max_see_pruning_depth, 5, 0, 12},
+    {"SeeMargin", &SearchParams::see_margin, 100, 10, 400},
+    {"HistoryLmrThreshold", &SearchParams::history_lmr_threshold, -1000, -8000,
+     0},
+    {"NumEarlyMoves", &SearchParams::num_early_moves, 3, 1, 12},
+    {"MinReductionDepth", &SearchParams::min_reduction_depth, 3, 1, 8},
+    {"MinIirDepth", &SearchParams::min_iir_depth, 4, 1, 12},
+    {"MaxRazoringDepth", &SearchParams::max_razoring_depth, 3, 0, 8},
+    {"SingularDepthMin", &SearchParams::singular_depth_min, 6, 3, 16},
+    {"NullMoveDepthMin", &SearchParams::null_move_depth_min, 4, 1, 12},
+    {"NullMoveDepthHighR", &SearchParams::null_move_depth_high_r, 6, 2, 16},
+    {"QsDelta", &SearchParams::qs_delta, 900, 100, 2000},
+};
+
+constexpr DblOpt kDblOpts[] = {
+    {"TmMoveDecay", &SearchParams::tm_move_decay, 100, 60, 0, 100},
+    {"TmMoveWeight", &SearchParams::tm_move_weight, 100, 50, 0, 300},
+    {"TmScoreWeight", &SearchParams::tm_score_weight, 100, 30, 0, 300},
+    {"TmScoreScale", &SearchParams::tm_score_scale, 1, 100, 10, 1000},
+    {"TmOscWeight", &SearchParams::tm_osc_weight, 100, 50, 0, 300},
+    {"TmMateDifficulty", &SearchParams::tm_mate_difficulty, 100, 50, 1, 300},
+    {"TmObviousDifficulty", &SearchParams::tm_obvious_difficulty, 100, 25, 1,
+     300},
+    {"TmSubtreeWeight", &SearchParams::tm_subtree_weight, 100, 20, 0, 300},
+    {"TmSubtreeEmaAlpha", &SearchParams::tm_subtree_ema_alpha, 100, 50, 1, 100},
+    {"TmDifficultyMin", &SearchParams::tm_difficulty_min, 100, 45, 1, 100},
+    {"TmDifficultyMax", &SearchParams::tm_difficulty_max, 100, 250, 100, 500},
+    {"TmEbfMin", &SearchParams::tm_ebf_min, 100, 150, 100, 400},
+    {"TmEbfMax", &SearchParams::tm_ebf_max, 100, 400, 100, 800},
+    {"TmEbfFallback", &SearchParams::tm_ebf_fallback, 100, 200, 100, 400},
+};
+
+}  // namespace
 
 UciHandler::UciHandler(const string& book_path)
     : book_path_(book_path), turn_num_(1), move_index_(0),
@@ -52,6 +112,8 @@ auto UciHandler::Run() -> void {
       HandleUciNewGame();
     } else if (line.rfind("position", 0) == 0) {
       HandlePosition(line);
+    } else if (line.rfind("setoption", 0) == 0) {
+      HandleSetOption(line);
     } else if (line.rfind("go", 0) == 0) {
       HandleGo(line);
     } else if (line == "ponderhit") {
@@ -73,7 +135,53 @@ auto UciHandler::Run() -> void {
 auto UciHandler::HandleUci() -> void {
   std::cout << "id name OmegaZero" << std::endl;
   std::cout << "id author Noah Himed" << std::endl;
+  // Advertise the tunable search parameters as spin options (SPSA targets).
+  for (const IntOpt& o : kIntOpts) {
+    std::cout << "option name " << o.name << " type spin default " << o.def
+              << " min " << o.min << " max " << o.max << std::endl;
+  }
+  for (const DblOpt& o : kDblOpts) {
+    std::cout << "option name " << o.name << " type spin default " << o.def
+              << " min " << o.min << " max " << o.max << std::endl;
+  }
   std::cout << "uciok" << std::endl;
+}
+
+auto UciHandler::HandleSetOption(const string& line) -> void {
+  std::istringstream iss(line);
+  string token;
+  iss >> token;  // "setoption"
+  iss >> token;  // "name"
+  // Option names have no spaces here, but parse defensively: collect name tokens
+  // up to "value".
+  string name;
+  while (iss >> token && token != "value") {
+    if (!name.empty()) name += ' ';
+    name += token;
+  }
+  string value_str;
+  if (!(iss >> value_str)) return;  // spin options require a value
+  int value;
+  try {
+    value = std::stoi(value_str);
+  } catch (const std::exception&) {
+    return;  // ignore malformed values
+  }
+
+  for (const IntOpt& o : kIntOpts) {
+    if (name == o.name) {
+      uci_params_.*o.field = std::clamp(value, o.min, o.max);
+      return;
+    }
+  }
+  for (const DblOpt& o : kDblOpts) {
+    if (name == o.name) {
+      uci_params_.*o.field =
+          std::clamp(value, o.min, o.max) / static_cast<double>(o.divisor);
+      return;
+    }
+  }
+  // Unknown option: ignore (per UCI, engines may silently drop unknown options).
 }
 
 auto UciHandler::HandleIsReady() -> void {
@@ -255,6 +363,9 @@ auto UciHandler::HandleGo(const string& line) -> void {
   }
   engine_->SetSearchMoves(search_moves);
   engine_->SetMateTarget(mate);
+  // Apply the current UCI option values (they persist across engine_ re-creation
+  // and any setoption since the last search).
+  engine_->SetParams(uci_params_);
 
   // Search on a worker thread so the main loop can keep reading stdin and honor
   // `stop` (required for `go infinite`).
