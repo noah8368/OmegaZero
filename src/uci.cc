@@ -62,6 +62,7 @@ constexpr IntOpt kIntOpts[] = {
     {"MinReductionDepth", &SearchParams::min_reduction_depth, 3, 1, 8},
     {"MinIirDepth", &SearchParams::min_iir_depth, 4, 1, 12},
     {"MaxRazoringDepth", &SearchParams::max_razoring_depth, 3, 0, 8},
+    {"RazoringMargin", &SearchParams::razoring_margin, 350, 50, 1000},
     {"SingularDepthMin", &SearchParams::singular_depth_min, 6, 3, 16},
     {"NullMoveDepthMin", &SearchParams::null_move_depth_min, 4, 1, 12},
     {"NullMoveDepthHighR", &SearchParams::null_move_depth_high_r, 6, 2, 16},

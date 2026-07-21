@@ -492,7 +492,6 @@ auto Engine::AspirationSearch(int prev_score, int depth, int ply,
   }
 }
 
-constexpr S8 kRazoringMargin = 350;
 
 auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
                  bool null_move_allowed) -> int {
@@ -566,7 +565,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   // Drop into quiescence search immediately if the current position static
   // evalustion doesn't look promising.
   if (depth <= params_.max_razoring_depth && !at_pv_node && !in_check &&
-      static_eval + kRazoringMargin < alpha) {
+      static_eval + params_.razoring_margin < alpha) {
     return QuiescenceSearch(alpha, beta, ply);
   }
 

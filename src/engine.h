@@ -128,6 +128,7 @@ struct SearchParams {
   int min_reduction_depth = 3;       // min depth for late-move reductions
   int min_iir_depth = 4;             // min depth for internal iterative reduction
   int max_razoring_depth = 3;        // max depth for razoring
+  int razoring_margin = 350;         // razoring drop-to-qsearch margin (cp)
   int singular_depth_min = 6;        // min depth for singular extensions
   int null_move_depth_min = 4;       // min depth for null-move pruning
   int null_move_depth_high_r = 6;    // depth above which NMP uses the larger R
