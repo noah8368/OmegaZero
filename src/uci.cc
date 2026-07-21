@@ -30,7 +30,8 @@ using std::vector;
 
 UciHandler::UciHandler(const string& book_path)
     : book_path_(book_path), turn_num_(1), move_index_(0),
-      on_opening_(true) {
+      on_opening_(true), pondering_(false), ponder_soft_(0.0f),
+      ponder_hard_(0.0f) {
   board_ = std::make_unique<Board>(kStartFen);
   engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
   engine_->SetInfoCallback(
@@ -53,8 +54,13 @@ auto UciHandler::Run() -> void {
       HandlePosition(line);
     } else if (line.rfind("go", 0) == 0) {
       HandleGo(line);
+    } else if (line == "ponderhit") {
+      // The pondered move was played: give the running search its real budget.
+      HandlePonderHit();
     } else if (line == "stop") {
       // Abort the running search; the worker prints its `bestmove` as it exits.
+      // A `stop` during ponder means the guess was wrong, so end pondering.
+      pondering_ = false;
       StopSearch();
     } else if (line == "quit") {
       break;
@@ -175,7 +181,7 @@ auto UciHandler::HandleGo(const string& line) -> void {
   int wtime = 0, btime = 0, winc = 0, binc = 0, movetime = 0, movestogo = 0;
   int depth = 0, mate = 0;
   long long nodes = 0;
-  bool infinite = false;
+  bool infinite = false, ponder = false;
   vector<string> searchmove_strs;
   while (iss >> token) {
     if (token == "wtime") iss >> wtime;
@@ -188,6 +194,7 @@ auto UciHandler::HandleGo(const string& line) -> void {
     else if (token == "nodes") iss >> nodes;
     else if (token == "mate") iss >> mate;
     else if (token == "infinite") infinite = true;
+    else if (token == "ponder") ponder = true;
     // `searchmoves` is a move list running to the end of the command (GUIs send
     // it last); consume all remaining tokens as candidate moves.
     else if (token == "searchmoves") {
@@ -195,8 +202,10 @@ auto UciHandler::HandleGo(const string& line) -> void {
     }
   }
 
+  // While pondering the engine must not answer until `ponderhit`/`stop`, so it
+  // searches rather than replying instantly from book.
   Move book_move;
-  if (on_opening_ && GetBookMove(book_move)) {
+  if (!ponder && on_opening_ && GetBookMove(book_move)) {
     std::lock_guard<std::mutex> lock(cout_mutex_);
     std::cout << "bestmove " << MoveToUciStr(book_move) << std::endl;
     return;
@@ -210,7 +219,17 @@ auto UciHandler::HandleGo(const string& line) -> void {
   float remaining_ms = static_cast<float>((side == kWhite) ? wtime : btime);
   float inc_ms = static_cast<float>((side == kWhite) ? winc : binc);
   bool has_clock = (movetime > 0 || wtime > 0 || btime > 0);
-  if (infinite || (!has_clock && (depth > 0 || nodes > 0 || mate > 0))) {
+  pondering_ = false;
+  if (ponder) {
+    // Search indefinitely until `ponderhit`/`stop`; stash the per-move budget
+    // (in seconds) to impose via PonderHit() when the guess is confirmed.
+    TimeBounds bounds =
+        ComputeTimeBounds(remaining_ms, inc_ms, movestogo, movetime);
+    ponder_soft_ = bounds.soft;
+    ponder_hard_ = bounds.hard;
+    pondering_ = true;
+    engine_->SetInfiniteSearch();
+  } else if (infinite || (!has_clock && (depth > 0 || nodes > 0 || mate > 0))) {
     engine_->SetInfiniteSearch();
   } else if (movetime > 0) {
     // A fixed per-move request is honored exactly, not difficulty-scaled.
@@ -247,9 +266,25 @@ auto UciHandler::RunSearch() -> void {
   std::lock_guard<std::mutex> lock(cout_mutex_);
   if (best_move.IsEmpty()) {
     std::cout << "bestmove 0000" << std::endl;
-  } else {
-    std::cout << "bestmove " << MoveToUciStr(best_move) << std::endl;
+    return;
   }
+  std::cout << "bestmove " << MoveToUciStr(best_move);
+  // Offer the predicted opponent reply (PV[1]) so the GUI can ponder. It is the
+  // other side's move, so render castling from that perspective.
+  Move ponder_move = engine_->GetPonderMove();
+  if (!ponder_move.IsEmpty()) {
+    std::cout << " ponder "
+              << MoveToUciStr(ponder_move,
+                              GetOtherPlayer(board_->GetPlayerToMove()));
+  }
+  std::cout << std::endl;
+}
+
+auto UciHandler::HandlePonderHit() -> void {
+  if (pondering_ && search_thread_.joinable()) {
+    engine_->PonderHit(ponder_soft_, ponder_hard_);
+  }
+  pondering_ = false;
 }
 
 auto UciHandler::StopSearch() -> void {

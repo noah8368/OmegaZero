@@ -197,6 +197,19 @@ class Engine {
   // `go mate`); 0 disables.
   auto SetMateTarget(int moves) -> void { mate_target_ = moves; }
 
+  // UCI `ponderhit`: the pondered move was played, so give the in-progress
+  // (infinite) ponder search a real deadline `soft`/`hard` seconds from now, on
+  // top of the time already spent pondering. Thread-safe; call while
+  // GetBestMove() runs on the worker.
+  auto PonderHit(float soft, float hard) -> void;
+  // The move the engine expects the opponent to reply with: the second move of
+  // the last search's principal variation, or an empty Move if the PV is shorter
+  // than two plies. Read after GetBestMove() returns; used for `bestmove ...
+  // ponder ...`.
+  auto GetPonderMove() const -> Move {
+    return completed_pv_len_ >= 2 ? completed_pv_[1] : Move{};
+  }
+
   auto GetTotalNodes() const -> uint64_t {
     return total_nodes_ + nodes_since_time_check_;
   }
@@ -305,9 +318,11 @@ class Engine {
   // Stop starting new iterative-deepening iterations past `soft_time_`; abort a
   // search in progress once `hard_time_` is reached. `base_time_` is the neutral
   // budget the soft bound is rescaled from by search difficulty. In fixed-time
-  // modes the three coincide and dynamic scaling is disabled.
-  float soft_time_;
-  float hard_time_;
+  // modes the three coincide and dynamic scaling is disabled. soft_/hard_time_
+  // are atomic so PonderHit() can revise the running search's deadline from the
+  // UCI thread; access is via atomic<float>'s implicit load/store conversions.
+  std::atomic<float> soft_time_;
+  std::atomic<float> hard_time_;
   float base_time_;
   bool dynamic_tm_;
 
@@ -336,6 +351,11 @@ class Engine {
   // over-sized by one so a child at `ply + 1` is always addressable.
   Move pv_table_[kSearchLimit + 1][kSearchLimit];
   int pv_length_[kSearchLimit + 1];
+  // Snapshot of the root PV after the last *completed* depth. pv_table_[0] is
+  // wiped by the entry reset of a subsequent (possibly aborted) iteration, so
+  // the ponder move and any post-search PV read must come from here.
+  Move completed_pv_[kSearchLimit];
+  int completed_pv_len_;
   // Optional per-iteration reporting hook (see SetInfoCallback). Empty if unset.
   std::function<void(const SearchInfo&)> info_cb_;
 
@@ -414,6 +434,19 @@ inline auto Engine::SetTimeBounds(float soft, float hard, float base) -> void {
   depth_limit_ = kSearchLimit;
   node_limit_ = UINT64_MAX;
   stop_requested_.store(false);
+}
+
+inline auto Engine::PonderHit(float soft, float hard) -> void {
+  // Rebase the deadline onto the wall clock: the ponder search has already run
+  // for `elapsed` seconds since search_start_, so allow `hard`/`soft` more from
+  // now by comparing against elapsed + budget (CheckSearchTime and the ID loop
+  // measure time from search_start_). search_start_ is set once by the worker
+  // before any ponderhit can arrive, so reading it here is race-free.
+  float elapsed = duration_cast<duration<float>>(high_resolution_clock::now() -
+                                                 search_start_)
+                      .count();
+  soft_time_.store(elapsed + std::max(soft, 0.01f));
+  hard_time_.store(elapsed + std::max(hard, 0.01f));
 }
 
 inline auto Engine::SetInfiniteSearch() -> void {

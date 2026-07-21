@@ -33,6 +33,8 @@ class UciHandler {
   auto HandleUciNewGame() -> void;
   auto HandlePosition(const std::string& line) -> void;
   auto HandleGo(const std::string& line) -> void;
+  // UCI `ponderhit`: hand the running ponder search its real time budget.
+  auto HandlePonderHit() -> void;
   // Body of the search worker thread: runs the search and prints `bestmove`.
   auto RunSearch() -> void;
   // Stop any in-progress search worker and join it (no-op if none running).
@@ -62,6 +64,13 @@ class UciHandler {
   int turn_num_;
   int move_index_;
   bool on_opening_;
+
+  // Ponder state: `pondering_` is true while a `go ponder` search runs (before
+  // `ponderhit`/`stop`); ponder_soft_/ponder_hard_ hold the per-move budget (in
+  // seconds) to impose on the search when `ponderhit` arrives.
+  bool pondering_;
+  float ponder_soft_;
+  float ponder_hard_;
 
   // Search runs on this worker so the main loop can keep reading stdin (needed
   // to honor `stop` during `go infinite`). `cout_mutex_` serializes output so a

@@ -128,6 +128,7 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   total_nodes_ = 0;
   iter_elapsed_[0] = 0.0f;
   subtree_ema_init_ = false;
+  completed_pv_len_ = 0;
 
   const int max_depth = std::min(depth_limit_, kSearchLimit);
   for (; search_depth <= max_depth; ++search_depth) {
@@ -152,6 +153,13 @@ auto Engine::GetBestMove(int& score_out) -> Move {
     root_score_history_[search_depth] = prev_score;
     iter_elapsed_[search_depth] = elapsed;
 
+    // Snapshot the completed root PV (pv_table_[0] gets reset by the next
+    // iteration's entry, which may then abort before repopulating it).
+    completed_pv_len_ = pv_length_[0];
+    for (int i = 0; i < completed_pv_len_; ++i) {
+      completed_pv_[i] = pv_table_[0][i];
+    }
+
     // Report this completed depth (only completed depths reach here; an
     // OutOfTime abort breaks out above before this point).
     if (info_cb_) {
@@ -160,8 +168,8 @@ auto Engine::GetBestMove(int& score_out) -> Move {
       info.score = prev_score;
       info.nodes = GetTotalNodes();
       info.time_ms = static_cast<long long>(elapsed * 1000.0f);
-      info.pv = pv_table_[0];
-      info.pv_len = pv_length_[0];
+      info.pv = completed_pv_;
+      info.pv_len = completed_pv_len_;
       info_cb_(info);
     }
 
