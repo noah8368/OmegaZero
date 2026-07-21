@@ -24,9 +24,6 @@
 #include "move.h"
 #include "out_of_time.h"
 #include "transposition_table.h"
-#ifdef SEARCH_TRACE
-#include "search_trace.h"
-#endif
 
 namespace omegazero {
 
@@ -156,9 +153,6 @@ class Engine {
   auto BenchmarkReport(int search_depth) -> void;
 #endif
 
-#ifdef SEARCH_TRACE
-  auto GetSearchTrace() const -> const SearchTrace& { return search_trace_; }
-#endif
 
  private:
   // Queries and predicates (bool).
@@ -250,23 +244,6 @@ class Engine {
   auto StoreTtEntry(int best_eval, int orig_alpha, int beta, int depth,
                     const Move& best_move) -> void;
 
-#ifdef SEARCH_TRACE
-  auto TraceInitSearch() -> void;
-  auto TraceStartIteration() -> void;
-  auto TraceSaveIteration(int score, int depth, SearchTrace& out) -> void;
-  auto TraceRestoreAfterTimeout(const SearchTrace& saved) -> void;
-  auto TraceFinishSearch() -> void;
-  auto TraceSuppressRecording() -> bool;
-  auto TraceResumeRecording(bool was_recording) -> void;
-  auto TracePrune(const Move& move, S8 player, const char* reason, int ply)
-      -> void;
-  auto TraceBeginMove(const Move& move, S8 player, int ply) -> int;
-  auto TraceEndMove(int eval, int ply) -> void;
-  auto TraceMarkBetaCutoff(const std::vector<Move>& move_list, size_t move_idx,
-                           S8 player, int ply) -> void;
-  auto TraceMarkPv(int best_trace_idx, int ply) -> void;
-  auto TraceIsActive(int ply) const -> bool;
-#endif
 
   // Track if a board evaluation is improving as a line is being seared.
   bool improving_;
@@ -329,10 +306,6 @@ class Engine {
 
   S8 user_side_;
 
-#ifdef SEARCH_TRACE
-  SearchTrace search_trace_;
-  vector<int> trace_path_;
-#endif
 
   // Keep track of information for positions that've already been evaluated.
   TranspositionTable transposition_table_;

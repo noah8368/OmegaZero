@@ -117,28 +117,15 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   iter_elapsed_[0] = 0.0f;
   subtree_ema_init_ = false;
 
-#ifdef SEARCH_TRACE
-  SearchTrace last_complete_trace;
-  TraceInitSearch();
-#endif
   const int max_depth = std::min(depth_limit_, kSearchLimit);
   for (; search_depth <= max_depth; ++search_depth) {
     try {
-#ifdef SEARCH_TRACE
-      TraceStartIteration();
-#endif
       prev_score =
           AspirationSearch(prev_score, search_depth, kRootNodePly, move);
       if (!move.IsEmpty()) {
         best_move = move;
       }
-#ifdef SEARCH_TRACE
-      TraceSaveIteration(prev_score, search_depth, last_complete_trace);
-#endif
     } catch (OutOfTime& e) {
-#ifdef SEARCH_TRACE
-      TraceRestoreAfterTimeout(last_complete_trace);
-#endif
       break;
     }
 
@@ -167,9 +154,6 @@ auto Engine::GetBestMove(int& score_out) -> Move {
       break;
     }
   }
-#ifdef SEARCH_TRACE
-  TraceFinishSearch();
-#endif
 
 #ifdef BENCHMARK
   BenchmarkReport(search_depth == kSearchLimit ? kSearchLimit
@@ -488,23 +472,10 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   }
 
   int orig_alpha = alpha;
-#ifdef SEARCH_TRACE
-  if (search_trace_.recording && ply == 0) {
-    trace_path_.clear();
-  }
-  int pre_tt_alpha = alpha;
-  int pre_tt_beta = beta;
-#endif
 
   int tt_result;
   TableEntry hash_entry = transposition_table_.GetHashEntry(board_);
   if (ProbeTt(alpha, beta, depth, tt_result)) {
-#ifdef SEARCH_TRACE
-    if (search_trace_.recording && ply == 0) {
-      alpha = pre_tt_alpha;
-      beta = pre_tt_beta;
-    }
-#endif
     // Only surface the hash move as the PV move if it is actually legal in the
     // current position. An unvalidated hash move can be illegal here (e.g. a
     // stale/colliding entry), and at the root it would be returned and played
@@ -579,9 +550,6 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   int best_eval = kWorstEval;
   int made_moves_counter = 0;
   bool futility_pruned = false;
-#ifdef SEARCH_TRACE
-  int best_trace_idx = -1;
-#endif
 
   // Reset per-root-move node accounting for this root search (dynamic TM).
   if (ply == kRootNodePly) {
@@ -604,9 +572,6 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 
     if (ShouldFutilityPrune(move, static_eval, depth, at_pv_node, in_check,
                             alpha)) {
-#ifdef SEARCH_TRACE
-      TracePrune(move, player_to_move, "futility", ply);
-#endif
       futility_pruned = true;
       continue;
     }
@@ -633,9 +598,6 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     int num_quiet_searched = static_cast<int>(searched_quiet_moves.size());
     if (ShouldLateMovePrune(move, num_quiet_searched, depth, at_pv_node,
                             gives_check, in_check, ply)) {
-#ifdef SEARCH_TRACE
-      TracePrune(move, player_to_move, "LMP", ply);
-#endif
       board_->UnmakeMove(move);
       pos_history_.resize(history_size_before_moves);
       continue;
@@ -643,17 +605,11 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 
     if (ShouldSeePrune(move, depth, at_pv_node, gives_check, in_check,
                        see_val)) {
-#ifdef SEARCH_TRACE
-      TracePrune(move, player_to_move, "SEE", ply);
-#endif
       board_->UnmakeMove(move);
       pos_history_.resize(history_size_before_moves);
       continue;
     }
 
-#ifdef SEARCH_TRACE
-    int this_trace_idx = TraceBeginMove(move, player_to_move, ply);
-#endif
     // Node count before this root move's subtree is searched (dynamic TM).
     uint64_t root_nodes_before = 0;
     if (ply == kRootNodePly) {
@@ -700,9 +656,6 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     if (ply == kRootNodePly && move_idx < static_cast<size_t>(kMaxRootMoves)) {
       root_move_nodes_[move_idx] += GetTotalNodes() - root_nodes_before;
     }
-#ifdef SEARCH_TRACE
-    TraceEndMove(search_eval, ply);
-#endif
 
     if (search_eval > best_eval) {
       best_move = move;
@@ -711,18 +664,12 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       if (ply == kRootNodePly) {
         best_root_idx_ = static_cast<int>(move_idx);
       }
-#ifdef SEARCH_TRACE
-      best_trace_idx = this_trace_idx;
-#endif
     }
 
     alpha = max(alpha, search_eval);
     if (alpha >= beta) {
       RecordBetaCutoff(move, depth, ply, searched_quiet_moves,
                        searched_captures);
-#ifdef SEARCH_TRACE
-      TraceMarkBetaCutoff(move_list, move_idx, player_to_move, ply);
-#endif
       break;
     }
 
@@ -736,9 +683,6 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     }
   }
 
-#ifdef SEARCH_TRACE
-  TraceMarkPv(best_trace_idx, ply);
-#endif
 
   if (made_moves_counter == 0) {
     if (futility_pruned) {
@@ -1152,14 +1096,8 @@ auto Engine::ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
   if (!improving_) {
     ++R;
   }
-#ifdef SEARCH_TRACE
-  bool was_recording = TraceSuppressRecording();
-#endif
   int null_move_eval = -Pvs(-beta, -alpha, depth - R - 1, ply + 1, false);
 
-#ifdef SEARCH_TRACE
-  TraceResumeRecording(was_recording);
-#endif
   board_->UnmakeNullMove();
   return null_move_eval >= beta;
 }
@@ -1211,135 +1149,5 @@ auto Engine::BenchmarkReport(int search_depth) -> void {
 
 // --- Guarded: search trace ---
 
-#ifdef SEARCH_TRACE
-auto Engine::TraceInitSearch() -> void {
-  search_trace_.Clear();
-  trace_path_.clear();
-  search_trace_.recording = true;
-}
-
-auto Engine::TraceStartIteration() -> void {
-  search_trace_.root.children.clear();
-}
-
-auto Engine::TraceSaveIteration(int score, int depth, SearchTrace& out)
-    -> void {
-  search_trace_.final_depth = depth;
-  search_trace_.root.eval = score;
-  out = search_trace_;
-}
-
-auto Engine::TraceRestoreAfterTimeout(const SearchTrace& saved) -> void {
-  search_trace_ = saved;
-}
-
-auto Engine::TraceFinishSearch() -> void { search_trace_.recording = false; }
-
-auto Engine::TraceSuppressRecording() -> bool {
-  bool was = search_trace_.recording;
-  search_trace_.recording = false;
-  return was;
-}
-
-auto Engine::TraceResumeRecording(bool was_recording) -> void {
-  search_trace_.recording = was_recording;
-}
-
-auto Engine::TraceIsActive(int ply) const -> bool {
-  return search_trace_.recording && ply < search_trace_.max_trace_ply;
-}
-
-auto Engine::TracePrune(const Move& move, S8 player, const char* reason,
-                        int ply) -> void {
-  if (!TraceIsActive(ply)) return;
-  TraceNode* n = &search_trace_.root;
-  for (int idx : trace_path_) n = &n->children[idx];
-  std::string uci = SearchTrace::MoveToUci(move, player);
-  // Find existing or add new child.
-  int child_idx = -1;
-  for (size_t i = 0; i < n->children.size(); ++i) {
-    if (n->children[i].move_uci == uci) {
-      child_idx = static_cast<int>(i);
-      break;
-    }
-  }
-  if (child_idx < 0) {
-    n->children.push_back(TraceNode{});
-    n->children.back().move_uci = uci;
-    child_idx = static_cast<int>(n->children.size()) - 1;
-  }
-  TraceNode& child = n->children[child_idx];
-  if (child.eval == 0 && child.children.empty()) {
-    child.pruned = true;
-    child.prune_reason = reason;
-  }
-}
-
-auto Engine::TraceBeginMove(const Move& move, S8 player, int ply) -> int {
-  if (!TraceIsActive(ply)) return -1;
-  TraceNode* n = &search_trace_.root;
-  for (int idx : trace_path_) n = &n->children[idx];
-  std::string uci = SearchTrace::MoveToUci(move, player);
-  int child_idx = -1;
-  for (size_t i = 0; i < n->children.size(); ++i) {
-    if (n->children[i].move_uci == uci) {
-      child_idx = static_cast<int>(i);
-      break;
-    }
-  }
-  if (child_idx < 0) {
-    n->children.push_back(TraceNode{});
-    n->children.back().move_uci = uci;
-    child_idx = static_cast<int>(n->children.size()) - 1;
-  }
-  n->children[child_idx].pruned = false;
-  n->children[child_idx].prune_reason.clear();
-  trace_path_.push_back(child_idx);
-  return child_idx;
-}
-
-auto Engine::TraceEndMove(int eval, int ply) -> void {
-  if (!TraceIsActive(ply)) return;
-  TraceNode* n = &search_trace_.root;
-  for (int idx : trace_path_) n = &n->children[idx];
-  n->eval = eval;
-  trace_path_.pop_back();
-}
-
-auto Engine::TraceMarkBetaCutoff(const vector<Move>& move_list, size_t move_idx,
-                                 S8 player, int ply) -> void {
-  if (!TraceIsActive(ply)) return;
-  TraceNode* n = &search_trace_.root;
-  for (int idx : trace_path_) n = &n->children[idx];
-  for (size_t i = move_idx + 1; i < move_list.size() && i <= move_idx + 5;
-       ++i) {
-    std::string uci = SearchTrace::MoveToUci(move_list[i], player);
-    int child_idx = -1;
-    for (size_t j = 0; j < n->children.size(); ++j) {
-      if (n->children[j].move_uci == uci) {
-        child_idx = static_cast<int>(j);
-        break;
-      }
-    }
-    if (child_idx < 0) {
-      n->children.push_back(TraceNode{});
-      n->children.back().move_uci = uci;
-      child_idx = static_cast<int>(n->children.size()) - 1;
-    }
-    TraceNode& child = n->children[child_idx];
-    if (child.eval == 0 && child.children.empty()) {
-      child.pruned = true;
-      child.prune_reason = "β cutoff";
-    }
-  }
-}
-
-auto Engine::TraceMarkPv(int best_trace_idx, int ply) -> void {
-  if (!TraceIsActive(ply) || best_trace_idx < 0) return;
-  TraceNode* n = &search_trace_.root;
-  for (int idx : trace_path_) n = &n->children[idx];
-  n->children[best_trace_idx].is_pv = true;
-}
-#endif
 
 }  // namespace omegazero
