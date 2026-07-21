@@ -10,8 +10,10 @@
 #define OMEGAZERO_SRC_UCI_H_
 
 #include <memory>
+#include <mutex>
 #include <random>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "board.h"
@@ -31,6 +33,10 @@ class UciHandler {
   auto HandleUciNewGame() -> void;
   auto HandlePosition(const std::string& line) -> void;
   auto HandleGo(const std::string& line) -> void;
+  // Body of the search worker thread: runs the search and prints `bestmove`.
+  auto RunSearch() -> void;
+  // Stop any in-progress search worker and join it (no-op if none running).
+  auto StopSearch() -> void;
 
   auto MoveToUciStr(const Move& move) const -> std::string;
   auto MoveToFideStr(const Move& move) const -> std::string;
@@ -50,6 +56,13 @@ class UciHandler {
   int turn_num_;
   int move_index_;
   bool on_opening_;
+
+  // Search runs on this worker so the main loop can keep reading stdin (needed
+  // to honor `stop` during `go infinite`). `cout_mutex_` serializes output so a
+  // `readyok` from the main thread can't interleave with the worker's
+  // `bestmove`.
+  std::thread search_thread_;
+  std::mutex cout_mutex_;
 };
 
 }  // namespace omegazero

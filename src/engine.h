@@ -11,9 +11,11 @@
 #define OMEGAZERO_SRC_ENGINE_H_
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -61,6 +63,11 @@ constexpr int kWorstEval = -32000;
 constexpr int kInvalidEval = 32001;
 
 // --- Dynamic time-management tuning ---
+// Master switch for difficulty-scaled dynamic time management. Disabled for v4:
+// an SPRT (dynamic vs. static soft/hard) showed the current tuning regressing
+// ~10 Elo, so clock play falls back to the static bounds. The full mechanism
+// below stays compiled and ready to be re-enabled and SPSA-tuned in v5.
+constexpr bool kDynamicTmEnabled = false;
 // Number of recent iterations considered for best-move stability.
 constexpr int kTmWindow = 5;
 // Geometric decay weighting recent best-move changes more heavily.
@@ -127,6 +134,19 @@ class Engine {
   // Set soft/hard bounds and the neutral base budget for clock-based play;
   // enables difficulty-scaled dynamic time management.
   auto SetTimeBounds(float soft, float hard, float base) -> void;
+
+  // Search with no time bound (UCI `go infinite`): runs until a depth/node
+  // limit is hit or RequestStop() is called.
+  auto SetInfiniteSearch() -> void;
+  // Cap iterative deepening at `depth` plies (UCI `go depth`). Pass
+  // kSearchLimit to remove the cap.
+  auto SetDepthLimit(int depth) -> void;
+  // Stop once the search has visited `nodes` nodes (UCI `go nodes`). Pass
+  // UINT64_MAX to remove the cap.
+  auto SetNodeLimit(uint64_t nodes) -> void;
+  // Ask an in-progress search to stop as soon as possible (UCI `stop`).
+  // Thread-safe: callable from another thread while GetBestMove() runs.
+  auto RequestStop() -> void { stop_requested_.store(true); }
 
   auto GetTotalNodes() const -> uint64_t {
     return total_nodes_ + nodes_since_time_check_;
@@ -262,6 +282,13 @@ class Engine {
   float base_time_;
   bool dynamic_tm_;
 
+  // Non-time search limits. `depth_limit_` caps iterative deepening;
+  // `node_limit_` caps visited nodes; `stop_requested_` is set from another
+  // thread to abort a running search. All checked via the OutOfTime abort path.
+  int depth_limit_;
+  uint64_t node_limit_;
+  std::atomic<bool> stop_requested_;
+
   // Per-iteration signal state for dynamic time management (reset each search).
   // `root_best_history_[d]` is the root best move after completing depth d;
   // `iter_elapsed_[d]` is the cumulative search time at the end of depth d.
@@ -333,6 +360,9 @@ inline auto Engine::SetSearchTime(float t) -> void {
   hard_time_ = t;
   base_time_ = t;
   dynamic_tm_ = false;
+  depth_limit_ = kSearchLimit;
+  node_limit_ = UINT64_MAX;
+  stop_requested_.store(false);
 }
 
 inline auto Engine::SetTimeBounds(float soft, float hard, float base) -> void {
@@ -340,7 +370,31 @@ inline auto Engine::SetTimeBounds(float soft, float hard, float base) -> void {
   soft_time_ = std::max(soft, kMinSearchTime);
   hard_time_ = std::max(hard, kMinSearchTime);
   base_time_ = std::max(base, kMinSearchTime);
-  dynamic_tm_ = true;
+  // v4: gated off (static soft/hard). Flip kDynamicTmEnabled for v5 tuning.
+  dynamic_tm_ = kDynamicTmEnabled;
+  depth_limit_ = kSearchLimit;
+  node_limit_ = UINT64_MAX;
+  stop_requested_.store(false);
+}
+
+inline auto Engine::SetInfiniteSearch() -> void {
+  // A far-future deadline the wall clock never reaches, so only a depth/node
+  // limit or RequestStop() ends the search.
+  soft_time_ = std::numeric_limits<float>::max();
+  hard_time_ = std::numeric_limits<float>::max();
+  base_time_ = std::numeric_limits<float>::max();
+  dynamic_tm_ = false;
+  depth_limit_ = kSearchLimit;
+  node_limit_ = UINT64_MAX;
+  stop_requested_.store(false);
+}
+
+inline auto Engine::SetDepthLimit(int depth) -> void {
+  depth_limit_ = std::clamp(depth, 1, kSearchLimit);
+}
+
+inline auto Engine::SetNodeLimit(uint64_t nodes) -> void {
+  node_limit_ = nodes;
 }
 
 // Implement private inline member functions.
@@ -508,6 +562,12 @@ inline auto Engine::CheckSearchTime() -> void {
 
   total_nodes_ += 4096;
   nodes_since_time_check_ = 0;
+  // An external stop (UCI `stop`/`quit`) or a node budget aborts immediately;
+  // both are checked here (not per node) so the hot path stays branch-light.
+  if (stop_requested_.load(std::memory_order_relaxed) ||
+      total_nodes_ >= node_limit_) {
+    throw OutOfTime();
+  }
   float time_since_search_started =
       duration_cast<duration<float>>(high_resolution_clock::now() -
                                      search_start_)

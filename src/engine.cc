@@ -51,6 +51,9 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   hard_time_ = search_time;
   base_time_ = search_time;
   dynamic_tm_ = false;
+  depth_limit_ = kSearchLimit;
+  node_limit_ = UINT64_MAX;
+  stop_requested_.store(false);
 
   if (tolower(player_side) == 'w') {
     user_side_ = kWhite;
@@ -118,7 +121,8 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   SearchTrace last_complete_trace;
   TraceInitSearch();
 #endif
-  for (; search_depth <= kSearchLimit; ++search_depth) {
+  const int max_depth = std::min(depth_limit_, kSearchLimit);
+  for (; search_depth <= max_depth; ++search_depth) {
     try {
 #ifdef SEARCH_TRACE
       TraceStartIteration();

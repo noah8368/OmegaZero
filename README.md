@@ -191,6 +191,10 @@ To reduce the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect),
   <em>Search depth vs time across four standard positions (log scale).<sup>3</sup></em>
 </p>
 
+#### Time Management
+
+Under a clock, OmegaZero must decide how long to think without flagging on time. From the remaining time and increment it derives a **soft** target, checked between [iterative deepening](https://www.chessprogramming.org/Iterative_Deepening) iterations, and a **hard** cap that aborts a search in progress — sized so a reserve always remains to avoid flagging. A difficulty-scaled refinement of the soft target — rescaling a neutral base budget by a factor of the form `1 + Σ wᵢ·sᵢ` over signed stability signals (best-move stability, score stability, and node-effort distribution) so the engine banks time on quiet positions and thinks longer on unstable ones — is implemented but gated off pending tuning. See [Time Management](https://www.chessprogramming.org/Time_Management).
+
 ### Move Generation
 
 Precomputed attack tables are used for non-sliding pieces, and sliding piece attacks are generated using the [Magic Bitboard](http://pradu.us/old/Nov27_2008/Buzz/research/magic/Bitboards.pdf) technique. The engine generates [pseudo-legal moves](https://www.chessprogramming.org/Move_Generation#Pseudo-legal), with legality verified during move execution. The correctness of the move generator was confirmed using [Perft](https://www.chessprogramming.org/Perft) with
@@ -341,7 +345,7 @@ OmegaZero supports the [Universal Chess Interface](https://www.chessprogramming.
 ```
 OmegaZero --uci
 ```
-The engine is single-threaded; `stop` is a no-op (search completes before input is read) and `go infinite` is not supported.
+The search itself is single-threaded, but it runs on a worker thread so the main loop can keep reading input, which enables the full set of `go` limits: `wtime`/`btime`/`winc`/`binc`/`movestogo`, `movetime`, `depth`, `nodes`, and `infinite`, with `stop` aborting an in-progress search and returning the best move found so far.
 
 ### Testing
 

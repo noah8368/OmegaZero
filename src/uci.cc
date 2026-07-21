@@ -51,12 +51,14 @@ auto UciHandler::Run() -> void {
     } else if (line.rfind("go", 0) == 0) {
       HandleGo(line);
     } else if (line == "stop") {
-      // Single-threaded: search already finished and bestmove was sent.
-      // Sending another bestmove here would desync the protocol.
+      // Abort the running search; the worker prints its `bestmove` as it exits.
+      StopSearch();
     } else if (line == "quit") {
       break;
     }
   }
+  // Join any worker before returning (covers `quit` and stdin closing mid-go).
+  StopSearch();
 }
 
 auto UciHandler::HandleUci() -> void {
@@ -66,10 +68,14 @@ auto UciHandler::HandleUci() -> void {
 }
 
 auto UciHandler::HandleIsReady() -> void {
+  // May arrive while a search worker is running; serialize with its `bestmove`.
+  std::lock_guard<std::mutex> lock(cout_mutex_);
   std::cout << "readyok" << std::endl;
 }
 
 auto UciHandler::HandleUciNewGame() -> void {
+  // The worker holds engine_/board_; stop it before replacing them.
+  StopSearch();
   board_ = std::make_unique<Board>(kStartFen);
   engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
   turn_num_ = 1;
@@ -79,6 +85,8 @@ auto UciHandler::HandleUciNewGame() -> void {
 }
 
 auto UciHandler::HandlePosition(const string& line) -> void {
+  // The worker mutates board_; stop it before changing the position.
+  StopSearch();
   std::istringstream iss(line);
   string token;
   iss >> token;  // "position"
@@ -150,11 +158,17 @@ auto UciHandler::SetPosition(const string& fen,
 }
 
 auto UciHandler::HandleGo(const string& line) -> void {
+  // Finish any previous search before configuring a new one.
+  StopSearch();
+
   std::istringstream iss(line);
   string token;
   iss >> token;  // "go"
 
   int wtime = 0, btime = 0, winc = 0, binc = 0, movetime = 0, movestogo = 0;
+  int depth = 0;
+  long long nodes = 0;
+  bool infinite = false;
   while (iss >> token) {
     if (token == "wtime") iss >> wtime;
     else if (token == "btime") iss >> btime;
@@ -162,31 +176,60 @@ auto UciHandler::HandleGo(const string& line) -> void {
     else if (token == "binc") iss >> binc;
     else if (token == "movetime") iss >> movetime;
     else if (token == "movestogo") iss >> movestogo;
+    else if (token == "depth") iss >> depth;
+    else if (token == "nodes") iss >> nodes;
+    else if (token == "infinite") infinite = true;
   }
 
   Move book_move;
   if (on_opening_ && GetBookMove(book_move)) {
+    std::lock_guard<std::mutex> lock(cout_mutex_);
     std::cout << "bestmove " << MoveToUciStr(book_move) << std::endl;
     return;
   }
 
+  // Configure the search's stopping conditions. `infinite`, or a bare depth/node
+  // limit with no clock, runs without a wall-clock bound; otherwise fall back to
+  // the time-control heuristic. A time setter resets the depth/node caps, so the
+  // explicit SetDepthLimit/SetNodeLimit calls below must come last.
   S8 side = board_->GetPlayerToMove();
   float remaining_ms = static_cast<float>((side == kWhite) ? wtime : btime);
   float inc_ms = static_cast<float>((side == kWhite) ? winc : binc);
-  TimeBounds bounds =
-      ComputeTimeBounds(remaining_ms, inc_ms, movestogo, movetime);
-  if (movetime > 0) {
+  bool has_clock = (movetime > 0 || wtime > 0 || btime > 0);
+  if (infinite || (!has_clock && (depth > 0 || nodes > 0))) {
+    engine_->SetInfiniteSearch();
+  } else if (movetime > 0) {
     // A fixed per-move request is honored exactly, not difficulty-scaled.
+    TimeBounds bounds =
+        ComputeTimeBounds(remaining_ms, inc_ms, movestogo, movetime);
     engine_->SetSearchTime(bounds.hard);
   } else {
+    TimeBounds bounds =
+        ComputeTimeBounds(remaining_ms, inc_ms, movestogo, movetime);
     engine_->SetTimeBounds(bounds.soft, bounds.hard, bounds.base);
   }
+  if (depth > 0) engine_->SetDepthLimit(depth);
+  if (nodes > 0) engine_->SetNodeLimit(static_cast<uint64_t>(nodes));
 
+  // Search on a worker thread so the main loop can keep reading stdin and honor
+  // `stop` (required for `go infinite`).
+  search_thread_ = std::thread(&UciHandler::RunSearch, this);
+}
+
+auto UciHandler::RunSearch() -> void {
   Move best_move = engine_->GetBestMove();
+  std::lock_guard<std::mutex> lock(cout_mutex_);
   if (best_move.IsEmpty()) {
     std::cout << "bestmove 0000" << std::endl;
   } else {
     std::cout << "bestmove " << MoveToUciStr(best_move) << std::endl;
+  }
+}
+
+auto UciHandler::StopSearch() -> void {
+  if (search_thread_.joinable()) {
+    engine_->RequestStop();
+    search_thread_.join();
   }
 }
 

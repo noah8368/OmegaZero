@@ -1,7 +1,7 @@
 CC = g++
 UNAME_S := $(shell uname -s)
 
-FLAGS = -march=native -pedantic -std=c++17 -Wall -Werror -Wextra -Wshadow -MMD -MP
+FLAGS = -march=native -pedantic -std=c++17 -Wall -Werror -Wextra -Wshadow -MMD -MP -pthread
 OPT_FLAGS = -O3 -fno-signed-zeros -fno-trapping-math -funroll-loops
 DEBUG_FLAGS = -O0 -g -fsanitize=address -fno-omit-frame-pointer -DDEBUG
 
