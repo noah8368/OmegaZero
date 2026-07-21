@@ -173,9 +173,10 @@ auto UciHandler::HandleGo(const string& line) -> void {
   iss >> token;  // "go"
 
   int wtime = 0, btime = 0, winc = 0, binc = 0, movetime = 0, movestogo = 0;
-  int depth = 0;
+  int depth = 0, mate = 0;
   long long nodes = 0;
   bool infinite = false;
+  vector<string> searchmove_strs;
   while (iss >> token) {
     if (token == "wtime") iss >> wtime;
     else if (token == "btime") iss >> btime;
@@ -185,7 +186,13 @@ auto UciHandler::HandleGo(const string& line) -> void {
     else if (token == "movestogo") iss >> movestogo;
     else if (token == "depth") iss >> depth;
     else if (token == "nodes") iss >> nodes;
+    else if (token == "mate") iss >> mate;
     else if (token == "infinite") infinite = true;
+    // `searchmoves` is a move list running to the end of the command (GUIs send
+    // it last); consume all remaining tokens as candidate moves.
+    else if (token == "searchmoves") {
+      while (iss >> token) searchmove_strs.push_back(token);
+    }
   }
 
   Move book_move;
@@ -203,7 +210,7 @@ auto UciHandler::HandleGo(const string& line) -> void {
   float remaining_ms = static_cast<float>((side == kWhite) ? wtime : btime);
   float inc_ms = static_cast<float>((side == kWhite) ? winc : binc);
   bool has_clock = (movetime > 0 || wtime > 0 || btime > 0);
-  if (infinite || (!has_clock && (depth > 0 || nodes > 0))) {
+  if (infinite || (!has_clock && (depth > 0 || nodes > 0 || mate > 0))) {
     engine_->SetInfiniteSearch();
   } else if (movetime > 0) {
     // A fixed per-move request is honored exactly, not difficulty-scaled.
@@ -217,6 +224,18 @@ auto UciHandler::HandleGo(const string& line) -> void {
   }
   if (depth > 0) engine_->SetDepthLimit(depth);
   if (nodes > 0) engine_->SetNodeLimit(static_cast<uint64_t>(nodes));
+
+  // Root-move restriction and mate-search target (reset to none/0 each `go`).
+  vector<Move> search_moves;
+  for (const string& ms : searchmove_strs) {
+    try {
+      search_moves.push_back(ParseUciMove(ms));
+    } catch (const std::invalid_argument&) {
+      // Ignore an unparleable/illegal searchmove rather than aborting the go.
+    }
+  }
+  engine_->SetSearchMoves(search_moves);
+  engine_->SetMateTarget(mate);
 
   // Search on a worker thread so the main loop can keep reading stdin and honor
   // `stop` (required for `go infinite`).

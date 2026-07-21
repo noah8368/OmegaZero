@@ -188,6 +188,15 @@ class Engine {
   // Thread-safe: callable from another thread while GetBestMove() runs.
   auto RequestStop() -> void { stop_requested_.store(true); }
 
+  // Restrict the root search to these moves (UCI `go searchmoves`). Empty (the
+  // default) means all legal moves; set fresh before each search.
+  auto SetSearchMoves(const vector<Move>& moves) -> void {
+    search_moves_ = moves;
+  }
+  // Stop as soon as a mate in <= `moves` for the side to move is found (UCI
+  // `go mate`); 0 disables.
+  auto SetMateTarget(int moves) -> void { mate_target_ = moves; }
+
   auto GetTotalNodes() const -> uint64_t {
     return total_nodes_ + nodes_since_time_check_;
   }
@@ -308,6 +317,11 @@ class Engine {
   int depth_limit_;
   uint64_t node_limit_;
   std::atomic<bool> stop_requested_;
+
+  // Root-move restriction for UCI `go searchmoves` (empty = all legal moves) and
+  // the UCI `go mate` target in moves (0 = disabled). Both set per search.
+  vector<Move> search_moves_;
+  int mate_target_;
 
   // Per-iteration signal state for dynamic time management (reset each search).
   // `root_best_history_[d]` is the root best move after completing depth d;

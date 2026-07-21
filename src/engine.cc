@@ -54,6 +54,7 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   depth_limit_ = kSearchLimit;
   node_limit_ = UINT64_MAX;
   stop_requested_.store(false);
+  mate_target_ = 0;
 
   if (tolower(player_side) == 'w') {
     user_side_ = kWhite;
@@ -88,6 +89,17 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   auto fallback_start = high_resolution_clock::now();
   vector<Move> fallback_moves = GenerateMoves();
   for (const Move& m : fallback_moves) {
+    // Honor `go searchmoves`: the fallback must also be a permitted root move.
+    if (!search_moves_.empty()) {
+      bool allowed = false;
+      for (const Move& sm : search_moves_) {
+        if (m == sm) {
+          allowed = true;
+          break;
+        }
+      }
+      if (!allowed) continue;
+    }
     try {
       board_->MakeMove(m);
       best_move = m;
@@ -151,6 +163,14 @@ auto Engine::GetBestMove(int& score_out) -> Move {
       info.pv = pv_table_[0];
       info.pv_len = pv_length_[0];
       info_cb_(info);
+    }
+
+    // UCI `go mate N`: stop once we can force mate in <= N moves.
+    if (mate_target_ > 0 && prev_score > kBestEval - kSearchLimit) {
+      int mate_moves = (kBestEval - prev_score + 1) / 2;
+      if (mate_moves <= mate_target_) {
+        break;
+      }
     }
 
     if (dynamic_tm_) {
@@ -558,6 +578,20 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 
   vector<Move> move_list = GenerateMoves();
   move_list = OrderMoves(move_list, ply);
+  // UCI `go searchmoves`: at the root, keep only the caller-permitted moves.
+  if (ply == kRootNodePly && !search_moves_.empty()) {
+    vector<Move> filtered;
+    filtered.reserve(search_moves_.size());
+    for (const Move& m : move_list) {
+      for (const Move& allowed : search_moves_) {
+        if (m == allowed) {
+          filtered.push_back(m);
+          break;
+        }
+      }
+    }
+    move_list = std::move(filtered);
+  }
   vector<Move> searched_quiet_moves;
   vector<Move> searched_captures;
   size_t history_size_before_moves = pos_history_.size();
