@@ -17,7 +17,8 @@ Results are saved to results/elo/<run_dir>/:
 
 Usage:
     python3 scripts/elo.py run
-    python3 scripts/elo.py run --games 50 --st 0.5      # quick test
+    python3 scripts/elo.py run --games 50 --st 0.5      # quick test, fixed time/move
+    python3 scripts/elo.py run --games 50 --tc 8+0.08   # real clock (exercises dynamic TM)
     python3 scripts/elo.py run --elo-levels 1700,1800,1900,2000,2100,2200,2300
     python3 scripts/elo.py plot results/elo/2026-06-06_.../summary.csv
 """
@@ -141,12 +142,21 @@ def run_matches(args):
     run_dir = RESULTS_BASE / f"{ts}_{tag}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    # Cutechess time-control clause: a real clock (tc=) when --tc is given,
+    # otherwise fixed time per move (st=).
+    if args.tc:
+        tc_clause = f"tc={args.tc}"
+        tc_desc = f"tc {args.tc}"
+    else:
+        tc_clause = f"st={args.st}"
+        tc_desc = f"{args.st}s/move"
+
     summary_rows = []
 
     for opp_elo in levels:
         print(f"\n{'=' * 60}", flush=True)
         print(f"  Stockfish UCI_Elo {opp_elo}  |  "
-              f"{args.games} games  |  {args.st}s/move", flush=True)
+              f"{args.games} games  |  {tc_desc}", flush=True)
         print(f"{'=' * 60}", flush=True)
 
         cmd = [
@@ -156,7 +166,7 @@ def run_matches(args):
             "-engine", f"name=SF-{opp_elo}", f"cmd={sf}", "proto=uci",
                 "option.UCI_LimitStrength=true",
                 f"option.UCI_Elo={opp_elo}",
-            "-each", f"st={args.st}", "timemargin=500",
+            "-each", tc_clause, "timemargin=500",
             "-rounds", str(args.games),
             "-concurrency", str(args.concurrency),
             "-pgnout", str(run_dir / f"games_{opp_elo}.pgn"),
@@ -395,7 +405,14 @@ def main():
     )
     run_p.add_argument(
         "--st", default="1",
-        help="Fixed time per move in seconds (default: 1)",
+        help="Fixed time per move in seconds (default: 1). Ignored if --tc is "
+             "set.",
+    )
+    run_p.add_argument(
+        "--tc", default=None,
+        help="Cutechess time control (e.g. '8+0.08', '10+0.1', '40/60'). "
+             "Overrides --st and drives the engine with a real clock, which is "
+             "required to exercise clock-based (dynamic) time management.",
     )
     run_p.add_argument(
         "--concurrency", type=int, default=8,

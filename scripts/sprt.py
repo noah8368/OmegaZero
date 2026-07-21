@@ -258,8 +258,12 @@ def find_cutechess(cutechess_arg=None):
 
 def run_match(cutechess, test_binary, test_label, base_binary, base_label,
               st, elo0, elo1, alpha, beta, max_games, concurrency,
-              openings=None, pgn_path=None):
+              openings=None, pgn_path=None, tc=None):
     """Run a single SPRT match. Returns a result dict or None on interrupt."""
+
+    # Real clock (tc=) when given, else fixed time per move (st=). A real clock
+    # is required to exercise the engine's clock-based (dynamic) time management.
+    tc_clause = f"tc={tc}" if tc else f"st={st}"
 
     cmd = [
         cutechess,
@@ -267,7 +271,7 @@ def run_match(cutechess, test_binary, test_label, base_binary, base_label,
             "arg=--uci", "proto=uci",
         "-engine", f"name={base_label}", f"cmd={base_binary}",
             "arg=--uci", "proto=uci",
-        "-each", f"st={st}", "timemargin=500",
+        "-each", tc_clause, "timemargin=500",
         "-sprt", f"elo0={elo0}", f"elo1={elo1}",
             f"alpha={alpha}", f"beta={beta}",
         "-rounds", str(max_games),
@@ -664,7 +668,8 @@ def cmd_run(args):
     print(f"  SPRT Test: {test_label} vs {baseline_label}")
     print(f"  H0: elo_diff >= {args.elo0}  (accept = no regression)")
     print(f"  H1: elo_diff >= {args.elo1}  (accept = improvement)")
-    print(f"  alpha={args.alpha}  beta={args.beta}  |  {args.st}s/move")
+    tc_desc = f"tc {args.tc}" if args.tc else f"{args.st}s/move"
+    print(f"  alpha={args.alpha}  beta={args.beta}  |  {tc_desc}")
     print(f"  Max games: {args.max_games}")
     print(f"{'=' * 64}\n")
 
@@ -672,7 +677,7 @@ def cmd_run(args):
         cutechess,
         str(test_engine), f"New-{test_label}",
         baseline_path, f"Base-{baseline_label}",
-        st=args.st, elo0=args.elo0, elo1=args.elo1,
+        st=args.st, tc=args.tc, elo0=args.elo0, elo1=args.elo1,
         alpha=args.alpha, beta=args.beta,
         max_games=args.max_games, concurrency=args.concurrency,
         openings=args.openings, pgn_path=run_dir / "games.pgn",
@@ -759,7 +764,8 @@ def cmd_match(args):
     print(f"  SPRT Match: {test_label} vs {base_label}")
     print(f"  H0: elo_diff >= {args.elo0}  (accept = no regression)")
     print(f"  H1: elo_diff >= {args.elo1}  (accept = improvement)")
-    print(f"  alpha={args.alpha}  beta={args.beta}  |  {args.st}s/move")
+    tc_desc = f"tc {args.tc}" if args.tc else f"{args.st}s/move"
+    print(f"  alpha={args.alpha}  beta={args.beta}  |  {tc_desc}")
     print(f"  Max games: {args.max_games}")
     print(f"{'=' * 64}\n")
 
@@ -775,7 +781,7 @@ def cmd_match(args):
             cutechess,
             test_binary, test_label,
             base_binary, base_label,
-            st=args.st, elo0=args.elo0, elo1=args.elo1,
+            st=args.st, tc=args.tc, elo0=args.elo0, elo1=args.elo1,
             alpha=args.alpha, beta=args.beta,
             max_games=args.max_games, concurrency=args.concurrency,
             openings=args.openings, pgn_path=run_dir / "games.pgn",
@@ -847,7 +853,8 @@ def cmd_gauntlet(args):
     print(f"\n{'=' * 64}")
     print(f"  OmegaZero Version Gauntlet (SPRT)")
     print(f"  Tags found: {', '.join(tags)}")
-    print(f"  {len(pairs)} matchups  |  {args.st}s/move")
+    tc_desc = f"tc {args.tc}" if args.tc else f"{args.st}s/move"
+    print(f"  {len(pairs)} matchups  |  {tc_desc}")
     print(f"  SPRT bounds: elo0={args.elo0}  elo1={args.elo1}  "
           f"alpha={args.alpha}  beta={args.beta}")
     print(f"  Max games per matchup: {args.max_games}")
@@ -874,7 +881,7 @@ def cmd_gauntlet(args):
             cutechess,
             test_binary, test_tag,
             base_binary, base_tag,
-            st=args.st, elo0=args.elo0, elo1=args.elo1,
+            st=args.st, tc=args.tc, elo0=args.elo0, elo1=args.elo1,
             alpha=args.alpha, beta=args.beta,
             max_games=args.max_games, concurrency=args.concurrency,
             openings=args.openings, pgn_path=run_dir / "games.pgn",
@@ -936,7 +943,12 @@ def add_common_args(parser):
     parser.add_argument("--beta", type=float, default=0.05,
                         help="Type II error rate (default: 0.05)")
     parser.add_argument("--st", default="0.5",
-                        help="Fixed time per move in seconds (default: 0.5)")
+                        help="Fixed time per move in seconds (default: 0.5). "
+                             "Ignored if --tc is set.")
+    parser.add_argument("--tc", default=None,
+                        help="Cutechess time control (e.g. '8+0.08', '40/60'). "
+                             "Overrides --st and drives a real clock, required "
+                             "to exercise clock-based (dynamic) time management.")
     parser.add_argument("--max-games", type=int, default=1000,
                         help="Maximum games before stopping (default: 1000)")
     parser.add_argument("--concurrency", type=int, default=1,
