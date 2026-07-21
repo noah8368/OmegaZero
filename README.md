@@ -50,7 +50,7 @@ logo; [Claude](https://en.wikipedia.org/wiki/Claude_(language_model)) was used t
 <p align="center">
   <img src="./figs/sprt_gauntlet_elo.png" width="480" alt="SPRT Elo Gain Per Version">
   <br>
-  <em>Elo gain per version via SPRT (0.5s/move, 2,678 ECO openings).<sup>3</sup></em>
+  <em>Elo gain per version via SPRT (0.5s/move, 2,678 ECO openings).</em>
 </p>
 
 ### Win / Draw / Loss Breakdown
@@ -58,7 +58,7 @@ logo; [Claude](https://en.wikipedia.org/wiki/Claude_(language_model)) was used t
 <p align="center">
   <img src="./figs/sprt_gauntlet_wdl.png" width="600" alt="SPRT W/D/L Breakdown">
   <br>
-  <em>Win/draw/loss breakdown per version pair from the SPRT gauntlet.<sup>3</sup></em>
+  <em>Win/draw/loss breakdown per version pair from the SPRT gauntlet.</em>
 </p>
 
 ### Example Games
@@ -188,7 +188,7 @@ To reduce the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect),
 <p align="center">
   <img src="./figs/depth_vs_time.png" width="600" alt="Search Depth vs Time">
   <br>
-  <em>Search depth vs time across four standard positions (log scale).<sup>3</sup></em>
+  <em>Search depth vs time across four standard positions (log scale).<sup>5</sup></em>
 </p>
 
 #### Time Management
@@ -444,5 +444,6 @@ python3 scripts/mine_magics.py
 
 <sup>1</sup> Lichess rating
 <sup>2</sup> Chess.com rating
-<sup>3</sup> All plots use [OmegaZero v3](https://github.com/noah8368/OmegaZero/releases/tag/v3)
+<sup>3</sup> Generated with [OmegaZero v3](https://github.com/noah8368/OmegaZero/releases/tag/v3)
 <sup>4</sup> All example games use [OmegaZero v1](https://github.com/noah8368/OmegaZero/releases/tag/v1)
+<sup>5</sup> Generated with [OmegaZero v4](https://github.com/noah8368/OmegaZero/releases/tag/v4)
