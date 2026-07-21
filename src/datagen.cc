@@ -207,7 +207,7 @@ static auto PlayGame(float search_time, std::mt19937& rng,
     int score_stm = 0;
     Move best = engine.GetBestMove(score_stm);
 
-    if (best.moving_piece == kNA && best.castling_type == kNA) break;
+    if (best.IsEmpty()) break;
 
     int score_white = (board.GetPlayerToMove() == kWhite) ? score_stm : -score_stm;
 

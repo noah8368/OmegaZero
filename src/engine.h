@@ -77,6 +77,8 @@ constexpr double kTmScoreScale = 100.0;
 constexpr double kTmOscWeight = 0.5;
 // Difficulty used once a forced mate is found or faced: move quickly.
 constexpr double kTmMateDifficulty = 0.5;
+// Difficulty used for an obvious forced recapture: search barely at all.
+constexpr double kTmObviousDifficulty = 0.25;
 // Coefficient of the (signed) subtree/node-effort term in the difficulty factor.
 constexpr double kTmSubtreeWeight = 0.2;
 // EMA smoothing factor for the best-move node share across iterations.
@@ -167,6 +169,9 @@ class Engine {
   // Signed [-1, +1] score-stability signal over the last kTmWindow depths
   // (negative = flat/smooth, positive = large swings / oscillation).
   auto ScoreStabilitySignal(int depth) const -> double;
+  // Detect whether the root is an obvious forced recapture (opponent just
+  // captured; exactly one safe recapture of it; not in check).
+  auto DetectObviousRecapture() -> void;
   // Fold the last root search's best-move node share into the EMA.
   auto UpdateSubtreeShare() -> void;
   // Signed [-1, +1] subtree/node-effort signal (negative = one move dominates
@@ -271,6 +276,11 @@ class Engine {
   int best_root_idx_;
   double subtree_share_ema_;
   bool subtree_ema_init_;
+
+  // The single safe recapture of the opponent's last capture, if the root is an
+  // obvious-recapture position (set once per search).
+  Move obvious_recapture_;
+  bool has_obvious_recapture_;
 
   high_resolution_clock::time_point search_start_;
 
@@ -386,7 +396,7 @@ inline auto Engine::ZugzwangUnlikely() const -> bool {
 }
 
 inline auto Engine::ValidateTtMove(const Move& move) const -> bool {
-  if (move.moving_piece == kNA && move.castling_type == kNA) {
+  if (move.IsEmpty()) {
     return false;
   }
   if (move.castling_type != kNA) {

@@ -183,7 +183,7 @@ auto UciHandler::HandleGo(const string& line) -> void {
   }
 
   Move best_move = engine_->GetBestMove();
-  if (best_move.moving_piece == kNA && best_move.castling_type == kNA) {
+  if (best_move.IsEmpty()) {
     std::cout << "bestmove 0000" << std::endl;
   } else {
     std::cout << "bestmove " << MoveToUciStr(best_move) << std::endl;

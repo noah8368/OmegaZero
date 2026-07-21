@@ -451,7 +451,7 @@ auto Board::SavePos() -> void {
 }
 
 auto Board::MakeMove(const Move& move) -> void {
-  assert(move.moving_piece != kNA || move.castling_type != kNA);
+  assert(!move.IsEmpty());
   if (g_nnue.IsLoaded()) PushAccumulators();
 
   if (move.castling_type == kNA) {

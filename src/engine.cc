@@ -101,6 +101,11 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   hard_time_ = std::max(0.01f, hard_time_ - fallback_secs);
   base_time_ = std::max(0.01f, base_time_ - fallback_secs);
 
+  has_obvious_recapture_ = false;
+  if (dynamic_tm_) {
+    DetectObviousRecapture();
+  }
+
   search_start_ = high_resolution_clock::now();
   nodes_since_time_check_ = 0;
   int prev_score = 0;
@@ -120,7 +125,7 @@ auto Engine::GetBestMove(int& score_out) -> Move {
 #endif
       prev_score =
           AspirationSearch(prev_score, search_depth, kRootNodePly, move);
-      if (move.moving_piece != kNA || move.castling_type != kNA) {
+      if (!move.IsEmpty()) {
         best_move = move;
       }
 #ifdef SEARCH_TRACE
@@ -147,9 +152,9 @@ auto Engine::GetBestMove(int& score_out) -> Move {
     if (dynamic_tm_) {
       UpdateSubtreeShare();
       double difficulty = ComputeDifficulty(search_depth);
-      soft_time_ = static_cast<float>(std::clamp(
-          static_cast<double>(base_time_) * difficulty, 0.01,
-          static_cast<double>(hard_time_)));
+      soft_time_ = static_cast<float>(
+          std::clamp(static_cast<double>(base_time_) * difficulty, 0.01,
+                     static_cast<double>(hard_time_)));
     }
     if (elapsed >= soft_time_) {
       break;
@@ -170,8 +175,8 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   score_out = prev_score;
   board_->ResetPos();
   pos_history_.resize(saved_history_size);
-  assert(best_move.moving_piece != kNA || best_move.castling_type != kNA ||
-         GetGameStatus() == kPlayerCheckmated || GetGameStatus() == kDraw);
+  assert(!best_move.IsEmpty() || GetGameStatus() == kPlayerCheckmated ||
+         GetGameStatus() == kDraw);
   return best_move;
 }
 
@@ -329,6 +334,41 @@ auto Engine::ScoreStabilitySignal(int depth) const -> double {
   return 2.0 * instability - 1.0;
 }
 
+auto Engine::DetectObviousRecapture() -> void {
+  // An obvious recapture: the opponent's last move captured on some square, we
+  // are not in check, and exactly one of our legal moves is a safe (SEE >= 0)
+  // capture of that square. Such a move is nearly forced, so we can move on it
+  // after only a couple of iterations.
+  has_obvious_recapture_ = false;
+  Move prev_move;
+  if (!board_->GetPrevMove(prev_move) || prev_move.captured_piece == kNA ||
+      board_->KingInCheck()) {
+    return;
+  }
+  S8 captured_sq = prev_move.target_sq;
+  Move recapture;
+  int safe_recaptures = 0;
+  vector<Move> moves = GenerateMoves();
+  for (const Move& move : moves) {
+    if (move.captured_piece == kNA || move.target_sq != captured_sq ||
+        board_->GetSee(move) < 0) {
+      continue;
+    }
+    try {
+      board_->MakeMove(move);
+    } catch (BadMove&) {
+      continue;  // leaves our king in check; not a real recapture
+    }
+    board_->UnmakeMove(move);
+    ++safe_recaptures;
+    recapture = move;
+  }
+  if (safe_recaptures == 1) {
+    has_obvious_recapture_ = true;
+    obvious_recapture_ = recapture;
+  }
+}
+
 auto Engine::UpdateSubtreeShare() -> void {
   // Fold the fraction of root nodes spent on the best move (from the last root
   // search) into an EMA. A dominant best move -> share near 1; effort spread
@@ -367,6 +407,12 @@ auto Engine::ComputeDifficulty(int depth) const -> double {
   if (std::abs(root_score_history_[depth]) > kBestEval - kSearchLimit) {
     return kTmMateDifficulty;
   }
+  // An obvious recapture that has stayed best for at least one full iteration:
+  // it is nearly forced, so spend very little.
+  if (has_obvious_recapture_ && depth >= 2 &&
+      root_best_history_[depth] == obvious_recapture_) {
+    return kTmObviousDifficulty;
+  }
   double difficulty = 1.0 + kTmMoveWeight * MoveStabilitySignal(depth) +
                       kTmScoreWeight * ScoreStabilitySignal(depth) +
                       kTmSubtreeWeight * SubtreeStabilitySignal();
@@ -379,8 +425,8 @@ auto Engine::PredictNextIterExceeds(int depth) const -> bool {
   }
   float t_d = iter_elapsed_[depth] - iter_elapsed_[depth - 1];
   float t_prev = iter_elapsed_[depth - 1] - iter_elapsed_[depth - 2];
-  double ebf = (t_prev > 0.0f) ? static_cast<double>(t_d) / t_prev
-                               : kTmEbfFallback;
+  double ebf =
+      (t_prev > 0.0f) ? static_cast<double>(t_d) / t_prev : kTmEbfFallback;
   ebf = std::clamp(ebf, kTmEbfMin, kTmEbfMax);
   double predicted_end = static_cast<double>(iter_elapsed_[depth]) + ebf * t_d;
   return predicted_end > static_cast<double>(soft_time_);
@@ -459,9 +505,11 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     // current position. An unvalidated hash move can be illegal here (e.g. a
     // stale/colliding entry), and at the root it would be returned and played
     // verbatim.
-    pv_move = ValidateTtMove(hash_entry.hash_move) ? hash_entry.hash_move
-                                                   : Move{};
-    return tt_result;
+    const Move& hash_move = hash_entry.hash_move;
+    if (hash_move.IsEmpty() || ValidateTtMove(hash_move)) {
+      pv_move = hash_move;
+      return tt_result;
+    }
   }
 
   // Reduce the depth of the entire node if no hash move is present.
@@ -533,8 +581,8 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 
   // Reset per-root-move node accounting for this root search (dynamic TM).
   if (ply == kRootNodePly) {
-    root_move_count_ = std::min(static_cast<int>(move_list.size()),
-                                kMaxRootMoves);
+    root_move_count_ =
+        std::min(static_cast<int>(move_list.size()), kMaxRootMoves);
     for (int i = 0; i < root_move_count_; ++i) {
       root_move_nodes_[i] = 0;
     }
@@ -775,8 +823,7 @@ constexpr int kSingularDepthMin = 6;
 
 auto Engine::TrySingularExtension(const TableEntry& hash_entry, int depth,
                                   int ply, int beta) -> int {
-  bool not_in_extension =
-      excluded_move_.moving_piece == kNA && excluded_move_.castling_type == kNA;
+  bool not_in_extension = excluded_move_.IsEmpty();
   bool not_mate = abs(hash_entry.eval) < kBestEval - kSearchLimit;
   bool deep_enough = hash_entry.search_depth >= depth - 3;
   bool not_all_node =

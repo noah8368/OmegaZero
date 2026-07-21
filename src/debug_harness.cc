@@ -147,7 +147,7 @@ bool RunSelfPlay(int num_games, float search_time, const string& out_dir) {
         }
       }
 
-      if (m.moving_piece == kNA && m.castling_type == kNA) {
+      if (m.IsEmpty()) {
         error_msg = "engine returned empty move after " +
                     to_string(move_history.size()) + " move(s) played";
         break;

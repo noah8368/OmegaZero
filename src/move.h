@@ -26,6 +26,12 @@ struct Move {
   }
   auto operator!=(const Move& rhs) const -> bool { return !(*this == rhs); }
 
+  // True for a default/unset move: neither a piece move nor a castle. (A
+  // castling move has moving_piece == kNA but is a real move.)
+  auto IsEmpty() const -> bool {
+    return moving_piece == kNA && castling_type == kNA;
+  }
+
   bool is_ep = false;
   S8 captured_piece = kNA;
   // Indicate if the move is not a castling move, queenside castling, or
