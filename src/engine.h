@@ -16,6 +16,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -59,6 +60,29 @@ constexpr int kNeutralEval = -25;
 constexpr int kWorstEval = -32000;
 constexpr int kInvalidEval = 32001;
 
+// Mate scores are encoded, relative to the search root, as kBestEval minus the
+// number of plies until we deliver mate (or kWorstEval plus the plies until we
+// are mated). Any score within kSearchLimit of the extremes is therefore a mate
+// score. This band is well clear of ordinary centipawn evaluations.
+inline auto IsMateScore(int score) -> bool {
+  return score > kBestEval - kSearchLimit || score < kWorstEval + kSearchLimit;
+}
+// A mate score's magnitude encodes its distance from the search root, but the
+// transposition table is keyed by position and may be reached at a different
+// root distance later. ScoreToTt rebases a root-relative mate score to be
+// relative to the node at `ply` (for storage); ScoreFromTt is its inverse (on
+// retrieval). Non-mate scores pass through unchanged.
+inline auto ScoreToTt(int score, int ply) -> int {
+  if (score > kBestEval - kSearchLimit) return score + ply;
+  if (score < kWorstEval + kSearchLimit) return score - ply;
+  return score;
+}
+inline auto ScoreFromTt(int score, int ply) -> int {
+  if (score > kBestEval - kSearchLimit) return score - ply;
+  if (score < kWorstEval + kSearchLimit) return score + ply;
+  return score;
+}
+
 // --- Dynamic time-management tuning ---
 // Master switch for difficulty-scaled dynamic time management. Disabled for v4:
 // an SPRT (dynamic vs. static soft/hard) showed the current tuning regressing
@@ -99,9 +123,28 @@ constexpr double kTmEbfMin = 1.5;
 constexpr double kTmEbfMax = 4.0;
 constexpr double kTmEbfFallback = 2.0;
 
+// One completed iterative-deepening iteration's result, passed to the info
+// callback (if one is registered) so a UCI front-end can emit an `info` line.
+// The engine itself performs no I/O; formatting/printing lives in the caller.
+struct SearchInfo {
+  int depth;
+  int score;        // Internal score: centipawns, or a mate score (IsMateScore).
+  uint64_t nodes;
+  long long time_ms;
+  const Move* pv;   // Principal variation, pv[0] first; length is pv_len.
+  int pv_len;
+};
+
 class Engine {
  public:
   Engine(Board* board, S8 player_side, float search_time);
+
+  // Register a callback invoked once per completed depth during GetBestMove()
+  // with that iteration's depth/score/nodes/time/pv. Used by the UCI handler to
+  // print `info` lines; unset (the default) means no per-iteration reporting.
+  auto SetInfoCallback(std::function<void(const SearchInfo&)> cb) -> void {
+    info_cb_ = std::move(cb);
+  }
 
   // Searches possible games in a search tree to find the best legal move. Act
   // as the root function to call the Negamax search algorithm in an iterative
@@ -163,7 +206,7 @@ class Engine {
   // used.
   auto ZugzwangUnlikely() const -> bool;
   auto ValidateTtMove(const Move& move) const -> bool;
-  auto ProbeTt(int& alpha, int& beta, int depth, int& result) -> bool;
+  auto ProbeTt(int& alpha, int& beta, int depth, int ply, int& result) -> bool;
   auto ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
                            bool at_pv_node, bool in_check) -> bool;
   auto ShouldReverseFutilityPrune(int static_eval, int depth, int beta,
@@ -209,7 +252,7 @@ class Engine {
            bool null_move_allowed) -> int;
   // Search until a "quiescent" position is reached (no capturing moves can be
   // made) to mitigate the horizon effect.
-  auto QuiescenceSearch(int alpha, int beta, int qs_depth = 20) -> int;
+  auto QuiescenceSearch(int alpha, int beta, int ply, int qs_depth = 20) -> int;
   auto GetCorrectedEval(int static_eval) const -> int;
   auto ComputeLmrReduction(int depth, int legal_moves, S8 player_to_move,
                            const Move& move) -> int;
@@ -241,7 +284,7 @@ class Engine {
   auto RecordBetaCutoff(const Move& move, int depth, int ply,
                         const vector<Move>& searched_quiet_moves,
                         const vector<Move>& searched_captures) -> void;
-  auto StoreTtEntry(int best_eval, int orig_alpha, int beta, int depth,
+  auto StoreTtEntry(int best_eval, int orig_alpha, int beta, int depth, int ply,
                     const Move& best_move) -> void;
 
 
@@ -272,6 +315,15 @@ class Engine {
   Move root_best_history_[kSearchLimit + 1];
   int root_score_history_[kSearchLimit + 1];
   float iter_elapsed_[kSearchLimit + 1];
+
+  // Triangular principal-variation table: `pv_table_[ply]` holds the PV starting
+  // at that ply (best move first), `pv_length_[ply]` its length. Collected only
+  // at PV nodes in Pvs; `pv_table_[0]`/`pv_length_[0]` is the root PV. Rows are
+  // over-sized by one so a child at `ply + 1` is always addressable.
+  Move pv_table_[kSearchLimit + 1][kSearchLimit];
+  int pv_length_[kSearchLimit + 1];
+  // Optional per-iteration reporting hook (see SetInfoCallback). Empty if unset.
+  std::function<void(const SearchInfo&)> info_cb_;
 
   // Per-root-move node counts for the last root search, its move count, and the
   // index of the best root move; plus the EMA-smoothed best-move node share.
@@ -607,13 +659,17 @@ inline auto Engine::UpdateCaptureHistory(const Move& move, int bonus) -> void {
 }
 
 inline auto Engine::StoreTtEntry(int best_eval, int orig_alpha, int beta,
-                                 int depth, const Move& best_move) -> void {
+                                 int depth, int ply, const Move& best_move)
+    -> void {
+  // The node type is decided on the root-relative score, but a mate score is
+  // stored rebased to this node so it stays valid at other root distances.
+  int tt_eval = ScoreToTt(best_eval, ply);
   if (best_eval <= orig_alpha) {
-    transposition_table_.Update(board_, depth, best_eval, kAllNode);
+    transposition_table_.Update(board_, depth, tt_eval, kAllNode);
   } else if (best_eval >= beta) {
-    transposition_table_.Update(board_, depth, best_eval, kCutNode, best_move);
+    transposition_table_.Update(board_, depth, tt_eval, kCutNode, best_move);
   } else {
-    transposition_table_.Update(board_, depth, best_eval, kPvNode, best_move);
+    transposition_table_.Update(board_, depth, tt_eval, kPvNode, best_move);
   }
 }
 

@@ -140,6 +140,19 @@ auto Engine::GetBestMove(int& score_out) -> Move {
     root_score_history_[search_depth] = prev_score;
     iter_elapsed_[search_depth] = elapsed;
 
+    // Report this completed depth (only completed depths reach here; an
+    // OutOfTime abort breaks out above before this point).
+    if (info_cb_) {
+      SearchInfo info;
+      info.depth = search_depth;
+      info.score = prev_score;
+      info.nodes = GetTotalNodes();
+      info.time_ms = static_cast<long long>(elapsed * 1000.0f);
+      info.pv = pv_table_[0];
+      info.pv_len = pv_length_[0];
+      info_cb_(info);
+    }
+
     if (dynamic_tm_) {
       UpdateSubtreeShare();
       double difficulty = ComputeDifficulty(search_depth);
@@ -459,6 +472,9 @@ constexpr S8 kRazoringMargin = 350;
 
 auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
                  bool null_move_allowed) -> int {
+  // Start with an empty PV at this ply so any early return (TT cutoff, draw,
+  // qsearch, prune) leaves no stale continuation for the parent to splice in.
+  pv_length_[ply] = 0;
   if (ply >= kSearchLimit) {
     return board_->Evaluate();
   }
@@ -475,7 +491,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 
   int tt_result;
   TableEntry hash_entry = transposition_table_.GetHashEntry(board_);
-  if (ProbeTt(alpha, beta, depth, tt_result)) {
+  if (ProbeTt(alpha, beta, depth, ply, tt_result)) {
     // Only surface the hash move as the PV move if it is actually legal in the
     // current position. An unvalidated hash move can be illegal here (e.g. a
     // stale/colliding entry), and at the root it would be returned and played
@@ -497,7 +513,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     return kNeutralEval;
   }
   if (depth <= 0) {
-    return QuiescenceSearch(alpha, beta);
+    return QuiescenceSearch(alpha, beta, ply);
   }
 
   bool in_check = board_->KingInCheck();
@@ -527,7 +543,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   // evalustion doesn't look promising.
   if (depth <= kMaxRazoringDepth && !at_pv_node && !in_check &&
       static_eval + kRazoringMargin < alpha) {
-    return QuiescenceSearch(alpha, beta);
+    return QuiescenceSearch(alpha, beta, ply);
   }
 
   if (ShouldReverseFutilityPrune(static_eval, depth, beta, at_pv_node,
@@ -550,6 +566,9 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   int best_eval = kWorstEval;
   int made_moves_counter = 0;
   bool futility_pruned = false;
+  // Only full-window (PV) nodes yield a real principal variation; skip the
+  // splice on null-window nodes to keep it off the hot path.
+  bool collect_pv = beta - alpha > 1;
 
   // Reset per-root-move node accounting for this root search (dynamic TM).
   if (ply == kRootNodePly) {
@@ -664,6 +683,17 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       if (ply == kRootNodePly) {
         best_root_idx_ = static_cast<int>(move_idx);
       }
+      // A new alpha-raising best move at a PV node extends the principal
+      // variation: this move followed by the child's PV (from the last
+      // full-window search of it).
+      if (collect_pv && search_eval > alpha) {
+        pv_table_[ply][0] = move;
+        int child_len = min(pv_length_[ply + 1], kSearchLimit - 1);
+        for (int i = 0; i < child_len; ++i) {
+          pv_table_[ply][i + 1] = pv_table_[ply + 1][i];
+        }
+        pv_length_[ply] = child_len + 1;
+      }
     }
 
     alpha = max(alpha, search_eval);
@@ -688,9 +718,11 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     if (futility_pruned) {
       return alpha;
     }
-    return board_->KingInCheck() ? kWorstEval : kNeutralEval;
+    // Being checkmated `ply` plies from the root: a nearer mate is worse, so
+    // encode the distance so the search prefers to be mated later.
+    return board_->KingInCheck() ? kWorstEval + ply : kNeutralEval;
   }
-  StoreTtEntry(best_eval, orig_alpha, beta, depth, best_move);
+  StoreTtEntry(best_eval, orig_alpha, beta, depth, ply, best_move);
   if (!in_check && best_eval < beta) {
     UpdateCorrectionHistory(raw_static_eval, best_eval, depth);
   }
@@ -699,7 +731,8 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
 
 constexpr int kDelta = 900;
 
-auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
+auto Engine::QuiescenceSearch(int alpha, int beta, int ply, int qs_depth)
+    -> int {
   assert(alpha < beta);
   CheckSearchTime();
 
@@ -750,7 +783,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
     }
     ++made_moves_counter;
     AddPosToHistory();
-    int eval = -QuiescenceSearch(-beta, -alpha, qs_depth - 1);
+    int eval = -QuiescenceSearch(-beta, -alpha, ply + 1, qs_depth - 1);
     board_->UnmakeMove(move);
     pos_history_.resize(history_size_before_qmoves);
 
@@ -761,7 +794,7 @@ auto Engine::QuiescenceSearch(int alpha, int beta, int qs_depth) -> int {
   }
 
   if (in_check && made_moves_counter == 0) {
-    return kWorstEval;
+    return kWorstEval + ply;
   }
 
   return alpha;
@@ -1060,12 +1093,15 @@ auto Engine::AddMovesForPiece(vector<Move>& move_list, Bitboard attack_map,
 
 // --- Private member functions: transposition table & pruning helpers ---
 
-auto Engine::ProbeTt(int& alpha, int& beta, int depth, int& result) -> bool {
+auto Engine::ProbeTt(int& alpha, int& beta, int depth, int ply, int& result)
+    -> bool {
   int stored_eval;
   S8 node_type;
   if (!transposition_table_.Access(board_, depth, stored_eval, node_type)) {
     return false;
   }
+  // Rebase a stored (node-relative) mate score back to this search's root.
+  stored_eval = ScoreFromTt(stored_eval, ply);
   if (node_type == kPvNode) {
     result = stored_eval;
     return true;

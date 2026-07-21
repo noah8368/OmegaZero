@@ -8,6 +8,7 @@
 
 #include "uci.h"
 
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -32,6 +33,8 @@ UciHandler::UciHandler(const string& book_path)
       on_opening_(true) {
   board_ = std::make_unique<Board>(kStartFen);
   engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
+  engine_->SetInfoCallback(
+      [this](const SearchInfo& info) { PrintInfo(info); });
   LoadOpeningBook(book_path_);
 }
 
@@ -78,6 +81,8 @@ auto UciHandler::HandleUciNewGame() -> void {
   StopSearch();
   board_ = std::make_unique<Board>(kStartFen);
   engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
+  engine_->SetInfoCallback(
+      [this](const SearchInfo& info) { PrintInfo(info); });
   turn_num_ = 1;
   move_index_ = 0;
   on_opening_ = true;
@@ -125,6 +130,8 @@ auto UciHandler::SetPosition(const string& fen,
                              const vector<string>& moves) -> void {
   board_ = std::make_unique<Board>(fen);
   engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
+  engine_->SetInfoCallback(
+      [this](const SearchInfo& info) { PrintInfo(info); });
   turn_num_ = 1;
   move_index_ = 0;
   on_opening_ = true;
@@ -234,6 +241,10 @@ auto UciHandler::StopSearch() -> void {
 }
 
 auto UciHandler::MoveToUciStr(const Move& move) const -> string {
+  return MoveToUciStr(move, board_->GetPlayerToMove());
+}
+
+auto UciHandler::MoveToUciStr(const Move& move, S8 player) const -> string {
   string s;
   if (move.castling_type == kNA) {
     s += static_cast<char>('a' + GetFileFromSq(move.start_sq));
@@ -252,7 +263,6 @@ auto UciHandler::MoveToUciStr(const Move& move) const -> string {
       }
     }
   } else {
-    S8 player = board_->GetPlayerToMove();
     if (move.castling_type == kQueenSide) {
       s = (player == kWhite) ? "e1c1" : "e8c8";
     } else {
@@ -260,6 +270,35 @@ auto UciHandler::MoveToUciStr(const Move& move) const -> string {
     }
   }
   return s;
+}
+
+auto UciHandler::PrintInfo(const SearchInfo& info) -> void {
+  std::ostringstream out;
+  out << "info depth " << info.depth << " score ";
+  if (IsMateScore(info.score)) {
+    // Convert an internal mate score to UCI mate-in-N *moves* (positive = we
+    // deliver mate, negative = we are mated).
+    int mate_plies = kBestEval - std::abs(info.score);
+    int mate_moves = (mate_plies + 1) / 2;
+    out << "mate " << (info.score > 0 ? mate_moves : -mate_moves);
+  } else {
+    out << "cp " << info.score;
+  }
+  long long nps =
+      info.time_ms > 0 ? info.nodes * 1000 / info.time_ms : 0;
+  out << " nodes " << info.nodes << " nps " << nps << " time " << info.time_ms;
+
+  if (info.pv_len > 0) {
+    S8 root_side = board_->GetPlayerToMove();
+    out << " pv";
+    for (int i = 0; i < info.pv_len; ++i) {
+      S8 side = (i % 2 == 0) ? root_side : GetOtherPlayer(root_side);
+      out << ' ' << MoveToUciStr(info.pv[i], side);
+    }
+  }
+
+  std::lock_guard<std::mutex> lock(cout_mutex_);
+  std::cout << out.str() << std::endl;
 }
 
 auto UciHandler::ParseUciMove(const string& uci_move) const -> Move {

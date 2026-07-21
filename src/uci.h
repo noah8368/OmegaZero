@@ -39,6 +39,12 @@ class UciHandler {
   auto StopSearch() -> void;
 
   auto MoveToUciStr(const Move& move) const -> std::string;
+  // Side-aware variant: renders castling from `player`'s perspective rather than
+  // the current side to move. Needed for PV moves, whose colors alternate.
+  auto MoveToUciStr(const Move& move, S8 player) const -> std::string;
+  // Format and print one `info` line for a completed search iteration. Wired to
+  // the engine via SetInfoCallback; serialized with other output by cout_mutex_.
+  auto PrintInfo(const SearchInfo& info) -> void;
   auto MoveToFideStr(const Move& move) const -> std::string;
   auto ParseUciMove(const std::string& uci_move) const -> Move;
   auto SetPosition(const std::string& fen,
