@@ -12,7 +12,7 @@
   <a href="./LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License">
   </a>
-  <img src="https://img.shields.io/badge/Elo-1800-orange.svg" alt="1900 Elo">
+  <img src="https://img.shields.io/badge/Elo-2150-blue.svg" alt="2150 Elo">
   <img src="https://img.shields.io/badge/UCI-Compatible-success.svg" alt="UCI Compatible">
   <img src="https://img.shields.io/badge/NNUE-HalfKP-blue.svg" alt="NNUE HalfKP">
   <img src="https://img.shields.io/github/v/release/noah8368/OmegaZero" alt="Latest Release">
@@ -40,9 +40,9 @@ logo; [Claude](https://en.wikipedia.org/wiki/Claude_(language_model)) was used t
 ### Elo Estimate
 
 <p align="center">
-  <img src="./figs/elo_estimate.png" width="600" alt="Elo Estimation Plot">
+  <img src="./figs/elo.png" width="600" alt="Elo Estimation Plot">
   <br>
-  <em>Elo estimate from 2,100 games vs Stockfish (0.5s/move), with 95% bootstrap CI.<sup>3</sup></em>
+  <em>Elo estimate from 2,800 games vs Stockfish (1s/move), with 95% bootstrap CI.<sup>5</sup></em>
 </p>
 
 ### Elo Gain
