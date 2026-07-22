@@ -24,7 +24,7 @@ namespace omegazero {
 
 class UciHandler {
  public:
-  explicit UciHandler(const std::string& book_path);
+  UciHandler(const std::string& book_path, const std::string& params_path);
   auto Run() -> void;
 
  private:

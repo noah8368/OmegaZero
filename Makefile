@@ -7,7 +7,7 @@ DEBUG_FLAGS = -O0 -g -fsanitize=address -fno-omit-frame-pointer -DDEBUG
 
 OBJECTS = build/play/board.o build/play/engine.o build/play/game.o build/play/magics.o \
           build/play/main.o build/play/masks.o build/play/nnue.o build/play/transposition_table.o \
-          build/play/piece_sq_tables.o build/play/uci.o
+          build/play/params.o build/play/piece_sq_tables.o build/play/uci.o
 
 DEBUG_OBJECTS = build/debug/board.o build/debug/engine.o build/debug/game.o \
                 build/debug/magics.o build/debug/nnue.o build/debug/debug_harness.o \

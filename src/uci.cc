@@ -22,6 +22,7 @@
 #include "engine.h"
 #include "game.h"
 #include "move.h"
+#include "params.h"
 #include "time_control.h"
 
 namespace omegazero {
@@ -29,67 +30,7 @@ namespace omegazero {
 using std::string;
 using std::vector;
 
-namespace {
-
-// The tunable search parameters, exposed as UCI `spin` options. `def`/`min`/`max`
-// are the integer values shown to the GUI. For DblOpt the stored double equals
-// the UCI integer divided by `divisor` (so a weight of 0.50 is surfaced as 50).
-struct IntOpt {
-  const char* name;
-  int SearchParams::* field;
-  int def, min, max;
-};
-struct DblOpt {
-  const char* name;
-  double SearchParams::* field;
-  int divisor;
-  int def, min, max;
-};
-
-constexpr IntOpt kIntOpts[] = {
-    {"TmWindow", &SearchParams::tm_window, 5, 1, 30},
-    {"AspirationDelta", &SearchParams::aspiration_delta, 25, 1, 200},
-    {"FutilityMargin", &SearchParams::futility_margin, 200, 20, 600},
-    {"MaxFutilityPruningDepth", &SearchParams::max_futility_pruning_depth, 2, 0,
-     8},
-    {"MaxLateMovePruningDepth", &SearchParams::max_late_move_pruning_depth, 2, 0,
-     8},
-    {"MaxSeePruningDepth", &SearchParams::max_see_pruning_depth, 5, 0, 12},
-    {"SeeMargin", &SearchParams::see_margin, 100, 10, 400},
-    {"HistoryLmrThreshold", &SearchParams::history_lmr_threshold, -1000, -8000,
-     0},
-    {"NumEarlyMoves", &SearchParams::num_early_moves, 3, 1, 12},
-    {"MinReductionDepth", &SearchParams::min_reduction_depth, 3, 1, 8},
-    {"MinIirDepth", &SearchParams::min_iir_depth, 4, 1, 12},
-    {"MaxRazoringDepth", &SearchParams::max_razoring_depth, 3, 0, 8},
-    {"RazoringMargin", &SearchParams::razoring_margin, 350, 50, 1000},
-    {"SingularDepthMin", &SearchParams::singular_depth_min, 6, 3, 16},
-    {"NullMoveDepthMin", &SearchParams::null_move_depth_min, 4, 1, 12},
-    {"NullMoveDepthHighR", &SearchParams::null_move_depth_high_r, 6, 2, 16},
-    {"QsDelta", &SearchParams::qs_delta, 900, 100, 2000},
-};
-
-constexpr DblOpt kDblOpts[] = {
-    {"TmMoveDecay", &SearchParams::tm_move_decay, 100, 60, 0, 100},
-    {"TmMoveWeight", &SearchParams::tm_move_weight, 100, 50, 0, 300},
-    {"TmScoreWeight", &SearchParams::tm_score_weight, 100, 30, 0, 300},
-    {"TmScoreScale", &SearchParams::tm_score_scale, 1, 100, 10, 1000},
-    {"TmOscWeight", &SearchParams::tm_osc_weight, 100, 50, 0, 300},
-    {"TmMateDifficulty", &SearchParams::tm_mate_difficulty, 100, 50, 1, 300},
-    {"TmObviousDifficulty", &SearchParams::tm_obvious_difficulty, 100, 25, 1,
-     300},
-    {"TmSubtreeWeight", &SearchParams::tm_subtree_weight, 100, 20, 0, 300},
-    {"TmSubtreeEmaAlpha", &SearchParams::tm_subtree_ema_alpha, 100, 50, 1, 100},
-    {"TmDifficultyMin", &SearchParams::tm_difficulty_min, 100, 45, 1, 100},
-    {"TmDifficultyMax", &SearchParams::tm_difficulty_max, 100, 250, 100, 500},
-    {"TmEbfMin", &SearchParams::tm_ebf_min, 100, 150, 100, 400},
-    {"TmEbfMax", &SearchParams::tm_ebf_max, 100, 400, 100, 800},
-    {"TmEbfFallback", &SearchParams::tm_ebf_fallback, 100, 200, 100, 400},
-};
-
-}  // namespace
-
-UciHandler::UciHandler(const string& book_path)
+UciHandler::UciHandler(const string& book_path, const string& params_path)
     : book_path_(book_path), turn_num_(1), move_index_(0),
       on_opening_(true), pondering_(false), ponder_soft_(0.0f),
       ponder_hard_(0.0f) {
@@ -97,6 +38,10 @@ UciHandler::UciHandler(const string& book_path)
   engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
   engine_->SetInfoCallback(
       [this](const SearchInfo& info) { PrintInfo(info); });
+  // Seed the runtime search parameters from params.json (profile matching the
+  // active eval mode). `setoption` overrides these; a missing file/profile
+  // leaves the built-in SearchParams defaults in place.
+  LoadProfileInto(params_path, ProfileForEvalMode(), uci_params_);
   LoadOpeningBook(book_path_);
 }
 

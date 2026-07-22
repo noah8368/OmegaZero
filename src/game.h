@@ -40,6 +40,12 @@ class Game {
 
   auto SetClock(float base_time, float increment) -> void;
 
+  // Override the engine's tunable search parameters (e.g. a params.json profile
+  // resolved by the caller). Forwards to the owned Engine.
+  auto SetSearchParams(const SearchParams& params) -> void {
+    engine_.SetParams(params);
+  }
+
   auto IsActive() const -> bool;
   auto GetOpeningMove(Move& opening_move) -> bool;
 
