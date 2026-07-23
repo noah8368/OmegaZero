@@ -15,6 +15,9 @@
 
 namespace omegazero {
 
+using std::max;
+using std::min;
+
 // Per-move search bounds, in seconds. `base` is the neutral per-move budget the
 // engine scales by a difficulty factor to get the soft bound each iteration.
 struct TimeBounds {
@@ -35,6 +38,11 @@ constexpr float kMinReserveMs = 50.0f;
 // Smallest value either bound may take, in ms. Low because depth 1 always
 // completes regardless of the soft bound.
 constexpr float kMinSoftMs = 10.0f;
+// Hard ceiling on the clock-derived per-move allocation, in ms. Caps every
+// clock-based bound so the engine never spends more than this on a single move,
+// however much time is on the clock. Does not apply to an explicit `movetime`
+// request, which the caller asked for deliberately.
+constexpr float kMaxMoveTimeMs = 10000.0f;
 // Time shaved off a fixed `movetime` request to avoid overshooting, in ms.
 constexpr float kMoveTimeMargin = 50.0f;
 
@@ -46,7 +54,7 @@ inline auto ComputeTimeBounds(float remaining_ms, float inc_ms, int movestogo,
                               int movetime) -> TimeBounds {
   if (movetime > 0) {
     float alloc =
-        std::max(static_cast<float>(movetime) - kMoveTimeMargin, kMinSoftMs);
+        max(static_cast<float>(movetime) - kMoveTimeMargin, kMinSoftMs);
     float secs = alloc / 1000.0f;
     return {secs, secs, secs};
   }
@@ -68,15 +76,21 @@ inline auto ComputeTimeBounds(float remaining_ms, float inc_ms, int movestogo,
 
   // Hard bound: a panic ceiling that rarely binds, capped so a reserve always
   // remains to avoid flagging.
-  float reserve_ms = std::max(kMinReserveMs, 0.01f * remaining_ms);
+  float reserve_ms = max(kMinReserveMs, 0.01f * remaining_ms);
   float hard_ms =
-      std::min(kHardBaseMult * base_ms, remaining_ms / 4.0f + inc_ms);
-  hard_ms = std::min(hard_ms, remaining_ms - reserve_ms);
-  hard_ms = std::max(hard_ms, kMinSoftMs);
+      min(kHardBaseMult * base_ms, remaining_ms / 4.0f + inc_ms);
+  hard_ms = min(hard_ms, remaining_ms - reserve_ms);
+  hard_ms = max(hard_ms, kMinSoftMs);
 
   // Neutral soft bound (difficulty 1). The engine rescales this by a per-move
   // difficulty factor each iteration, bounded by the hard bound.
   float soft_ms = std::clamp(base_ms, kMinSoftMs, hard_ms);
+
+  // Apply the per-move ceiling. Cap the hard bound first, then hold the soft and
+  // base budgets under it so the difficulty rescaling can never exceed the cap.
+  hard_ms = min(hard_ms, kMaxMoveTimeMs);
+  soft_ms = min(soft_ms, hard_ms);
+  base_ms = min(base_ms, hard_ms);
   return {soft_ms / 1000.0f, hard_ms / 1000.0f, base_ms / 1000.0f};
 }
 
