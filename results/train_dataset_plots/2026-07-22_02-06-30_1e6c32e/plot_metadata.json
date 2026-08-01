@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-07-22 02:09:04",
+  "git_commit": "1e6c32e",
+  "command": "data",
+  "input": "/Users/noah/dev/OmegaZero/nnue/data",
+  "positions": 60013837,
+  "score_range": [
+    -3000.0,
+    3000.0
+  ]
+}
