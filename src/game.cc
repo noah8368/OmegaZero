@@ -7,7 +7,6 @@
 
 #include "game.h"
 
-#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
@@ -33,7 +32,6 @@ using std::cout;
 using std::endl;
 using std::ifstream;
 using std::invalid_argument;
-using std::ios;
 using std::istringstream;
 using std::mt19937;
 using std::ofstream;

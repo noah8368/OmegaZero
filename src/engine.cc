@@ -10,8 +10,7 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
-#include <stdexcept>
-#include <unordered_map>
+#include <cstring>
 #include <utility>
 #include <vector>
 
@@ -30,9 +29,7 @@ using std::fill;
 using std::max;
 using std::min;
 using std::pair;
-using std::runtime_error;
 using std::sort;
-using std::unordered_map;
 using std::vector;
 using std::chrono::high_resolution_clock;
 
@@ -358,8 +355,8 @@ auto Engine::ScoreStabilitySignal(int depth) const -> double {
   }
   double magnitude =
       std::min((weighted_abs / total_weight) / params_.tm_score_scale, 1.0);
-  double instability =
-      std::min(magnitude + params_.tm_osc_weight * (oscillation / total_weight), 1.0);
+  double instability = std::min(
+      magnitude + params_.tm_osc_weight * (oscillation / total_weight), 1.0);
   return 2.0 * instability - 1.0;
 }
 
@@ -417,8 +414,9 @@ auto Engine::UpdateSubtreeShare() -> void {
     subtree_share_ema_ = share;
     subtree_ema_init_ = true;
   } else {
-    subtree_share_ema_ = params_.tm_subtree_ema_alpha * share +
-                         (1.0 - params_.tm_subtree_ema_alpha) * subtree_share_ema_;
+    subtree_share_ema_ =
+        params_.tm_subtree_ema_alpha * share +
+        (1.0 - params_.tm_subtree_ema_alpha) * subtree_share_ema_;
   }
 }
 
@@ -442,10 +440,12 @@ auto Engine::ComputeDifficulty(int depth) const -> double {
       root_best_history_[depth] == obvious_recapture_) {
     return params_.tm_obvious_difficulty;
   }
-  double difficulty = 1.0 + params_.tm_move_weight * MoveStabilitySignal(depth) +
+  double difficulty = 1.0 +
+                      params_.tm_move_weight * MoveStabilitySignal(depth) +
                       params_.tm_score_weight * ScoreStabilitySignal(depth) +
                       params_.tm_subtree_weight * SubtreeStabilitySignal();
-  return std::clamp(difficulty, params_.tm_difficulty_min, params_.tm_difficulty_max);
+  return std::clamp(difficulty, params_.tm_difficulty_min,
+                    params_.tm_difficulty_max);
 }
 
 auto Engine::PredictNextIterExceeds(int depth) const -> bool {
@@ -454,8 +454,8 @@ auto Engine::PredictNextIterExceeds(int depth) const -> bool {
   }
   float t_d = iter_elapsed_[depth] - iter_elapsed_[depth - 1];
   float t_prev = iter_elapsed_[depth - 1] - iter_elapsed_[depth - 2];
-  double ebf =
-      (t_prev > 0.0f) ? static_cast<double>(t_d) / t_prev : params_.tm_ebf_fallback;
+  double ebf = (t_prev > 0.0f) ? static_cast<double>(t_d) / t_prev
+                               : params_.tm_ebf_fallback;
   ebf = std::clamp(ebf, params_.tm_ebf_min, params_.tm_ebf_max);
   double predicted_end = static_cast<double>(iter_elapsed_[depth]) + ebf * t_d;
   return predicted_end > static_cast<double>(soft_time_);
@@ -491,7 +491,6 @@ auto Engine::AspirationSearch(int prev_score, int depth, int ply,
     }
   }
 }
-
 
 auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
                  bool null_move_allowed) -> int {
@@ -842,9 +841,10 @@ auto Engine::TrySingularExtension(const TableEntry& hash_entry, int depth,
   bool not_all_node =
       (hash_entry.node_type == kPvNode || hash_entry.node_type == kCutNode);
 
-  bool should_extend = (depth >= params_.singular_depth_min && not_in_extension &&
-                        ValidateTtMove(hash_entry.hash_move) && not_mate &&
-                        deep_enough && not_all_node);
+  bool should_extend =
+      (depth >= params_.singular_depth_min && not_in_extension &&
+       ValidateTtMove(hash_entry.hash_move) && not_mate && deep_enough &&
+       not_all_node);
   if (should_extend) {
     int singular_beta = hash_entry.eval - 2 * depth;
     excluded_move_ = hash_entry.hash_move;
@@ -1152,8 +1152,8 @@ auto Engine::ProbeTt(int& alpha, int& beta, int depth, int ply, int& result)
 
 auto Engine::ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
                                  bool at_pv_node, bool in_check) -> bool {
-  if (depth < params_.null_move_depth_min || at_pv_node || !ZugzwangUnlikely() ||
-      in_check) {
+  if (depth < params_.null_move_depth_min || at_pv_node ||
+      !ZugzwangUnlikely() || in_check) {
     return false;
   }
   board_->MakeNullMove();
