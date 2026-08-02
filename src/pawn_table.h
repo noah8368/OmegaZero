@@ -11,14 +11,11 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
-#include <stdexcept>
 #include <vector>
 
 namespace omegazero {
 
 using std::begin;
-using std::copy;
 using std::end;
 using std::fill;
 using std::vector;

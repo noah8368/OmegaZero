@@ -10,8 +10,6 @@
 #define OMEGAZERO_SRC_TRANSPOSITION_TABLE_H
 
 #include <algorithm>
-#include <cstring>
-#include <stdexcept>
 #include <vector>
 
 #include "board.h"
@@ -20,7 +18,6 @@
 namespace omegazero {
 
 using std::begin;
-using std::copy;
 using std::end;
 using std::fill;
 using std::vector;

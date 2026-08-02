@@ -13,6 +13,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <random>
 #include <stdexcept>
 #include <string>

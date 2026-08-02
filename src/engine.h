@@ -28,16 +28,12 @@
 
 namespace omegazero {
 
-using std::begin;
 using std::clamp;
-using std::copy;
-using std::end;
 using std::invalid_argument;
 using std::max;
 using std::min;
 using std::numeric_limits;
 using std::pair;
-using std::unordered_map;
 using std::vector;
 using std::chrono::duration;
 using std::chrono::duration_cast;
