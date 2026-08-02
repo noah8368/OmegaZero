@@ -8,11 +8,9 @@
 #include "board.h"
 
 #include <algorithm>
-#include <array>
 #include <cassert>
 #include <cctype>
 #include <chrono>
-#include <cstdint>
 #include <cstring>
 #include <random>
 #include <stdexcept>
@@ -31,7 +29,6 @@ using std::end;
 using std::invalid_argument;
 using std::string;
 using std::max;
-using std::array;
 
 typedef __uint128_t U128;
 

@@ -7,7 +7,6 @@
 
 #include "game.h"
 
-#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
