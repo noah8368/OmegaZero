@@ -14,6 +14,7 @@
 namespace omegazero {
 
 typedef int8_t S8;
+typedef int16_t S16;
 
 constexpr S8 kNA = -1;
 

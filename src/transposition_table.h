@@ -30,11 +30,17 @@ enum NodeType : S8 {
 
 constexpr int kTableSize = 1 << 20;
 
+// Packed to 24 bytes (from 32): U64 leads for 8-byte alignment, then the
+// 8-byte Move, then the narrow fields. `eval` fits int16_t (evals are bounded
+// by +/-kBestEval, +/-32128 after mate-rebasing in ScoreToTt). `search_depth`
+// stays int16_t rather than S8 because a root depth can reach kSearchLimit
+// (128), which overflows a signed 8-bit field. Two vectors of kTableSize
+// entries makes this ~16 MB saved plus tighter probe cache behavior.
 struct TableEntry {
-  Move hash_move;
   U64 board_hash;
-  int eval;
-  int search_depth;
+  Move hash_move;
+  S16 eval;
+  S16 search_depth;
   S8 node_type;
 };
 

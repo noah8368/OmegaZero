@@ -1,8 +1,6 @@
 /* Noah Himed
  *
- * Define the Engine type. Engine objects contains a pseudo-legal move
- * generator, a search tree of possible game states, an evaluation function, and
- * a search function.
+ * Define the Engine type: pseudo-legal move generator, search, and evaluation.
  *
  * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
  */
@@ -48,10 +46,8 @@ enum GameStatus : S8 {
 
 constexpr int kSearchLimit = 128;
 constexpr int kCorrHistSize = 16384;
-// Correction-history fixed-point grain and saturation bound. Kept compile-time
-// (not runtime-tunable) because kCorrHistGrain divides per node in
-// GetCorrectedEval -- as a power-of-two constant that is a shift, but a runtime
-// value forces a real integer division (~8% NPS). See SearchParams.
+// Correction-history fixed-point grain and saturation bound. Compile-time
+// power-of-two so the per-node divide in GetCorrectedEval is a shift (~8% NPS).
 constexpr int kCorrHistGrain = 256;
 constexpr int kCorrHistMax = 256;
 
@@ -60,18 +56,15 @@ constexpr int kNeutralEval = -25;
 constexpr int kWorstEval = -32000;
 constexpr int kInvalidEval = 32001;
 
-// Mate scores are encoded, relative to the search root, as kBestEval minus the
-// number of plies until we deliver mate (or kWorstEval plus the plies until we
-// are mated). Any score within kSearchLimit of the extremes is therefore a mate
-// score. This band is well clear of ordinary centipawn evaluations.
+// Mate scores are encoded root-relative as kBestEval minus plies-to-mate (or
+// kWorstEval plus plies-to-being-mated), so any score within kSearchLimit of an
+// extreme is a mate score.
 inline auto IsMateScore(int score) -> bool {
   return score > kBestEval - kSearchLimit || score < kWorstEval + kSearchLimit;
 }
-// A mate score's magnitude encodes its distance from the search root, but the
-// transposition table is keyed by position and may be reached at a different
-// root distance later. ScoreToTt rebases a root-relative mate score to be
-// relative to the node at `ply` (for storage); ScoreFromTt is its inverse (on
-// retrieval). Non-mate scores pass through unchanged.
+// Rebase a mate score between root-relative and node-relative (at `ply`) so it
+// stays valid across TT hits at different root distances. ScoreToTt stores,
+// ScoreFromTt retrieves; non-mate scores pass through unchanged.
 inline auto ScoreToTt(int score, int ply) -> int {
   if (score > kBestEval - kSearchLimit) return score + ply;
   if (score < kWorstEval + kSearchLimit) return score - ply;
@@ -83,146 +76,128 @@ inline auto ScoreFromTt(int score, int ply) -> int {
   return score;
 }
 
-// --- Dynamic time-management tuning ---
-// Master switch for difficulty-scaled dynamic time management. Disabled for v4:
-// an SPRT (dynamic vs. static soft/hard) showed the current tuning regressing
-// ~10 Elo, so clock play falls back to the static bounds. The full mechanism
-// below stays compiled and ready to be re-enabled and SPSA-tuned in v5.
+// Master switch for difficulty-scaled dynamic time management. Off for v4 (SPRT
+// showed ~10 Elo regression); mechanism stays compiled for v5 SPSA tuning.
 constexpr bool kDynamicTmEnabled = false;
-// Runtime-tunable search parameters, surfaced as UCI spin options (see the
-// option tables in uci.cc) so they can be SPSA-tuned without a rebuild. Defaults
-// match the historical constexpr values, so a fresh engine behaves exactly as
-// before. Doubles are exposed to UCI as integers via a per-option divisor.
-// (Structural constants -- array sizes, score sentinels, chess rules -- are not
-// here because they cannot vary at runtime without breaking correctness.)
+// Runtime-tunable search parameters, surfaced as UCI spin options (see uci.cc)
+// for SPSA tuning without a rebuild. Defaults match the old constexpr values.
+// Doubles are exposed to UCI as integers via a per-option divisor.
 struct SearchParams {
   // --- Dynamic time management ---
-  int tm_window = 5;               // recent iterations weighed for move stability
-  double tm_move_decay = 0.6;      // geometric decay favoring recent changes
-  double tm_move_weight = 0.5;     // weight of the best-move-stability term
-  double tm_score_weight = 0.3;    // weight of the score-stability term
-  double tm_score_scale = 100.0;   // cp swing mapping to full magnitude-instability
-  double tm_osc_weight = 0.5;      // extra weight for score oscillation
+  int tm_window = 5;             // recent iterations weighed for move stability
+  double tm_move_decay = 0.6;    // geometric decay favoring recent changes
+  double tm_move_weight = 0.5;   // weight of the best-move-stability term
+  double tm_score_weight = 0.3;  // weight of the score-stability term
+  double tm_score_scale =
+      100.0;                   // cp swing mapping to full magnitude-instability
+  double tm_osc_weight = 0.5;  // extra weight for score oscillation
   double tm_mate_difficulty = 0.5;      // difficulty once a mate is found/faced
   double tm_obvious_difficulty = 0.25;  // difficulty for an obvious recapture
-  double tm_subtree_weight = 0.2;       // weight of the subtree/node-effort term
-  double tm_subtree_ema_alpha = 0.5;    // EMA smoothing of the best-move node share
-  double tm_difficulty_min = 0.45;      // clamp floor on the difficulty multiplier
-  double tm_difficulty_max = 2.5;       // clamp ceiling on the difficulty multiplier
-  double tm_ebf_min = 1.5;              // predictive early-stop EBF clamp floor
-  double tm_ebf_max = 4.0;              // predictive early-stop EBF clamp ceiling
-  double tm_ebf_fallback = 2.0;         // EBF used before two iterations complete
+  double tm_subtree_weight = 0.2;  // weight of the subtree/node-effort term
+  double tm_subtree_ema_alpha =
+      0.5;                          // EMA smoothing of the best-move node share
+  double tm_difficulty_min = 0.45;  // clamp floor on the difficulty multiplier
+  double tm_difficulty_max = 2.5;  // clamp ceiling on the difficulty multiplier
+  double tm_ebf_min = 1.5;         // predictive early-stop EBF clamp floor
+  double tm_ebf_max = 4.0;         // predictive early-stop EBF clamp ceiling
+  double tm_ebf_fallback = 2.0;    // EBF used before two iterations complete
   // --- Pruning / reduction margins, depths, thresholds ---
-  int aspiration_delta = 25;         // initial aspiration half-window (cp)
-  int futility_margin = 200;         // per-depth (reverse) futility margin (cp)
-  int max_futility_pruning_depth = 2;    // max depth for (reverse) futility pruning
-  int max_late_move_pruning_depth = 2;   // max depth for late-move pruning
-  int max_see_pruning_depth = 5;         // max depth for SEE pruning
-  int see_margin = 100;              // per-depth SEE-pruning margin (cp)
-  int history_lmr_threshold = -1000; // history below which LMR reduces one more
-  int num_early_moves = 3;           // moves searched at full depth before LMR
-  int min_reduction_depth = 3;       // min depth for late-move reductions
-  int min_iir_depth = 4;             // min depth for internal iterative reduction
-  int max_razoring_depth = 3;        // max depth for razoring
-  int razoring_margin = 350;         // razoring drop-to-qsearch margin (cp)
-  int singular_depth_min = 6;        // min depth for singular extensions
-  int null_move_depth_min = 4;       // min depth for null-move pruning
-  int null_move_depth_high_r = 6;    // depth above which NMP uses the larger R
-  int qs_delta = 900;                // quiescence delta-pruning margin (cp)
+  int aspiration_delta = 25;  // initial aspiration half-window (cp)
+  int futility_margin = 200;  // per-depth (reverse) futility margin (cp)
+  int max_futility_pruning_depth =
+      2;  // max depth for (reverse) futility pruning
+  int max_late_move_pruning_depth = 2;  // max depth for late-move pruning
+  int max_see_pruning_depth = 5;        // max depth for SEE pruning
+  int see_margin = 100;                 // per-depth SEE-pruning margin (cp)
+  int history_lmr_threshold =
+      -1000;                       // history below which LMR reduces one more
+  int num_early_moves = 3;         // moves searched at full depth before LMR
+  int min_reduction_depth = 3;     // min depth for late-move reductions
+  int min_iir_depth = 4;           // min depth for internal iterative reduction
+  int max_razoring_depth = 3;      // max depth for razoring
+  int razoring_margin = 350;       // razoring drop-to-qsearch margin (cp)
+  int singular_depth_min = 6;      // min depth for singular extensions
+  int null_move_depth_min = 4;     // min depth for null-move pruning
+  int null_move_depth_high_r = 6;  // depth above which NMP uses the larger R
+  int qs_delta = 900;              // quiescence delta-pruning margin (cp)
 };
 
-// Upper bound on legal moves in a position (max ~218), sizing the per-root-move
-// node-count table.
+// Upper bound on legal moves (~218), sizing the per-root-move node table.
 constexpr int kMaxRootMoves = 256;
 
-// One completed iterative-deepening iteration's result, passed to the info
-// callback (if one is registered) so a UCI front-end can emit an `info` line.
-// The engine itself performs no I/O; formatting/printing lives in the caller.
+// One iterative-deepening iteration's result, passed to the info callback so a
+// UCI front-end can emit an `info` line. The engine itself performs no I/O.
 struct SearchInfo {
   int depth;
-  int score;        // Internal score: centipawns, or a mate score (IsMateScore).
+  int score;  // Internal score: centipawns, or a mate score (IsMateScore).
   uint64_t nodes;
   long long time_ms;
-  const Move* pv;   // Principal variation, pv[0] first; length is pv_len.
+  const Move* pv;  // Principal variation, pv[0] first; length is pv_len.
   int pv_len;
 };
 
 class Engine {
  public:
   Engine(Board* board, S8 player_side, float search_time);
+  Engine(Board* board, S8 player_side, float search_time,
+         const vector<U64>& pos_history);
 
-  // Register a callback invoked once per completed depth during GetBestMove()
-  // with that iteration's depth/score/nodes/time/pv. Used by the UCI handler to
-  // print `info` lines; unset (the default) means no per-iteration reporting.
+  // Register a callback invoked once per completed depth during GetBestMove().
+  // Used by the UCI handler for `info` lines; unset means no reporting.
   auto SetInfoCallback(std::function<void(const SearchInfo&)> cb) -> void {
     info_cb_ = std::move(cb);
   }
 
-  // Replace the runtime search parameters (backing the UCI spin options). The
-  // UCI handler applies its current values before each search.
+  // Runtime search parameters backing the UCI spin options.
   auto SetParams(const SearchParams& params) -> void { params_ = params; }
   auto GetParams() const -> const SearchParams& { return params_; }
 
-  // Searches possible games in a search tree to find the best legal move. Act
-  // as the root function to call the Negamax search algorithm in an iterative
-  // deepening framework.
+  // Find the best legal move via iterative-deepening Negamax search.
   auto GetBestMove() -> Move;
   auto GetBestMove(int& node_score) -> Move;
 
-  // Check for draws, checks, and checkmates. Note that this function does not
-  // check for move repititions.
+  // Check for draws, checks, and checkmates (does not detect repetitions).
   auto GetGameStatus() -> S8;
   auto GetUserSide() const -> S8;
 
-  // Counts the number of leaves of the tree of specified depth whose root
-  // node is is the current board state.
+  // Count leaves at `depth` plies below the current board state.
   auto Perft(int depth) -> U64;
 
-  // Finds all pseudo-legal moves able to be played at the current board state.
+  // All pseudo-legal moves at the current board state.
   auto GenerateMoves(bool captures_only = false) const -> vector<Move>;
 
-  // Adds a board repitition to keep enforce move repitition rules and return
-  // the number of times the current board state has been encountered.
+  // Record the current position for repetition detection and return how many
+  // times it has been seen.
   auto AddPosToHistory() -> void;
   auto ClearHistory() -> void;
-  // Set a fixed per-move budget (soft and hard bounds coincide). Used by the
-  // fixed-time harnesses and `--st` play.
+  // Fixed per-move budget (soft/hard coincide); for fixed-time harnesses &
+  // `--st`.
   auto SetSearchTime(float t) -> void;
-  // Set soft/hard bounds and the neutral base budget for clock-based play;
-  // enables difficulty-scaled dynamic time management.
+  // Soft/hard bounds + neutral base budget for clock play; enables dynamic TM.
   auto SetTimeBounds(float soft, float hard, float base) -> void;
 
-  // Search with no time bound (UCI `go infinite`): runs until a depth/node
-  // limit is hit or RequestStop() is called.
+  // No time bound (UCI `go infinite`): runs until a depth/node limit or stop.
   auto SetInfiniteSearch() -> void;
-  // Cap iterative deepening at `depth` plies (UCI `go depth`). Pass
-  // kSearchLimit to remove the cap.
+  // Cap depth (UCI `go depth`); kSearchLimit removes the cap.
   auto SetDepthLimit(int depth) -> void;
-  // Stop once the search has visited `nodes` nodes (UCI `go nodes`). Pass
-  // UINT64_MAX to remove the cap.
+  // Cap visited nodes (UCI `go nodes`); UINT64_MAX removes the cap.
   auto SetNodeLimit(uint64_t nodes) -> void;
-  // Ask an in-progress search to stop as soon as possible (UCI `stop`).
-  // Thread-safe: callable from another thread while GetBestMove() runs.
+  // Ask a running search to stop ASAP (UCI `stop`). Thread-safe.
   auto RequestStop() -> void { stop_requested_.store(true); }
 
-  // Restrict the root search to these moves (UCI `go searchmoves`). Empty (the
-  // default) means all legal moves; set fresh before each search.
+  // Restrict the root to these moves (UCI `go searchmoves`); empty = all legal.
   auto SetSearchMoves(const vector<Move>& moves) -> void {
     search_moves_ = moves;
   }
-  // Stop as soon as a mate in <= `moves` for the side to move is found (UCI
-  // `go mate`); 0 disables.
+  // Stop once a mate in <= `moves` is found (UCI `go mate`); 0 disables.
   auto SetMateTarget(int moves) -> void { mate_target_ = moves; }
 
-  // UCI `ponderhit`: the pondered move was played, so give the in-progress
-  // (infinite) ponder search a real deadline `soft`/`hard` seconds from now, on
-  // top of the time already spent pondering. Thread-safe; call while
-  // GetBestMove() runs on the worker.
+  // UCI `ponderhit`: give the running ponder search a real deadline
+  // `soft`/`hard` seconds from now, on top of time already spent pondering.
+  // Thread-safe.
   auto PonderHit(float soft, float hard) -> void;
-  // The move the engine expects the opponent to reply with: the second move of
-  // the last search's principal variation, or an empty Move if the PV is shorter
-  // than two plies. Read after GetBestMove() returns; used for `bestmove ...
-  // ponder ...`.
+  // Move the engine expects in reply (2nd move of the last PV, or empty if the
+  // PV is shorter than two plies). For `bestmove ... ponder ...`.
   auto GetPonderMove() const -> Move {
     return completed_pv_len_ >= 2 ? completed_pv_[1] : Move{};
   }
@@ -240,8 +215,7 @@ class Engine {
   auto InEndgame() const -> bool;
   auto IsKillerMove(const Move& move, int ply) const -> bool;
   auto RepDetected() const -> bool;
-  // Return if Zugzwang is unlikely, indicating Null-Move Heuristic should be
-  // used.
+  // Whether Zugzwang is unlikely (i.e. null-move pruning is safe to apply).
   auto ZugzwangUnlikely() const -> bool;
   auto ValidateTtMove(const Move& move) const -> bool;
   auto ProbeTt(int& alpha, int& beta, int depth, int ply, int& result) -> bool;
@@ -257,39 +231,32 @@ class Engine {
   auto ShouldSeePrune(const Move& move, int depth, bool at_pv_node,
                       bool gives_check, bool in_check, int see_val) -> bool;
 
-  // Dynamic time management (used between iterative-deepening iterations).
-  // Signed [-1, +1] best-move-stability signal over the last tm_window depths
-  // (negative = stable, positive = churning).
+  // Dynamic time management (between iterative-deepening iterations). Each
+  // *StabilitySignal returns a signed [-1, +1] value over the last tm_window
+  // depths (negative = stable, positive = churning/unstable).
   auto MoveStabilitySignal(int depth) const -> double;
-  // Signed [-1, +1] score-stability signal over the last tm_window depths
-  // (negative = flat/smooth, positive = large swings / oscillation).
   auto ScoreStabilitySignal(int depth) const -> double;
-  // Detect whether the root is an obvious forced recapture (opponent just
-  // captured; exactly one safe recapture of it; not in check).
+  // Detect an obvious forced recapture at the root (opponent just captured;
+  // exactly one safe recapture; not in check).
   auto DetectObviousRecapture() -> void;
   // Fold the last root search's best-move node share into the EMA.
   auto UpdateSubtreeShare() -> void;
-  // Signed [-1, +1] subtree/node-effort signal (negative = one move dominates
-  // the search, positive = effort spread across root moves).
+  // Signed [-1, +1] node-effort signal (negative = one move dominates).
   auto SubtreeStabilitySignal() const -> double;
   // Difficulty multiplier applied to base_time_ to get the soft bound.
   auto ComputeDifficulty(int depth) const -> double;
-  // Whether the next iteration is predicted to exceed the soft bound (and so
-  // shouldn't be started).
+  // Whether the next iteration is predicted to exceed the soft bound.
   auto PredictNextIterExceeds(int depth) const -> bool;
 
   // Search and scoring (int).
-  // Computes best evaluation resulting from a legal move for the moving
-  // player by searching the tree of possible moves using the Negamax
-  // algorithm.
+  // Negamax search over the move tree for the moving player's best evaluation.
   auto AspirationSearch(int prev_score, int depth, int ply, Move& best_move)
       -> int;
   auto Pvs(int alpha, int beta, int depth, int ply, bool null_move_allowed)
       -> int;
   auto Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
            bool null_move_allowed) -> int;
-  // Search until a "quiescent" position is reached (no capturing moves can be
-  // made) to mitigate the horizon effect.
+  // Search captures until quiescent to mitigate the horizon effect.
   auto QuiescenceSearch(int alpha, int beta, int ply, int qs_depth = 20) -> int;
   auto GetCorrectedEval(int static_eval) const -> int;
   auto ComputeLmrReduction(int depth, int legal_moves, S8 player_to_move,
@@ -298,9 +265,7 @@ class Engine {
                             int beta) -> int;
 
   // Move ordering (vector<Move>).
-  // Attempts to predict which moves are likely to be better, and order those
-  // towards the front of the move_list to increase the number of moves that
-  // can be pruned during alpha-beta pruning.
+  // Order likely-best moves first to maximize alpha-beta cutoffs.
   auto OrderMoves(const vector<Move>& move_list, int ply) const -> vector<Move>;
   auto OrderMoves(const vector<Move>& move_list) const -> vector<Move>;
 
@@ -325,80 +290,81 @@ class Engine {
   auto StoreTtEntry(int best_eval, int orig_alpha, int beta, int depth, int ply,
                     const Move& best_move) -> void;
 
-  // Track if a board evaluation is improving as a line is being seared.
+  // Whether static eval is trending up along the current line.
   bool improving_;
 
-  // Runtime-tunable search parameters (UCI options); defaults reproduce the old
-  // constexpr behavior.
+  // Runtime-tunable search parameters (UCI options).
   SearchParams params_;
 
   Board* board_;
 
-  // Stop starting new iterative-deepening iterations past `soft_time_`; abort a
-  // search in progress once `hard_time_` is reached. `base_time_` is the neutral
-  // budget the soft bound is rescaled from by search difficulty. In fixed-time
-  // modes the three coincide and dynamic scaling is disabled. soft_/hard_time_
-  // are atomic so PonderHit() can revise the running search's deadline from the
-  // UCI thread; access is via atomic<float>'s implicit load/store conversions.
+  // Time bounds: stop starting iterations past `soft_time_`, abort past
+  // `hard_time_`; `base_time_` is the neutral budget the soft bound scales
+  // from. Fixed-time modes make all three coincide (dynamic_tm_ off).
+  // soft_/hard_ are atomic so PonderHit() can revise the deadline from the UCI
+  // thread.
   std::atomic<float> soft_time_;
   std::atomic<float> hard_time_;
   float base_time_;
   bool dynamic_tm_;
 
-  // Non-time search limits. `depth_limit_` caps iterative deepening;
-  // `node_limit_` caps visited nodes; `stop_requested_` is set from another
-  // thread to abort a running search. All checked via the OutOfTime abort path.
+  // Non-time limits, all checked via the OutOfTime abort path.
+  // `stop_requested_` is set from another thread.
   int depth_limit_;
   uint64_t node_limit_;
   std::atomic<bool> stop_requested_;
 
-  // Root-move restriction for UCI `go searchmoves` (empty = all legal moves) and
-  // the UCI `go mate` target in moves (0 = disabled). Both set per search.
+  // Root-move restriction (UCI `go searchmoves`, empty = all) and mate target
+  // (UCI `go mate`, 0 = disabled). Both set per search.
   vector<Move> search_moves_;
   int mate_target_;
 
-  // Per-iteration signal state for dynamic time management (reset each search).
-  // `root_best_history_[d]` is the root best move after completing depth d;
-  // `iter_elapsed_[d]` is the cumulative search time at the end of depth d.
+  // Per-iteration signal state for dynamic TM (reset each search): root best
+  // move, root score, and cumulative elapsed time after each depth.
   Move root_best_history_[kSearchLimit + 1];
   int root_score_history_[kSearchLimit + 1];
   float iter_elapsed_[kSearchLimit + 1];
 
-  // Triangular principal-variation table: `pv_table_[ply]` holds the PV starting
-  // at that ply (best move first), `pv_length_[ply]` its length. Collected only
-  // at PV nodes in Pvs; `pv_table_[0]`/`pv_length_[0]` is the root PV. Rows are
+  // Triangular PV table: `pv_table_[ply]` holds the PV from that ply (best
+  // first), `pv_length_[ply]` its length; row 0 is the root PV. Rows are
   // over-sized by one so a child at `ply + 1` is always addressable.
   Move pv_table_[kSearchLimit + 1][kSearchLimit];
   int pv_length_[kSearchLimit + 1];
-  // Snapshot of the root PV after the last *completed* depth. pv_table_[0] is
-  // wiped by the entry reset of a subsequent (possibly aborted) iteration, so
-  // the ponder move and any post-search PV read must come from here.
+  // Root PV snapshot after the last *completed* depth (pv_table_[0] gets wiped
+  // by a later, possibly aborted, iteration). Source for the ponder/post-search
+  // PV.
   Move completed_pv_[kSearchLimit];
   int completed_pv_len_;
-  // Optional per-iteration reporting hook (see SetInfoCallback). Empty if unset.
+  // Optional per-iteration reporting hook (see SetInfoCallback).
   std::function<void(const SearchInfo&)> info_cb_;
 
-  // Per-root-move node counts for the last root search, its move count, and the
-  // index of the best root move; plus the EMA-smoothed best-move node share.
+  // Last root search's per-move node counts, move count, best-move index, and
+  // the EMA-smoothed best-move node share.
   uint64_t root_move_nodes_[kMaxRootMoves];
   int root_move_count_;
   int best_root_idx_;
   double subtree_share_ema_;
   bool subtree_ema_init_;
 
-  // The single safe recapture of the opponent's last capture, if the root is an
-  // obvious-recapture position (set once per search).
+  // The single safe recapture at an obvious-recapture root (set once per
+  // search).
   Move obvious_recapture_;
   bool has_obvious_recapture_;
 
   high_resolution_clock::time_point search_start_;
 
   int nodes_since_time_check_;
-  int history_heuristic_[kNumPlayers][kNumPieceTypes][kNumSq];
-  int continuation_history_[kNumPieceTypes][kNumSq][kNumPieceTypes][kNumSq];
+  // History values are bounded to +/-kMaxHistoryBonus (16384) by the
+  // history-gravity update, so int16_t holds them with margin and halves the
+  // footprint of the two largest tables (continuation_history_ 576->288 KB,
+  // duplicated per Lazy-SMP worker). Arithmetic promotes to int on read.
+  // correction_history_ stays int: it clamps to +/-kCorrHistMax*kCorrHistGrain
+  // (65536), which overflows S16.
+  S16 history_heuristic_[kNumPlayers][kNumPieceTypes][kNumSq];
+  S16 continuation_history_[kNumPieceTypes][kNumSq][kNumPieceTypes][kNumSq];
   int eval_history_[kSearchLimit];
   int correction_history_[kNumPlayers][kCorrHistSize];
-  int capture_history_[kNumPlayers][kNumPieceTypes][kNumSq][kNumPieceTypes];
+  S16 capture_history_[kNumPlayers][kNumPieceTypes][kNumSq][kNumPieceTypes];
 
   uint64_t total_nodes_;
 
@@ -411,7 +377,7 @@ class Engine {
 
   S8 user_side_;
 
-  // Keep track of information for positions that've already been evaluated.
+  // Cache of previously evaluated positions.
   TranspositionTable transposition_table_;
 };
 
@@ -447,19 +413,17 @@ inline auto Engine::SetTimeBounds(float soft, float hard, float base) -> void {
   soft_time_ = std::max(soft, kMinSearchTime);
   hard_time_ = std::max(hard, kMinSearchTime);
   base_time_ = std::max(base, kMinSearchTime);
-  // v4: gated off (static soft/hard). Flip kDynamicTmEnabled for v5 tuning.
-  dynamic_tm_ = kDynamicTmEnabled;
+  dynamic_tm_ = kDynamicTmEnabled;  // v4: off; flip the constant for v5 tuning.
   depth_limit_ = kSearchLimit;
   node_limit_ = UINT64_MAX;
   stop_requested_.store(false);
 }
 
 inline auto Engine::PonderHit(float soft, float hard) -> void {
-  // Rebase the deadline onto the wall clock: the ponder search has already run
-  // for `elapsed` seconds since search_start_, so allow `hard`/`soft` more from
-  // now by comparing against elapsed + budget (CheckSearchTime and the ID loop
-  // measure time from search_start_). search_start_ is set once by the worker
-  // before any ponderhit can arrive, so reading it here is race-free.
+  // Rebase the deadline onto the wall clock: time is measured from
+  // search_start_, so the new budget is elapsed-since-start + soft/hard.
+  // search_start_ is set by the worker before any ponderhit can arrive, so
+  // reading it is race-free.
   float elapsed = duration_cast<duration<float>>(high_resolution_clock::now() -
                                                  search_start_)
                       .count();
@@ -468,8 +432,7 @@ inline auto Engine::PonderHit(float soft, float hard) -> void {
 }
 
 inline auto Engine::SetInfiniteSearch() -> void {
-  // A far-future deadline the wall clock never reaches, so only a depth/node
-  // limit or RequestStop() ends the search.
+  // Unreachable deadline; only a depth/node limit or RequestStop() ends search.
   soft_time_ = std::numeric_limits<float>::max();
   hard_time_ = std::numeric_limits<float>::max();
   base_time_ = std::numeric_limits<float>::max();
@@ -500,8 +463,8 @@ inline auto Engine::InEndgame() const -> bool {
                                 board_->GetPiecesByType(kBishop, kWhite);
   Bitboard black_minor_pieces = board_->GetPiecesByType(kKnight, kBlack) |
                                 board_->GetPiecesByType(kBishop, kBlack);
-  // Indicate the game has entered the endgame if both players either don't have
-  // a queen, or have only one queen in addition to at most one minor piece.
+  // Endgame if there are no queens, or (no rooks and) each side has at most one
+  // queen plus at most one minor piece.
   return (no_queens) | (no_rooks &&
                         (GetNumSetSq(white_queens) <= 1 &&
                          GetNumSetSq(white_minor_pieces) <= 1) &&
@@ -518,7 +481,7 @@ inline auto Engine::IsKillerMove(const Move& move, int ply) const -> bool {
 inline auto Engine::RepDetected() const -> bool {
   if (pos_history_.size() < 5) return false;
   U64 current = pos_history_.back();
-  // Scan backwards checking every 2nd entry (same side to move).
+  // Scan back over same-side-to-move positions.
   for (int pos_idx = static_cast<int>(pos_history_.size()) - 5; pos_idx >= 0;
        pos_idx -= 2) {
     if (pos_history_[pos_idx] == current) {
@@ -560,7 +523,7 @@ inline auto Engine::ShouldReverseFutilityPrune(int static_eval, int depth,
     return false;
   }
   if (improving_) {
-    // Prune less aggressively when the line's static evaluations are improving.
+    // Prune less aggressively when static eval is improving.
     return static_eval - (depth - 1) * params_.futility_margin >= beta;
   }
   return static_eval - depth * params_.futility_margin >= beta;
@@ -569,8 +532,9 @@ inline auto Engine::ShouldReverseFutilityPrune(int static_eval, int depth,
 inline auto Engine::ShouldFutilityPrune(const Move& move, int static_eval,
                                         int depth, bool at_pv_node,
                                         bool in_check, int alpha) -> bool {
-  return depth <= params_.max_futility_pruning_depth && !at_pv_node && !in_check &&
-         move.captured_piece == kNA && move.promoted_to_piece == kNA &&
+  return depth <= params_.max_futility_pruning_depth && !at_pv_node &&
+         !in_check && move.captured_piece == kNA &&
+         move.promoted_to_piece == kNA &&
          static_eval + depth * params_.futility_margin <= alpha;
 }
 
@@ -579,8 +543,7 @@ inline auto Engine::ShouldLateMovePrune(const Move& move,
                                         bool at_pv_node, bool gives_check,
                                         bool in_check, int ply) -> bool {
   int lmpThreshold = 6 + 2 * depth * depth;
-  // Lower the move count threshold when not the line's evaluations aren't
-  // improving.
+  // Lower the move-count threshold when static eval isn't improving.
   if (!improving_) {
     lmpThreshold /= 2;
   }
@@ -593,8 +556,8 @@ inline auto Engine::ShouldLateMovePrune(const Move& move,
 inline auto Engine::ShouldSeePrune(const Move& move, int depth, bool at_pv_node,
                                    bool gives_check, bool in_check, int see_val)
     -> bool {
-  if (at_pv_node || depth > params_.max_see_pruning_depth || move.captured_piece == kNA ||
-      gives_check || in_check) {
+  if (at_pv_node || depth > params_.max_see_pruning_depth ||
+      move.captured_piece == kNA || gives_check || in_check) {
     return false;
   }
   return see_val < -depth * params_.see_margin;
@@ -628,7 +591,7 @@ inline auto Engine::ComputeLmrReduction(int depth, int legal_moves,
     ++reduction;
   }
   if (!improving_) {
-    // Reduce depth more if the line's evaluations aren't improving.
+    // Reduce more when static eval isn't improving.
     ++reduction;
   }
   return max(1, reduction);
@@ -643,8 +606,7 @@ inline auto Engine::CheckSearchTime() -> void {
 
   total_nodes_ += 4096;
   nodes_since_time_check_ = 0;
-  // An external stop (UCI `stop`/`quit`) or a node budget aborts immediately;
-  // both are checked here (not per node) so the hot path stays branch-light.
+  // Checked here rather than per node to keep the hot path branch-light.
   if (stop_requested_.load(std::memory_order_relaxed) ||
       total_nodes_ >= node_limit_) {
     throw OutOfTime();
@@ -666,19 +628,17 @@ inline auto Engine::RecordKillerMove(const Move& move, int ply) -> void {
   }
 }
 
-// History-gravity saturation bound. Kept compile-time (not runtime-tunable):
-// it divides in the per-cutoff history updates below, and as a power-of-two
-// constant that division is a shift; a runtime value forces a real integer
-// division. See the SearchParams comment.
+// History-gravity saturation bound. Compile-time power-of-two so the divides in
+// the history updates below are shifts, not real integer divisions.
 constexpr int kMaxHistoryBonus = 16384;
 
 inline auto Engine::UpdateHistoryHeuristic(const Move& move, int bonus)
     -> void {
   S8 player_to_move = board_->GetPlayerToMove();
   bonus = clamp(bonus, -kMaxHistoryBonus, kMaxHistoryBonus);
-  int& history =
+  S16& history =
       history_heuristic_[player_to_move][move.moving_piece][move.target_sq];
-  // Update the history heuristic value using the history gravity formula.
+  // History-gravity update.
   history += (bonus - history * abs(bonus) / kMaxHistoryBonus);
 }
 
@@ -686,10 +646,10 @@ inline auto Engine::UpdateContinuationHistory(const Move& prev_move,
                                               const Move& move, int bonus)
     -> void {
   bonus = clamp(bonus, -kMaxHistoryBonus, kMaxHistoryBonus);
-  int& cont_history =
+  S16& cont_history =
       continuation_history_[prev_move.moving_piece][prev_move.target_sq]
                            [move.moving_piece][move.target_sq];
-  // Update the continuation history value using the history gravity formula.
+  // History-gravity update.
   cont_history += (bonus - cont_history * abs(bonus) / kMaxHistoryBonus);
 }
 
@@ -712,17 +672,17 @@ inline auto Engine::UpdateCaptureHistory(const Move& move, int bonus) -> void {
     throw invalid_argument(
         "move.captured_piece in Engine::UpdateCaptureHistory()");
   }
-  int& history = capture_history_[player_to_move][move.moving_piece]
+  S16& history = capture_history_[player_to_move][move.moving_piece]
                                  [move.target_sq][move.captured_piece];
-  // Update the history heuristic value using the history gravity formula.
+  // History-gravity update.
   history += (bonus - history * abs(bonus) / kMaxHistoryBonus);
 }
 
 inline auto Engine::StoreTtEntry(int best_eval, int orig_alpha, int beta,
                                  int depth, int ply, const Move& best_move)
     -> void {
-  // The node type is decided on the root-relative score, but a mate score is
-  // stored rebased to this node so it stays valid at other root distances.
+  // Node type uses the root-relative score; the stored eval is rebased to this
+  // node so a mate score stays valid at other root distances.
   int tt_eval = ScoreToTt(best_eval, ply);
   if (best_eval <= orig_alpha) {
     transposition_table_.Update(board_, depth, tt_eval, kAllNode);

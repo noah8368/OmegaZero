@@ -72,6 +72,46 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   fill(begin(eval_history_), end(eval_history_), kInvalidEval);
 }
 
+Engine::Engine(Board* board, S8 player_side, float search_time,
+               const vector<U64>& pos_history) {
+  assert(board != nullptr);
+  improving_ = false;
+  board_ = board;
+
+  constexpr float kMinSearchTime = 0.1f;
+  if (search_time < kMinSearchTime) {
+    throw invalid_argument("Search time must be at least 0.1s");
+  }
+  soft_time_ = search_time;
+  hard_time_ = search_time;
+  base_time_ = search_time;
+  dynamic_tm_ = false;
+  depth_limit_ = kSearchLimit;
+  node_limit_ = UINT64_MAX;
+  stop_requested_.store(false);
+  mate_target_ = 0;
+
+  if (tolower(player_side) == 'w') {
+    user_side_ = kWhite;
+  } else if (tolower(player_side) == 'b') {
+    user_side_ = kBlack;
+  } else if (tolower(player_side) == 'r') {
+    // Pick a random side for the user to play as.
+    srand(static_cast<int>(time(0)));
+    user_side_ = static_cast<S8>(rand() % static_cast<int>(kNumPlayers));
+  } else {
+    throw invalid_argument("invalid side choice");
+  }
+
+  memset(history_heuristic_, 0, sizeof(history_heuristic_));
+  memset(continuation_history_, 0, sizeof(continuation_history_));
+  memset(correction_history_, 0, sizeof(correction_history_));
+  memset(capture_history_, 0, sizeof(capture_history_));
+  fill(begin(eval_history_), end(eval_history_), kInvalidEval);
+
+  pos_history_ = pos_history;
+}
+
 constexpr int kRootNodePly = 0;
 
 auto Engine::GetBestMove(int& score_out) -> Move {
