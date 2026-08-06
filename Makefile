@@ -4,10 +4,12 @@ UNAME_S := $(shell uname -s)
 FLAGS = -march=native -pedantic -std=c++17 -Wall -Werror -Wextra -Wshadow -MMD -MP -pthread
 OPT_FLAGS = -O3 -fno-signed-zeros -fno-trapping-math -funroll-loops
 DEBUG_FLAGS = -O0 -g -fsanitize=address -fno-omit-frame-pointer -DDEBUG
+TSAN_FLAGS = -O1 -g -fsanitize=thread -fno-omit-frame-pointer
 
 OBJECTS = build/play/board.o build/play/engine.o build/play/game.o build/play/magics.o \
           build/play/main.o build/play/masks.o build/play/nnue.o build/play/transposition_table.o \
-          build/play/params.o build/play/piece_sq_tables.o build/play/uci.o
+          build/play/params.o build/play/piece_sq_tables.o build/play/search_pool.o \
+          build/play/uci.o
 
 DEBUG_OBJECTS = build/debug/board.o build/debug/engine.o build/debug/game.o \
                 build/debug/magics.o build/debug/nnue.o build/debug/debug_harness.o \
@@ -29,6 +31,11 @@ PERFT_OBJECTS = build/perft/board.o build/perft/engine.o build/perft/game.o \
                 build/perft/masks.o build/perft/transposition_table.o \
                 build/perft/piece_sq_tables.o
 
+TSAN_OBJECTS = build/tsan/board.o build/tsan/engine.o build/tsan/game.o \
+               build/tsan/magics.o build/tsan/nnue.o build/tsan/tsan_harness.o \
+               build/tsan/masks.o build/tsan/transposition_table.o \
+               build/tsan/piece_sq_tables.o build/tsan/search_pool.o
+
 all : build/play $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS) $(OPT_FLAGS)
 debug : build/debug $(DEBUG_OBJECTS)
@@ -39,6 +46,8 @@ datagen : build/datagen $(DATAGEN_OBJECTS)
 	$(CC) -o build/datagen_harness $(DATAGEN_OBJECTS) $(FLAGS) $(OPT_FLAGS) -lpthread
 perft : build/perft $(PERFT_OBJECTS)
 	$(CC) -o build/perft_harness $(PERFT_OBJECTS) $(FLAGS) $(OPT_FLAGS)
+tsan : build/tsan $(TSAN_OBJECTS)
+	$(CC) -o build/tsan_harness $(TSAN_OBJECTS) $(FLAGS) $(TSAN_FLAGS)
 build/play/magics.o: src/magics.cc
 	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/play/%.o: src/%.cc
@@ -59,6 +68,10 @@ build/perft/magics.o: src/magics.cc
 	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/perft/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS)
+build/tsan/magics.o: src/magics.cc
+	$(CC) -c -o $@ $< $(FLAGS) -O0
+build/tsan/%.o: src/%.cc
+	$(CC) -c -o $@ $< $(FLAGS) $(TSAN_FLAGS)
 
 build :
 	mkdir $@
@@ -72,13 +85,15 @@ build/datagen : build
 	mkdir -p $@
 build/perft : build
 	mkdir -p $@
+build/tsan : build
+	mkdir -p $@
 
 src/masks.cc :
 	python3 scripts/generate_masks.py
 src/magics.cc :
 	python3 scripts/mine_magics.py
 
--include build/play/*.d build/debug/*.d build/bench/*.d build/datagen/*.d build/perft/*.d
+-include build/play/*.d build/debug/*.d build/bench/*.d build/datagen/*.d build/perft/*.d build/tsan/*.d
 
 .PHONY: check-deps
 check-deps:

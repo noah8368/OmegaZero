@@ -18,8 +18,12 @@ SearchContext::SearchContext(TranspositionTable* tt, const Board& board,
                              const std::vector<U64>& pos_history,
                              float search_time)
     : board_(board),
-      engine_(tt, &board_, board_.GetPlayerToMove(), search_time, pos_history) {
-}
+      // Engine's player_side is a UI-perspective char ('w'/'b'/'r') that the
+      // search never reads; GetPlayerToMove() returns kWhite/kBlack (0/1), which
+      // the Engine ctor would reject as an invalid side. Pass the side to move
+      // as its char so construction is valid.
+      engine_(tt, &board_, board_.GetPlayerToMove() == kWhite ? 'w' : 'b',
+              search_time, pos_history) {}
 
 SearchPool::SearchPool(S8 num_threads) {
   num_helpers_ = num_threads > 0 ? num_threads - 1 : 0;
