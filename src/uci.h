@@ -59,6 +59,10 @@ class UciHandler {
   static constexpr const char* kStartFen =
       "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+  // Owned TT, injected into engine_ and reused across engine_ re-creation
+  // (HandleUciNewGame clears it explicitly). Declared before engine_ so it
+  // outlives the Engine that points at it.
+  TranspositionTable tt_;
   std::unique_ptr<Board> board_;
   std::unique_ptr<Engine> engine_;
   // Current values of the tunable search parameters (UCI spin options). Source of

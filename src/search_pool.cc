@@ -7,25 +7,56 @@
 
 #include "search_pool.h"
 
+#include <memory>
+#include <thread>
+
 #include "engine.h"
 
 namespace omegazero {
 
-SearchContext::SearchContext(const Board& board,
+SearchContext::SearchContext(TranspositionTable* tt, const Board& board,
                              const std::vector<U64>& pos_history,
                              float search_time)
     : board_(board),
-      engine_(&board_, board_.GetPlayerToMove(), search_time, pos_history) {}
+      engine_(tt, &board_, board_.GetPlayerToMove(), search_time, pos_history) {
+}
 
-SearchPool::SearchPool(S8 num_threads) { num_threads_ = num_threads; }
+SearchPool::SearchPool(S8 num_threads) {
+  num_helpers_ = num_threads > 0 ? num_threads - 1 : 0;
+}
 
 auto SearchPool::LazySmpSearch(const Board& board,
                                const vector<U64>& pos_history,
                                float search_time) -> Move {
-  for (S8 thread_idx = 0; thread_idx < num_threads_; ++thread_idx) {
-    SearchContext search_context(board, pos_history, search_time);
+  // Create Engine and Board objects for each helper thread.
+  vector<std::unique_ptr<SearchContext>> helper_ctxs;
+  helper_ctxs.reserve(num_helpers_);
+  for (S8 helper_idx = 0; helper_idx < num_helpers_; ++helper_idx) {
+    helper_ctxs.push_back(
+        std::make_unique<SearchContext>(&tt_, board, pos_history, search_time));
+    helper_ctxs[helper_idx]->engine_.SetInfiniteSearch();
   }
-  return Move{};
+
+  // Spin up the search helper threads with infinite search enabled. `teardown`
+  // is declared before the spawn loop so it stops and joins whatever threads
+  // exist on scope exit -- on a normal return, and on any exception between here
+  // and the return (a mid-spawn throw, main_context construction, or
+  // GetBestMove), which would otherwise leave joinable threads and terminate.
+  vector<std::thread> helpers;
+  helpers.reserve(num_helpers_);
+  HelperTeardown teardown(helper_ctxs, helpers);
+  for (S8 helper_idx = 0; helper_idx < num_helpers_; ++helper_idx) {
+    SearchContext* ctx = helper_ctxs[helper_idx].get();
+    helpers.emplace_back([ctx] { ctx->engine_.GetBestMove(); });
+  }
+
+  // Main thread keeps its real time bounds, runs inline, self-stops on soft.
+  SearchContext main_context(&tt_, board, pos_history, search_time);
+  Move best_move = main_context.engine_.GetBestMove();
+
+  // `teardown` stops the helpers and joins them as it goes out of scope, after
+  // best_move is captured.
+  return best_move;
 }
 
 }  // namespace omegazero

@@ -78,7 +78,7 @@ auto GetPieceType(char piece_ch) -> S8 {
 Game::Game(const string& init_pos, const string& opening_book_path,
            char player_side, float search_time, bool on_opening,
            bool light_theme)
-    : board_(init_pos), engine_(&board_, player_side, search_time) {
+    : board_(init_pos), engine_(&tt_, &board_, player_side, search_time) {
   game_active_ = true;
   on_opening_ = on_opening;
   clock_mode_ = false;

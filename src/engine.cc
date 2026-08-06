@@ -35,9 +35,12 @@ using std::chrono::high_resolution_clock;
 
 // --- Public member functions ---
 
-Engine::Engine(Board* board, S8 player_side, float search_time) {
+Engine::Engine(TranspositionTable* tt, Board* board, S8 player_side,
+               float search_time) {
+  assert(tt != nullptr);
   assert(board != nullptr);
   improving_ = false;
+  transposition_table_ = tt;
   board_ = board;
 
   constexpr float kMinSearchTime = 0.1f;
@@ -72,10 +75,12 @@ Engine::Engine(Board* board, S8 player_side, float search_time) {
   fill(begin(eval_history_), end(eval_history_), kInvalidEval);
 }
 
-Engine::Engine(Board* board, S8 player_side, float search_time,
-               const vector<U64>& pos_history) {
+Engine::Engine(TranspositionTable* tt, Board* board, S8 player_side,
+               float search_time, const vector<U64>& pos_history) {
+  assert(tt != nullptr);
   assert(board != nullptr);
   improving_ = false;
+  transposition_table_ = tt;
   board_ = board;
 
   constexpr float kMinSearchTime = 0.1f;
@@ -552,7 +557,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   int orig_alpha = alpha;
 
   int tt_result;
-  TableEntry hash_entry = transposition_table_.GetHashEntry(board_);
+  TableEntry hash_entry = transposition_table_->GetHashEntry(board_);
   if (ProbeTt(alpha, beta, depth, ply, tt_result)) {
     // Only surface the hash move as the PV move if it is actually legal in the
     // current position. An unvalidated hash move can be illegal here (e.g. a
@@ -579,7 +584,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   }
 
   bool in_check = board_->KingInCheck();
-  bool at_pv_node = transposition_table_.PosIsPvNode(board_);
+  bool at_pv_node = transposition_table_->PosIsPvNode(board_);
   if (null_move_allowed &&
       ShouldNullMovePrune(alpha, beta, depth, ply, at_pv_node, in_check)) {
     return beta;
@@ -909,7 +914,7 @@ constexpr int kCaptureSeeWeight = 32;
 
 auto Engine::OrderMoves(const vector<Move>& move_list, int ply) const
     -> vector<Move> {
-  Move hash_move = transposition_table_.GetHashMove(board_);
+  Move hash_move = transposition_table_->GetHashMove(board_);
 
   vector<pair<Move, int>> high_see_capture_pairs;
   vector<pair<Move, int>> low_see_capture_pairs;
@@ -1169,7 +1174,7 @@ auto Engine::ProbeTt(int& alpha, int& beta, int depth, int ply, int& result)
     -> bool {
   int stored_eval;
   S8 node_type;
-  if (!transposition_table_.Access(board_, depth, stored_eval, node_type)) {
+  if (!transposition_table_->ProbeEval(board_, depth, stored_eval, node_type)) {
     return false;
   }
   // Rebase a stored (node-relative) mate score back to this search's root.

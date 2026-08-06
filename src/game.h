@@ -87,6 +87,8 @@ class Game {
   bool on_opening_;
   bool clock_mode_;
 
+  // Owned TT, injected into engine_. Declared before engine_ so it outlives it.
+  TranspositionTable tt_;
   Engine engine_;
 
   float search_time_;

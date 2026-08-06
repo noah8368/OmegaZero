@@ -138,8 +138,9 @@ struct SearchInfo {
 
 class Engine {
  public:
-  Engine(Board* board, S8 player_side, float search_time);
-  Engine(Board* board, S8 player_side, float search_time,
+  Engine(TranspositionTable* tt, Board* board, S8 player_side,
+         float search_time);
+  Engine(TranspositionTable* tt, Board* board, S8 player_side, float search_time,
          const vector<U64>& pos_history);
 
   // Register a callback invoked once per completed depth during GetBestMove().
@@ -377,8 +378,10 @@ class Engine {
 
   S8 user_side_;
 
-  // Cache of previously evaluated positions.
-  TranspositionTable transposition_table_;
+  // Cache of previously evaluated positions. Not owned: injected at construction
+  // and shared across all Engines in a Lazy-SMP SearchPool (single-threaded
+  // callers each own their own). Must outlive the Engine.
+  TranspositionTable* transposition_table_;
 };
 
 // Implement public inline member functions.
@@ -685,11 +688,11 @@ inline auto Engine::StoreTtEntry(int best_eval, int orig_alpha, int beta,
   // node so a mate score stays valid at other root distances.
   int tt_eval = ScoreToTt(best_eval, ply);
   if (best_eval <= orig_alpha) {
-    transposition_table_.Update(board_, depth, tt_eval, kAllNode);
+    transposition_table_->Update(board_, depth, tt_eval, kAllNode);
   } else if (best_eval >= beta) {
-    transposition_table_.Update(board_, depth, tt_eval, kCutNode, best_move);
+    transposition_table_->Update(board_, depth, tt_eval, kCutNode, best_move);
   } else {
-    transposition_table_.Update(board_, depth, tt_eval, kPvNode, best_move);
+    transposition_table_->Update(board_, depth, tt_eval, kPvNode, best_move);
   }
 }
 

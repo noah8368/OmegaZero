@@ -53,7 +53,8 @@ void RunNpsBench(float search_time) {
 
   for (const auto& pos : kBenchPositions) {
     Board board(pos.fen);
-    Engine engine(&board, 'w', search_time);
+    TranspositionTable tt;
+    Engine engine(&tt, &board, 'w', search_time);
     engine.AddPosToHistory();
 
     auto start = std::chrono::high_resolution_clock::now();

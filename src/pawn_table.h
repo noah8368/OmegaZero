@@ -32,7 +32,7 @@ class PawnTable {
   // Loop up the board position in the hash table and set eval to the
   // corresponding evaluation if the position is found. Return a bool to
   // indicate if the position was found.
-  auto Access(U64 pawn_hash, int& pawn_eval) const -> bool;
+  auto ProbeEval(U64 pawn_hash, int& pawn_eval) const -> bool;
 
   auto Update(U64 pawn_hash, int pawn_eval) -> void;
   auto Clear() -> void;
@@ -54,7 +54,7 @@ inline PawnTable::PawnTable() {
   occupancy_table_.resize(kPawnTableSize, false);
 }
 
-inline auto PawnTable::Access(U64 pawn_hash, int& pawn_eval) const -> bool {
+inline auto PawnTable::ProbeEval(U64 pawn_hash, int& pawn_eval) const -> bool {
   int index = pawn_hash & kPawnHashMask;
   if (occupancy_table_[index]) {
     TableEntry entry = entries_[index];

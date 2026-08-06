@@ -9,7 +9,8 @@
 #ifndef OMEGAZERO_SRC_SEARCH_POOL_H
 #define OMEGAZERO_SRC_SEARCH_POOL_H
 
-#include <vector>
+#include <memory>
+#include <thread>
 
 #include "board.h"
 #include "engine.h"
@@ -19,11 +20,10 @@
 namespace omegazero {
 
 struct SearchContext {
-  SearchContext(const Board& board, const vector<U64>& pos_hist,
-                float search_time);
+  SearchContext(TranspositionTable* tt, const Board& board,
+                const vector<U64>& pos_hist, float search_time);
   Board board_;
   Engine engine_;
-  Move found_move_;
 };
 
 class SearchPool {
@@ -33,11 +33,35 @@ class SearchPool {
                      float search_time) -> Move;
 
  private:
-  auto SearchWorker(SearchContext& search_context) -> void;
+  // Stops and joins the helper threads on scope exit, so an exception thrown
+  // between spawning them and the explicit teardown can't destroy joinable
+  // threads (which calls std::terminate). Helpers run SetInfiniteSearch(), so
+  // they must be told to stop before join() or it would block forever.
+  class HelperTeardown {
+   public:
+    HelperTeardown(vector<std::unique_ptr<SearchContext>>& ctxs,
+                   vector<std::thread>& threads)
+        : ctxs_(ctxs), threads_(threads) {}
+    ~HelperTeardown() {
+      for (auto& ctx : ctxs_) {
+        ctx->engine_.RequestStop();
+      }
+      for (auto& thread : threads_) {
+        if (thread.joinable()) {
+          thread.join();
+        }
+      }
+    }
+    HelperTeardown(const HelperTeardown&) = delete;
+    auto operator=(const HelperTeardown&) -> HelperTeardown& = delete;
 
-  S8 num_threads_;
+   private:
+    vector<std::unique_ptr<SearchContext>>& ctxs_;
+    vector<std::thread>& threads_;
+  };
+
+  S8 num_helpers_;
   TranspositionTable tt_;
-  std::vector<SearchContext> threads_;
 };
 
 }  // namespace omegazero

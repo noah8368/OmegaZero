@@ -189,7 +189,8 @@ static auto PlayGame(float search_time, std::mt19937& rng,
                      vector<Position>& positions,
                      std::unordered_set<U64>& seen_hashes) -> GameResult {
   Board board(kStartFen);
-  Engine engine(&board, 'w', search_time);
+  TranspositionTable tt;
+  Engine engine(&tt, &board, 'w', search_time);
   engine.AddPosToHistory();
 
   int plies_played = PlayRandomOpeningMoves(board, engine, rng);

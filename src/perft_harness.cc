@@ -26,7 +26,8 @@ using std::vector;
 
 void RunPerft(const string& fen, int depth) {
   Board board(fen);
-  Engine engine(&board, 'w', 0.5f);
+  TranspositionTable tt;
+  Engine engine(&tt, &board, 'w', 0.5f);
 
   U64 total = engine.Perft(depth);
 
@@ -40,17 +41,19 @@ void RunPerft(const string& fen, int depth) {
     U64 sub = (depth > 1) ? engine.Perft(depth - 1) : 1;
     board.UnmakeMove(m);
 
-    S8 start_file = GetFileFromSq(m.start_sq);
-    S8 start_rank = GetRankFromSq(m.start_sq);
-    S8 target_file = GetFileFromSq(m.target_sq);
-    S8 target_rank = GetRankFromSq(m.target_sq);
-
+    // A castling move carries only castling_type; its start_sq/target_sq are the
+    // kNA sentinel, so file/rank are only meaningful (and only safe to compute)
+    // for non-castling moves.
     string move_str;
     if (m.castling_type == kKingSide) {
       move_str = "0-0";
     } else if (m.castling_type == kQueenSide) {
       move_str = "0-0-0";
     } else {
+      S8 start_file = GetFileFromSq(m.start_sq);
+      S8 start_rank = GetRankFromSq(m.start_sq);
+      S8 target_file = GetFileFromSq(m.target_sq);
+      S8 target_rank = GetRankFromSq(m.target_sq);
       move_str += static_cast<char>('a' + start_file);
       move_str += static_cast<char>('1' + start_rank);
       move_str += static_cast<char>('a' + target_file);

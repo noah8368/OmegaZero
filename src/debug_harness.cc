@@ -126,7 +126,8 @@ bool RunSelfPlay(int num_games, float search_time, const string& out_dir) {
     cout << "  Game " << game << "/" << num_games << " ..." << std::flush;
 
     Board board(kStartFen);
-    Engine engine(&board, 'w', search_time);
+    TranspositionTable tt;
+    Engine engine(&tt, &board, 'w', search_time);
     vector<string> move_history;
     string error_msg;
 

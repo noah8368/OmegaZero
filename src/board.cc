@@ -229,7 +229,7 @@ auto Board::Evaluate() -> int {
   // Evaluate pawn structure.
   int pawn_eval;
   U64 pawn_hash = GetPawnHash();
-  if (!pawn_table_.Access(pawn_hash, pawn_eval)) {
+  if (!pawn_table_.ProbeEval(pawn_hash, pawn_eval)) {
     pawn_eval = EvaluatePawnStructure(
         white_pawn_attackspan, white_pawn_attack_map, white_pawn_defender_map,
         black_pawn_attackspan, black_pawn_attack_map, black_pawn_defender_map);

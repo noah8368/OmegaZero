@@ -9,18 +9,14 @@
 #ifndef OMEGAZERO_SRC_TRANSPOSITION_TABLE_H
 #define OMEGAZERO_SRC_TRANSPOSITION_TABLE_H
 
-#include <algorithm>
-#include <vector>
+#include <atomic>
+#include <memory>
+#include <type_traits>
 
 #include "board.h"
 #include "move.h"
 
 namespace omegazero {
-
-using std::begin;
-using std::end;
-using std::fill;
-using std::vector;
 
 enum NodeType : S8 {
   kPvNode,
@@ -30,12 +26,9 @@ enum NodeType : S8 {
 
 constexpr int kTableSize = 1 << 20;
 
-// Packed to 24 bytes (from 32): U64 leads for 8-byte alignment, then the
-// 8-byte Move, then the narrow fields. `eval` fits int16_t (evals are bounded
-// by +/-kBestEval, +/-32128 after mate-rebasing in ScoreToTt). `search_depth`
-// stays int16_t rather than S8 because a root depth can reach kSearchLimit
-// (128), which overflows a signed 8-bit field. Two vectors of kTableSize
-// entries makes this ~16 MB saved plus tighter probe cache behavior.
+// Decoded view of a stored entry, handed back to callers on a probe. Internally
+// the table keeps each entry as a lockless three-word TtSlot (see the private
+// section); this struct is just the unpacked form.
 struct TableEntry {
   U64 board_hash;
   Move hash_move;
@@ -48,12 +41,11 @@ class TranspositionTable {
  public:
   TranspositionTable();
 
-  // Loop up the board position in the hash table and set eval to the
-  // corresponding evaluation if the position is found. Return a bool to
-  // indicate if the position was found.
-  auto Access(const Board* board, int depth, int& eval, S8& node_type) const
+  // Look up the board position; on a hit searched at least as deep as `depth`,
+  // set `eval`/`node_type` and return true, else return false.
+  auto ProbeEval(const Board* board, int depth, int& eval, S8& node_type) const
       -> bool;
-  // Return if the given board position has been stored as a PV node.
+  // Return whether the position is stored as a PV node.
   auto PosIsPvNode(const Board* board) const -> bool;
 
   auto GetHashEntry(const Board* board) const -> TableEntry;
@@ -65,32 +57,47 @@ class TranspositionTable {
   auto Clear() -> void;
 
  private:
-  // Store which slots in the table are occupied.
-  vector<bool> occupancy_table_;
+  // Lockless slot (Hyatt's XOR trick) enabling concurrent Lazy-SMP access with
+  // no locks. An entry spans three 64-bit words; an aligned 64-bit atomic
+  // load/store never tears, and `key` stores board_hash ^ data_move ^ data_info
+  // so a reader that catches a half-completed write (one word from a new entry,
+  // another from the old) recomputes a mismatching hash and treats the slot as
+  // a miss. `relaxed` ordering suffices: every slot self-validates, and the
+  // search never uses the TT to order other memory. An all-zero slot is
+  // "empty" (0 matches only hash 0, which a real Zobrist key never is), so no
+  // separate occupancy table is needed.
+  struct TtSlot {
+    std::atomic<U64> key{0};
+    std::atomic<U64> data_move{0};
+    std::atomic<U64> data_info{0};
+  };
+  static_assert(std::atomic<U64>::is_always_lock_free,
+                "TT lockless scheme requires lock-free 64-bit atomics");
+  static_assert(sizeof(Move) == 8 && std::is_trivially_copyable<Move>::value,
+                "TT packs Move into one 64-bit word via memcpy");
 
-  vector<TableEntry> always_replace_entries_;
-  vector<TableEntry> depth_pref_entries_;
+  // Decode `slot` into `out` iff it holds a consistent entry for `board_hash`.
+  static auto ProbeSlot(const TtSlot& slot, U64 board_hash, TableEntry& out)
+      -> bool;
+  // Encode an entry and write it into `slot` (three relaxed word stores).
+  static auto StoreSlot(TtSlot& slot, U64 board_hash, const Move& hash_move,
+                        int eval, int depth, S8 node_type) -> void;
+
+  std::unique_ptr<TtSlot[]> always_replace_;
+  std::unique_ptr<TtSlot[]> depth_pref_;
 };
 
-inline TranspositionTable::TranspositionTable() {
-  always_replace_entries_.resize(kTableSize);
-  depth_pref_entries_.resize(kTableSize);
-  occupancy_table_.resize(kTableSize, false);
-}
+inline TranspositionTable::TranspositionTable()
+    : always_replace_(new TtSlot[kTableSize]),
+      depth_pref_(new TtSlot[kTableSize]) {}
 
 inline auto TranspositionTable::GetHashMove(const Board* board) const -> Move {
-  TableEntry entry = GetHashEntry(board);
-  return entry.hash_move;
+  return GetHashEntry(board).hash_move;
 }
 
 inline auto TranspositionTable::Update(const Board* board, int depth, int eval,
                                        S8 node_type) -> void {
-  Move throwaway_move;
-  Update(board, depth, eval, node_type, throwaway_move);
-}
-
-inline auto TranspositionTable::Clear() -> void {
-  fill(occupancy_table_.begin(), occupancy_table_.end(), false);
+  Update(board, depth, eval, node_type, Move{});
 }
 
 }  // namespace omegazero

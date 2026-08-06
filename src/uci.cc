@@ -35,7 +35,7 @@ UciHandler::UciHandler(const string& book_path, const string& params_path)
       on_opening_(true), pondering_(false), ponder_soft_(0.0f),
       ponder_hard_(0.0f) {
   board_ = std::make_unique<Board>(kStartFen);
-  engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
+  engine_ = std::make_unique<Engine>(&tt_, board_.get(), 'w', 5.0f);
   engine_->SetInfoCallback(
       [this](const SearchInfo& info) { PrintInfo(info); });
   // Seed the runtime search parameters from params.json (profile matching the
@@ -139,8 +139,11 @@ auto UciHandler::HandleIsReady() -> void {
 auto UciHandler::HandleUciNewGame() -> void {
   // The worker holds engine_/board_; stop it before replacing them.
   StopSearch();
+  // tt_ is now owned here and outlives engine_ re-creation, so a new game must
+  // clear it explicitly (recreating the Engine no longer resets the table).
+  tt_.Clear();
   board_ = std::make_unique<Board>(kStartFen);
-  engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
+  engine_ = std::make_unique<Engine>(&tt_, board_.get(), 'w', 5.0f);
   engine_->SetInfoCallback(
       [this](const SearchInfo& info) { PrintInfo(info); });
   turn_num_ = 1;
@@ -189,7 +192,7 @@ auto UciHandler::HandlePosition(const string& line) -> void {
 auto UciHandler::SetPosition(const string& fen,
                              const vector<string>& moves) -> void {
   board_ = std::make_unique<Board>(fen);
-  engine_ = std::make_unique<Engine>(board_.get(), 'w', 5.0f);
+  engine_ = std::make_unique<Engine>(&tt_, board_.get(), 'w', 5.0f);
   engine_->SetInfoCallback(
       [this](const SearchInfo& info) { PrintInfo(info); });
   turn_num_ = 1;
