@@ -35,7 +35,7 @@ UciHandler::UciHandler(const string& book_path, const string& params_path)
       on_opening_(true), pondering_(false), ponder_soft_(0.0f),
       ponder_hard_(0.0f) {
   board_ = std::make_unique<Board>(kStartFen);
-  engine_ = std::make_unique<Engine>(&tt_, board_.get(), 'w', 5.0f);
+  engine_ = std::make_unique<Engine>(pool_.GetTt(), board_.get(), 'w', 5.0f);
   engine_->SetInfoCallback(
       [this](const SearchInfo& info) { PrintInfo(info); });
   // Seed the runtime search parameters from params.json (profile matching the
@@ -90,6 +90,10 @@ auto UciHandler::HandleUci() -> void {
     std::cout << "option name " << o.name << " type spin default " << o.def
               << " min " << o.min << " max " << o.max << std::endl;
   }
+  // Lazy SMP worker count (1 = single-threaded, the untouched search path);
+  // defaults to the machine's core count.
+  std::cout << "option name Threads type spin default " << num_threads_
+            << " min 1 max " << kMaxThreads << std::endl;
   std::cout << "uciok" << std::endl;
 }
 
@@ -114,6 +118,11 @@ auto UciHandler::HandleSetOption(const string& line) -> void {
     return;  // ignore malformed values
   }
 
+  if (name == "Threads") {
+    num_threads_ = std::clamp(value, 1, kMaxThreads);
+    pool_.SetNumThreads(static_cast<S8>(num_threads_));
+    return;
+  }
   for (const IntOpt& o : kIntOpts) {
     if (name == o.name) {
       uci_params_.*o.field = std::clamp(value, o.min, o.max);
@@ -139,11 +148,11 @@ auto UciHandler::HandleIsReady() -> void {
 auto UciHandler::HandleUciNewGame() -> void {
   // The worker holds engine_/board_; stop it before replacing them.
   StopSearch();
-  // tt_ is now owned here and outlives engine_ re-creation, so a new game must
-  // clear it explicitly (recreating the Engine no longer resets the table).
-  tt_.Clear();
+  // The shared TT (owned by pool_) outlives engine_ re-creation, so a new game
+  // must clear it explicitly (recreating the Engine no longer resets the table).
+  pool_.GetTt()->Clear();
   board_ = std::make_unique<Board>(kStartFen);
-  engine_ = std::make_unique<Engine>(&tt_, board_.get(), 'w', 5.0f);
+  engine_ = std::make_unique<Engine>(pool_.GetTt(), board_.get(), 'w', 5.0f);
   engine_->SetInfoCallback(
       [this](const SearchInfo& info) { PrintInfo(info); });
   turn_num_ = 1;
@@ -192,7 +201,7 @@ auto UciHandler::HandlePosition(const string& line) -> void {
 auto UciHandler::SetPosition(const string& fen,
                              const vector<string>& moves) -> void {
   board_ = std::make_unique<Board>(fen);
-  engine_ = std::make_unique<Engine>(&tt_, board_.get(), 'w', 5.0f);
+  engine_ = std::make_unique<Engine>(pool_.GetTt(), board_.get(), 'w', 5.0f);
   engine_->SetInfoCallback(
       [this](const SearchInfo& info) { PrintInfo(info); });
   turn_num_ = 1;
@@ -322,7 +331,11 @@ auto UciHandler::HandleGo(const string& line) -> void {
 }
 
 auto UciHandler::RunSearch() -> void {
-  Move best_move = engine_->GetBestMove();
+  // Lazy SMP: run engine_ as the main search with helper threads sharing the TT
+  // (a no-op at 1 thread, leaving the single-threaded path unchanged).
+  Move best_move =
+      pool_.LazySmpSearch(*engine_, *board_, engine_->GetPosHistory());
+
   std::lock_guard<std::mutex> lock(cout_mutex_);
   if (best_move.IsEmpty()) {
     std::cout << "bestmove 0000" << std::endl;

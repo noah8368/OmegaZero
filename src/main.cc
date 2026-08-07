@@ -27,6 +27,8 @@ static void PrintUsage(const char* prog) {
   cout << "Usage: " << prog << " [OPTIONS]\n"
        << "  -p SIDE        Side to play: w, b, or r (default: w)\n"
        << "  --st TIME      Search time per move in seconds (default: 5)\n"
+       << "  --threads N    Number of search threads (Lazy SMP; default: all "
+          "cores)\n"
        << "  --tc TIME      Clock time in seconds (enables timed game)\n"
        << "  --inc TIME     Increment in seconds (default: 0)\n"
        << "  -i FEN         Initial position as FEN string\n"
@@ -58,6 +60,7 @@ auto main(int argc, char* argv[]) -> int {
   bool hce_mode = false;
   bool light_theme = false;
   bool dump_params = false;
+  int num_threads = omegazero::DefaultThreadCount();
 
   for (int i = 1; i < argc; ++i) {
     string arg = argv[i];
@@ -76,6 +79,10 @@ auto main(int argc, char* argv[]) -> int {
       player_side = argv[++i][0];
     } else if (arg == "--st" && i + 1 < argc) {
       search_time = std::atof(argv[++i]);
+    } else if (arg == "--threads" && i + 1 < argc) {
+      int t = std::atoi(argv[++i]);
+      num_threads =
+          t < 1 ? 1 : (t > omegazero::kMaxThreads ? omegazero::kMaxThreads : t);
     } else if (arg == "--tc" && i + 1 < argc) {
       clock_time = std::atof(argv[++i]);
     } else if (arg == "--inc" && i + 1 < argc) {
@@ -125,7 +132,7 @@ auto main(int argc, char* argv[]) -> int {
     bool on_opening =
         init_pos == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     omegazero::Game game(init_pos, opening_book_path, player_side, search_time,
-                         on_opening, light_theme);
+                         on_opening, light_theme, num_threads);
 
     // Apply the params.json profile matching the eval mode set above.
     omegazero::SearchParams params;

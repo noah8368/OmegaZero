@@ -17,10 +17,12 @@
 #include <vector>
 
 #include "board.h"
+#include "engine.h"
 #include "move.h"
 #include "search_pool.h"
 
 using omegazero::Board;
+using omegazero::Engine;
 using omegazero::Move;
 using omegazero::S8;
 using omegazero::SearchPool;
@@ -52,7 +54,8 @@ auto main(int argc, char* argv[]) -> int {
     Board board(fen);
     vector<U64> pos_history = {board.GetBoardHash()};
     SearchPool pool(threads);
-    Move best = pool.LazySmpSearch(board, pos_history, search_time);
+    Engine main(pool.GetTt(), &board, 'w', search_time, pos_history);
+    Move best = pool.LazySmpSearch(main, board, pos_history);
     cout << "  " << fen << " -> " << (best.IsEmpty() ? "NO MOVE" : "ok")
          << endl;
   }

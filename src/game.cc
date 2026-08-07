@@ -77,8 +77,10 @@ auto GetPieceType(char piece_ch) -> S8 {
 
 Game::Game(const string& init_pos, const string& opening_book_path,
            char player_side, float search_time, bool on_opening,
-           bool light_theme)
-    : board_(init_pos), engine_(&tt_, &board_, player_side, search_time) {
+           bool light_theme, int num_threads)
+    : board_(init_pos),
+      engine_(pool_.GetTt(), &board_, player_side, search_time) {
+  pool_.SetNumThreads(static_cast<S8>(num_threads));
   game_active_ = true;
   on_opening_ = on_opening;
   clock_mode_ = false;
@@ -225,7 +227,7 @@ auto Game::MakeEngineMove() -> Move {
     return engine_move;
   }
 
-  engine_move = engine_.GetBestMove();
+  engine_move = pool_.LazySmpSearch(engine_, board_, engine_.GetPosHistory());
 
   cout << "\n\n"
        << GetPlayerStr(player_to_move)
@@ -365,7 +367,8 @@ void Game::Play() {
 
       using clock = std::chrono::high_resolution_clock;
       auto move_start = clock::now();
-      engine_move = engine_.GetBestMove();
+      engine_move =
+          pool_.LazySmpSearch(engine_, board_, engine_.GetPosHistory());
 
       if (clock_mode_) {
         auto elapsed = std::chrono::duration<float>(clock::now() - move_start);

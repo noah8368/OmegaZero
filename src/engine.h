@@ -171,6 +171,9 @@ class Engine {
   // times it has been seen.
   auto AddPosToHistory() -> void;
   auto ClearHistory() -> void;
+  // Position history for repetition detection; used to seed Lazy-SMP helper
+  // engines with the same history as the main search.
+  auto GetPosHistory() const -> const vector<U64>& { return pos_history_; }
   // Fixed per-move budget (soft/hard coincide); for fixed-time harnesses &
   // `--st`.
   auto SetSearchTime(float t) -> void;

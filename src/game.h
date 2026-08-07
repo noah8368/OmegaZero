@@ -9,14 +9,13 @@
 #ifndef OMEGAZERO_SRC_GAME_H_
 #define OMEGAZERO_SRC_GAME_H_
 
-#include <chrono>
 #include <iostream>
-#include <map>
 #include <string>
 
 #include "board.h"
 #include "engine.h"
 #include "move.h"
+#include "search_pool.h"
 
 namespace omegazero {
 
@@ -36,7 +35,7 @@ class Game {
  public:
   Game(const string& init_pos, const string& opening_book_path,
        char player_side, float search_time, bool on_opening = true,
-       bool light_theme = false);
+       bool light_theme = false, int num_threads = DefaultThreadCount());
 
   auto SetClock(float base_time, float increment) -> void;
 
@@ -87,8 +86,10 @@ class Game {
   bool on_opening_;
   bool clock_mode_;
 
-  // Owned TT, injected into engine_. Declared before engine_ so it outlives it.
-  TranspositionTable tt_;
+  // Lazy SMP pool; owns the shared TT (injected into engine_ via GetTt()) and
+  // manages helper threads. Declared before engine_ so it outlives the Engine
+  // that points at its table. 1 thread means main only (no helpers).
+  SearchPool pool_{1};
   Engine engine_;
 
   float search_time_;

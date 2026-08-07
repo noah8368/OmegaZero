@@ -19,6 +19,22 @@
 
 namespace omegazero {
 
+// Maximum worker threads (bounds the UCI `Threads` option and --threads). Kept
+// well within S8 so the main + helpers counts never overflow.
+constexpr int kMaxThreads = 64;
+
+// Default worker-thread count: the machine's hardware concurrency, clamped to
+// [1, kMaxThreads]. hardware_concurrency() returns 0 when it can't determine the
+// core count, in which case fall back to single-threaded.
+inline auto DefaultThreadCount() -> int {
+  unsigned hw = std::thread::hardware_concurrency();
+  if (hw == 0) {
+    return 1;
+  }
+  int n = static_cast<int>(hw);
+  return n > kMaxThreads ? kMaxThreads : n;
+}
+
 struct SearchContext {
   SearchContext(TranspositionTable* tt, const Board& board,
                 const vector<U64>& pos_hist, float search_time);
@@ -26,42 +42,54 @@ struct SearchContext {
   Engine engine_;
 };
 
+// Lazy SMP thread pool. Owns the shared transposition table; every worker gets
+// its own Board+Engine but probes/updates the one shared (lockless) TT.
 class SearchPool {
  public:
-  SearchPool(S8 num_threads);
-  auto LazySmpSearch(const Board& board, const vector<U64>& pos_history,
-                     float search_time) -> Move;
+  explicit SearchPool(S8 num_threads);
+
+  // The shared TT, injected into every worker Engine and into the caller's main
+  // Engine (which it passes to LazySmpSearch).
+  auto GetTt() -> TranspositionTable* { return &tt_; }
+
+  // Set the total thread count (main + helpers); backs the UCI `Threads` option.
+  auto SetNumThreads(S8 num_threads) -> void {
+    num_helpers_ = num_threads > 0 ? num_threads - 1 : 0;
+  }
+
+  // Run a Lazy SMP search. `main` -- already configured by the caller and built
+  // against GetTt() -- is the primary search; helper threads run unbounded on
+  // copies of `root` (which is the position `main` searches), sharing the TT,
+  // and are torn down when `main` returns. `pos_history` seeds every engine's
+  // repetition history. Returns main's best move; a no-op wrapper at 1 thread.
+  auto LazySmpSearch(Engine& main, const Board& root,
+                     const vector<U64>& pos_history) -> Move;
 
  private:
-  // Stops and joins the helper threads on scope exit, so an exception thrown
-  // between spawning them and the explicit teardown can't destroy joinable
-  // threads (which calls std::terminate). Helpers run SetInfiniteSearch(), so
-  // they must be told to stop before join() or it would block forever.
+  // Spawn / stop-and-join the helper threads. Private: callers go through
+  // LazySmpSearch, which brackets the main search with these.
+  auto StartHelpers(const Board& root, const vector<U64>& pos_history) -> void;
+  auto StopHelpers() -> void;
+
+  // Stops and joins the helper threads on scope exit (RAII), so an exception in
+  // the main search can't leave joinable threads (which would call
+  // std::terminate). Wraps StopHelpers(), which requests stop before joining
+  // since helpers run unbounded and would deadlock a bare join.
   class HelperTeardown {
    public:
-    HelperTeardown(vector<std::unique_ptr<SearchContext>>& ctxs,
-                   vector<std::thread>& threads)
-        : ctxs_(ctxs), threads_(threads) {}
-    ~HelperTeardown() {
-      for (auto& ctx : ctxs_) {
-        ctx->engine_.RequestStop();
-      }
-      for (auto& thread : threads_) {
-        if (thread.joinable()) {
-          thread.join();
-        }
-      }
-    }
+    explicit HelperTeardown(SearchPool& pool) : pool_(pool) {}
+    ~HelperTeardown() { pool_.StopHelpers(); }
     HelperTeardown(const HelperTeardown&) = delete;
     auto operator=(const HelperTeardown&) -> HelperTeardown& = delete;
 
    private:
-    vector<std::unique_ptr<SearchContext>>& ctxs_;
-    vector<std::thread>& threads_;
+    SearchPool& pool_;
   };
 
   S8 num_helpers_;
   TranspositionTable tt_;
+  vector<std::unique_ptr<SearchContext>> helper_ctxs_;
+  vector<std::thread> helper_threads_;
 };
 
 }  // namespace omegazero

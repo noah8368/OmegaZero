@@ -14,21 +14,25 @@ OBJECTS = build/play/board.o build/play/engine.o build/play/game.o build/play/ma
 DEBUG_OBJECTS = build/debug/board.o build/debug/engine.o build/debug/game.o \
                 build/debug/magics.o build/debug/nnue.o build/debug/debug_harness.o \
                 build/debug/masks.o build/debug/transposition_table.o \
+                build/debug/search_pool.o \
                 build/debug/piece_sq_tables.o
 
 BENCH_OBJECTS = build/bench/board.o build/bench/engine.o build/bench/game.o \
                 build/bench/magics.o build/bench/nnue.o build/bench/bench_harness.o \
                 build/bench/masks.o build/bench/transposition_table.o \
+                build/bench/search_pool.o \
                 build/bench/piece_sq_tables.o
 
 DATAGEN_OBJECTS = build/datagen/board.o build/datagen/engine.o build/datagen/game.o \
                   build/datagen/magics.o build/datagen/nnue.o build/datagen/datagen.o \
                   build/datagen/masks.o build/datagen/transposition_table.o \
+                  build/datagen/search_pool.o \
                   build/datagen/piece_sq_tables.o
 
 PERFT_OBJECTS = build/perft/board.o build/perft/engine.o build/perft/game.o \
                 build/perft/magics.o build/perft/nnue.o build/perft/perft_harness.o \
                 build/perft/masks.o build/perft/transposition_table.o \
+                build/perft/search_pool.o \
                 build/perft/piece_sq_tables.o
 
 TSAN_OBJECTS = build/tsan/board.o build/tsan/engine.o build/tsan/game.o \

@@ -11,7 +11,6 @@
 
 #include <memory>
 #include <mutex>
-#include <random>
 #include <string>
 #include <thread>
 #include <vector>
@@ -19,6 +18,7 @@
 #include "board.h"
 #include "engine.h"
 #include "move.h"
+#include "search_pool.h"
 
 namespace omegazero {
 
@@ -35,7 +35,8 @@ class UciHandler {
   auto HandleGo(const std::string& line) -> void;
   // UCI `ponderhit`: hand the running ponder search its real time budget.
   auto HandlePonderHit() -> void;
-  // UCI `setoption name <N> value <V>`: update the runtime search parameter <N>.
+  // UCI `setoption name <N> value <V>`: update the runtime search parameter
+  // <N>.
   auto HandleSetOption(const std::string& line) -> void;
   // Body of the search worker thread: runs the search and prints `bestmove`.
   auto RunSearch() -> void;
@@ -43,11 +44,12 @@ class UciHandler {
   auto StopSearch() -> void;
 
   auto MoveToUciStr(const Move& move) const -> std::string;
-  // Side-aware variant: renders castling from `player`'s perspective rather than
-  // the current side to move. Needed for PV moves, whose colors alternate.
+  // Side-aware variant: renders castling from `player`'s perspective rather
+  // than the current side to move. Needed for PV moves, whose colors alternate.
   auto MoveToUciStr(const Move& move, S8 player) const -> std::string;
   // Format and print one `info` line for a completed search iteration. Wired to
-  // the engine via SetInfoCallback; serialized with other output by cout_mutex_.
+  // the engine via SetInfoCallback; serialized with other output by
+  // cout_mutex_.
   auto PrintInfo(const SearchInfo& info) -> void;
   auto MoveToFideStr(const Move& move) const -> std::string;
   auto ParseUciMove(const std::string& uci_move) const -> Move;
@@ -59,14 +61,17 @@ class UciHandler {
   static constexpr const char* kStartFen =
       "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-  // Owned TT, injected into engine_ and reused across engine_ re-creation
-  // (HandleUciNewGame clears it explicitly). Declared before engine_ so it
-  // outlives the Engine that points at it.
-  TranspositionTable tt_;
+  // Lazy SMP pool; owns the shared TT (injected into engine_ via GetTt()) and
+  // manages helper threads. Declared before engine_ so it outlives the Engine
+  // that points at its table. A `Threads` value of 1 means main only (no
+  // helpers), which leaves the single-threaded search path untouched.
+  SearchPool pool_{static_cast<S8>(DefaultThreadCount())};
+  int num_threads_ = DefaultThreadCount();
   std::unique_ptr<Board> board_;
   std::unique_ptr<Engine> engine_;
-  // Current values of the tunable search parameters (UCI spin options). Source of
-  // truth across engine_ re-creation; pushed into engine_ before each search.
+  // Current values of the tunable search parameters (UCI spin options). Source
+  // of truth across engine_ re-creation; pushed into engine_ before each
+  // search.
   SearchParams uci_params_;
   std::vector<std::vector<std::string>> opening_book_;
   std::string book_path_;
