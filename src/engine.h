@@ -90,50 +90,45 @@ inline auto ScoreFromTt(int score, int ply) -> int {
   return score;
 }
 
-// Master switch for difficulty-scaled dynamic time management. Off for v4 (SPRT
-// showed ~10 Elo regression); mechanism stays compiled for v5 SPSA tuning.
-constexpr bool kDynamicTmEnabled = false;
-// Runtime-tunable search parameters, surfaced as UCI spin options (see uci.cc)
-// for SPSA tuning without a rebuild. Defaults match the old constexpr values.
-// Doubles are exposed to UCI as integers via a per-option divisor.
+// Runtime search-tuning parameters. There are deliberately NO default values
+// here: every field is loaded at startup from params.json (via the registry in
+// params.h, see LoadParamsOrDie). Fields are zero-initialized only so a
+// default-constructed SearchParams is deterministic; a valid params.json is
+// required before the engine may search.
 struct SearchParams {
   // --- Dynamic time management ---
-  int tm_window = 5;             // recent iterations weighed for move stability
-  double tm_move_decay = 0.6;    // geometric decay favoring recent changes
-  double tm_move_weight = 0.5;   // weight of the best-move-stability term
-  double tm_score_weight = 0.3;  // weight of the score-stability term
-  double tm_score_scale =
-      100.0;                   // cp swing mapping to full magnitude-instability
-  double tm_osc_weight = 0.5;  // extra weight for score oscillation
-  double tm_mate_difficulty = 0.5;      // difficulty once a mate is found/faced
-  double tm_obvious_difficulty = 0.25;  // difficulty for an obvious recapture
-  double tm_subtree_weight = 0.2;  // weight of the subtree/node-effort term
-  double tm_subtree_ema_alpha =
-      0.5;                          // EMA smoothing of the best-move node share
-  double tm_difficulty_min = 0.45;  // clamp floor on the difficulty multiplier
-  double tm_difficulty_max = 2.5;  // clamp ceiling on the difficulty multiplier
-  double tm_ebf_min = 1.5;         // predictive early-stop EBF clamp floor
-  double tm_ebf_max = 4.0;         // predictive early-stop EBF clamp ceiling
-  double tm_ebf_fallback = 2.0;    // EBF used before two iterations complete
+  int tm_window{};             // recent iterations weighed for move stability
+  double tm_move_decay{};      // geometric decay favoring recent changes
+  double tm_move_weight{};     // weight of the best-move-stability term
+  double tm_score_weight{};    // weight of the score-stability term
+  double tm_score_scale{};     // cp swing mapping to full magnitude-instability
+  double tm_osc_weight{};      // extra weight for score oscillation
+  double tm_mate_difficulty{};      // difficulty once a mate is found/faced
+  double tm_obvious_difficulty{};   // difficulty for an obvious recapture
+  double tm_subtree_weight{};  // weight of the subtree/node-effort term
+  double tm_subtree_ema_alpha{};    // EMA smoothing of the best-move node share
+  double tm_difficulty_min{};  // clamp floor on the difficulty multiplier
+  double tm_difficulty_max{};  // clamp ceiling on the difficulty multiplier
+  double tm_ebf_min{};         // predictive early-stop EBF clamp floor
+  double tm_ebf_max{};         // predictive early-stop EBF clamp ceiling
+  double tm_ebf_fallback{};    // EBF used before two iterations complete
   // --- Pruning / reduction margins, depths, thresholds ---
-  int aspiration_delta = 25;  // initial aspiration half-window (cp)
-  int futility_margin = 200;  // per-depth (reverse) futility margin (cp)
-  int max_futility_pruning_depth =
-      2;  // max depth for (reverse) futility pruning
-  int max_late_move_pruning_depth = 2;  // max depth for late-move pruning
-  int max_see_pruning_depth = 5;        // max depth for SEE pruning
-  int see_margin = 100;                 // per-depth SEE-pruning margin (cp)
-  int history_lmr_threshold =
-      -1000;                       // history below which LMR reduces one more
-  int num_early_moves = 3;         // moves searched at full depth before LMR
-  int min_reduction_depth = 3;     // min depth for late-move reductions
-  int min_iir_depth = 4;           // min depth for internal iterative reduction
-  int max_razoring_depth = 3;      // max depth for razoring
-  int razoring_margin = 350;       // razoring drop-to-qsearch margin (cp)
-  int singular_depth_min = 6;      // min depth for singular extensions
-  int null_move_depth_min = 4;     // min depth for null-move pruning
-  int null_move_depth_high_r = 6;  // depth above which NMP uses the larger R
-  int qs_delta = 900;              // quiescence delta-pruning margin (cp)
+  int aspiration_delta{};  // initial aspiration half-window (cp)
+  int futility_margin{};   // per-depth (reverse) futility margin (cp)
+  int max_futility_pruning_depth{};  // max depth for (reverse) futility pruning
+  int max_late_move_pruning_depth{};  // max depth for late-move pruning
+  int max_see_pruning_depth{};        // max depth for SEE pruning
+  int see_margin{};                   // per-depth SEE-pruning margin (cp)
+  int history_lmr_threshold{};     // history below which LMR reduces one more
+  int num_early_moves{};           // moves searched at full depth before LMR
+  int min_reduction_depth{};       // min depth for late-move reductions
+  int min_iir_depth{};             // min depth for internal iterative reduction
+  int max_razoring_depth{};        // max depth for razoring
+  int razoring_margin{};           // razoring drop-to-qsearch margin (cp)
+  int singular_depth_min{};        // min depth for singular extensions
+  int null_move_depth_min{};       // min depth for null-move pruning
+  int null_move_depth_high_r{};    // depth above which NMP uses the larger R
+  int qs_delta{};                  // quiescence delta-pruning margin (cp)
 };
 
 // Upper bound on legal moves (~218), sizing the per-root-move node table.
@@ -446,7 +441,9 @@ inline auto Engine::SetTimeBounds(float soft, float hard, float base) -> void {
   soft_time_ = std::max(soft, kMinSearchTime);
   hard_time_ = std::max(hard, kMinSearchTime);
   base_time_ = std::max(base, kMinSearchTime);
-  dynamic_tm_ = kDynamicTmEnabled;  // v4: off; flip the constant for v5 tuning.
+  // Difficulty-scaled dynamic time management is always on when a clock is set;
+  // fixed-time and infinite modes disable it (they have no soft/hard spread).
+  dynamic_tm_ = true;
   depth_limit_ = kSearchLimit;
   node_limit_ = UINT64_MAX;
   stop_requested_.store(false);

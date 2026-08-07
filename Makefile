@@ -17,19 +17,19 @@ OBJECTS = build/play/board.o build/play/engine.o build/play/game.o build/play/ma
 DEBUG_OBJECTS = build/debug/board.o build/debug/engine.o build/debug/game.o \
                 build/debug/magics.o build/debug/nnue.o build/debug/debug_harness.o \
                 build/debug/masks.o build/debug/transposition_table.o \
-                build/debug/search_pool.o build/debug/syzygy.o build/debug/tbprobe.o \
+                build/debug/params.o build/debug/search_pool.o build/debug/syzygy.o build/debug/tbprobe.o \
                 build/debug/piece_sq_tables.o
 
 BENCH_OBJECTS = build/bench/board.o build/bench/engine.o build/bench/game.o \
                 build/bench/magics.o build/bench/nnue.o build/bench/bench_harness.o \
                 build/bench/masks.o build/bench/transposition_table.o \
-                build/bench/search_pool.o build/bench/syzygy.o build/bench/tbprobe.o \
+                build/bench/params.o build/bench/search_pool.o build/bench/syzygy.o build/bench/tbprobe.o \
                 build/bench/piece_sq_tables.o
 
 DATAGEN_OBJECTS = build/datagen/board.o build/datagen/engine.o build/datagen/game.o \
                   build/datagen/magics.o build/datagen/nnue.o build/datagen/datagen.o \
                   build/datagen/masks.o build/datagen/transposition_table.o \
-                  build/datagen/search_pool.o build/datagen/syzygy.o build/datagen/tbprobe.o \
+                  build/datagen/params.o build/datagen/search_pool.o build/datagen/syzygy.o build/datagen/tbprobe.o \
                   build/datagen/piece_sq_tables.o
 
 PERFT_OBJECTS = build/perft/board.o build/perft/engine.o build/perft/game.o \
@@ -40,7 +40,7 @@ PERFT_OBJECTS = build/perft/board.o build/perft/engine.o build/perft/game.o \
 
 TSAN_OBJECTS = build/tsan/board.o build/tsan/engine.o build/tsan/game.o \
                build/tsan/magics.o build/tsan/nnue.o build/tsan/tsan_harness.o \
-               build/tsan/masks.o build/tsan/transposition_table.o \
+               build/tsan/masks.o build/tsan/transposition_table.o build/tsan/params.o \
                build/tsan/piece_sq_tables.o build/tsan/search_pool.o build/tsan/syzygy.o build/tsan/tbprobe.o
 
 all : build/play $(OBJECTS)

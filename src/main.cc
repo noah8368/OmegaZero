@@ -39,7 +39,6 @@ static void PrintUsage(const char* prog) {
        << "  --pgn NAME     Save game as PGN with given opponent name\n"
        << "  --uci          Run in UCI protocol mode\n"
        << "  --hce          Use handcrafted eval instead of NNUE\n"
-       << "  --dump-params  Write default params.json (both profiles) and exit\n"
        << "  --light-theme  Piece symbols for light terminal backgrounds\n"
        << "  --help         Show this message\n";
 }
@@ -63,7 +62,6 @@ auto main(int argc, char* argv[]) -> int {
   bool uci_mode = false;
   bool hce_mode = false;
   bool light_theme = false;
-  bool dump_params = false;
   int num_threads = omegazero::DefaultThreadCount();
 
   for (int i = 1; i < argc; ++i) {
@@ -75,8 +73,6 @@ auto main(int argc, char* argv[]) -> int {
       uci_mode = true;
     } else if (arg == "--hce") {
       hce_mode = true;
-    } else if (arg == "--dump-params") {
-      dump_params = true;
     } else if (arg == "--light-theme") {
       light_theme = true;
     } else if ((arg == "-p" || arg == "--player-side") && i + 1 < argc) {
@@ -108,19 +104,6 @@ auto main(int argc, char* argv[]) -> int {
     }
   }
 
-  // Regenerate params.json with both profiles at the built-in defaults. Kept in
-  // sync with the parameter registry so the file never has to be hand-edited.
-  if (dump_params) {
-    omegazero::SearchParams defaults;
-    if (omegazero::WriteParamsJson(
-            params_path, {{"nnue", defaults}, {"hce", defaults}})) {
-      cout << "Wrote default parameters to " << params_path << endl;
-      return 0;
-    }
-    cout << "ERROR: could not write " << params_path << endl;
-    return EIO;
-  }
-
   if (hce_mode) {
     if (!uci_mode) cout << "Using HCE." << endl;
   } else if (!omegazero::g_nnue.Load(nnue_path)) {
@@ -148,10 +131,8 @@ auto main(int argc, char* argv[]) -> int {
                          on_opening, light_theme, num_threads);
 
     // Apply the params.json profile matching the eval mode set above.
-    omegazero::SearchParams params;
-    omegazero::LoadProfileInto(params_path, omegazero::ProfileForEvalMode(),
-                               params);
-    game.SetSearchParams(params);
+    game.SetSearchParams(
+        omegazero::LoadParamsOrDie(params_path, omegazero::ProfileForEvalMode()));
 
     if (clock_time > 0.0f) {
       game.SetClock(clock_time, increment);

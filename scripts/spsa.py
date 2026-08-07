@@ -73,6 +73,26 @@ RESULTS_DIR = REPO_ROOT / "results" / "spsa"
 DEFAULT_OPENINGS = sprt.DEFAULT_OPENINGS
 DEFAULT_PARAMS_JSON = REPO_ROOT / "params.json"
 
+# Curated time-control cycle used when neither --tc nor --st is given. Chosen to
+# exercise dynamic time management across the bases that matter: a range of base
+# clocks (5s -> 5min), a range of increments (none -> 3s), an inc-vs-no-inc pair
+# at the same base (60+0.6 / 60+0) to isolate increment effects, and a couple of
+# fixed time-per-move settings (which leave dynamic TM off by design, covering
+# the fixed-time path). Entries prefixed "st:" are fixed time/move; the rest are
+# base+increment clocks. The heavier clocks (180+2, 300+3) make individual games
+# slow, so for a quick run pass an explicit faster --tc (e.g. --tc 8+0.08).
+DEFAULT_TC_CYCLE = [
+    "5+0.05",    # ultra-fast blitz, tiny increment
+    "10+0.1",    # fast blitz
+    "30+0.3",    # moderate blitz
+    "60+0.6",    # 1min + 0.6s increment
+    "60+0",      # 1min sudden death (no increment) — inc-vs-no-inc control
+    "180+2",     # 3+2 blitz
+    "300+3",     # 5+3 — "5 minutes per side with increment"
+    "st:0.5",    # fixed 0.5s/move
+    "st:1.0",    # fixed 1.0s/move
+]
+
 ALPHA = 0.602
 GAMMA = 0.101
 
@@ -139,9 +159,12 @@ def save_profile(path, profile, theta):
 # One SPSA iteration: play a game batch between the plus/minus perturbations
 # ---------------------------------------------------------------------------
 
-def play_batch(cutechess, engine, extra_args, plus, minus, args, openings):
-    """Play `args.games_per_iter` games; return plus's mean score in [0,1] and
-    the game count, or (None, 0) on interrupt."""
+def play_batch(cutechess, engine, extra_args, plus, minus, args, openings,
+               time_tokens):
+    """Play `args.games_per_iter` games at the given time control; return plus's
+    mean score in [0,1] and the game count, or (None, 0) on interrupt.
+    `time_tokens` is the cutechess `-each` time clause for this batch, e.g.
+    ['tc=300+3', 'timemargin=500'] or ['st=0.5']."""
     rounds = max(1, args.games_per_iter // 2)
 
     def engine_block(name, vals):
@@ -149,15 +172,18 @@ def play_batch(cutechess, engine, extra_args, plus, minus, args, openings):
                  "arg=--uci"]
         block += [f"arg={a}" for a in extra_args]
         block += [f"option.{k}={v}" for k, v in vals.items()]
+        # Force single-threaded search: Lazy SMP is nondeterministic, which adds
+        # noise to the SPSA gradient estimate, and multi-threaded games under
+        # -concurrency would oversubscribe cores. Applied last so it always wins.
+        block += ["option.Threads=1"]
         return block
 
-    tc_clause = f"tc={args.tc}" if args.tc else f"st={args.st}"
     fmt = "epd" if str(openings).endswith(".epd") else "pgn"
     cmd = [
         cutechess,
         *engine_block("plus", plus),
         *engine_block("minus", minus),
-        "-each", tc_clause, "timemargin=500",
+        "-each", *time_tokens,
         "-rounds", str(rounds), "-games", "2", "-repeat", "-recover",
         "-openings", f"file={openings}", f"format={fmt}", "order=random",
         "-srand", str(random.randint(1, 2**31 - 1)),
@@ -238,6 +264,45 @@ def default_c_end(lo, hi):
     return max(1.0, (hi - lo) / 20.0)
 
 
+def _classify_tc(spec):
+    """Classify one time-control spec into ('st'|'tc', value). A leading "st:" or
+    "st=" marks fixed time/move; anything else is a base+increment clock."""
+    spec = spec.strip()
+    low = spec.lower()
+    if low.startswith("st:") or low.startswith("st="):
+        return ("st", spec[3:].strip())
+    return ("tc", spec)
+
+
+def build_tc_pool(args):
+    """Resolve the pool of time controls SPSA cycles through, one per iteration.
+
+    Both --tc and --st accept comma-separated lists and are combined, so a run
+    can span several clocks and fixed-time settings (e.g.
+    --tc 300+3,180+2,60+1 --st 0.5,1.0). When neither is given, the curated
+    DEFAULT_TC_CYCLE is used. Each entry becomes the cutechess `-each` time
+    clause for the iterations that use it. Returns a list of
+    (time_tokens, label); the loop selects pool[(iter - 1) % len(pool)] so every
+    time control gets an even, deterministic share. Dynamic time management only
+    engages under a `tc=` clock, so a varied pool exercises the Tm* parameters
+    across real clocks (fixed `st=` games leave TM inert by design)."""
+    entries = []  # (kind, value)
+    if args.tc:
+        entries += [("tc", s.strip()) for s in args.tc.split(",") if s.strip()]
+    if args.st:
+        entries += [("st", s.strip()) for s in args.st.split(",") if s.strip()]
+    if not entries:
+        entries = [_classify_tc(s) for s in DEFAULT_TC_CYCLE]
+
+    pool = []
+    for kind, val in entries:
+        if kind == "tc":
+            pool.append(([f"tc={val}", "timemargin=500"], f"tc={val}"))
+        else:
+            pool.append(([f"st={val}"], f"st={val}"))
+    return pool
+
+
 def cmd_run(args):
     engine = Path(args.engine)
     if not engine.is_absolute():
@@ -276,11 +341,24 @@ def cmd_run(args):
     history_csv = run_dir / "history.csv"
     names = list(tuned)
 
-    tc_desc = f"tc {args.tc}" if args.tc else f"{args.st}s/move"
+    tc_pool = build_tc_pool(args)
+    tc_desc = " | ".join(label for _, label in tc_pool)
+    if not args.tc and not args.st:
+        tc_desc += "   (curated default)"
+    # Dynamic TM only runs under a clock; warn if TM params are being tuned but
+    # every time control is fixed-time (they would never be exercised).
+    tunes_tm = any(n.startswith("Tm") for n in names)
+    has_clock = any(label.startswith("tc=") for _, label in tc_pool)
+    if tunes_tm and not has_clock:
+        print("  WARNING: tuning TM params but all time controls are fixed "
+              "(st=); dynamic TM only engages under a clock, so the Tm* "
+              "perturbations will have no effect. Add a --tc entry.")
+
     print(f"\n{'=' * 68}")
     print(f"  SPSA tuning — profile '{args.profile}'  ({len(names)} params)")
     print(f"  {args.games} games / {args.games_per_iter} per iter "
-          f"= {iterations} iterations  |  {tc_desc}")
+          f"= {iterations} iterations")
+    print(f"  Time controls (cycled): {tc_desc}")
     print(f"  Params: {', '.join(names)}")
     print(f"  Writing results to {args.out} and {run_dir}/")
     print(f"{'=' * 68}\n")
@@ -303,8 +381,10 @@ def cmd_run(args):
                                             tuned[n]["min"], tuned[n]["max"])))
                          for n in names}
 
+                time_tokens, tc_label = tc_pool[(t - 1) % len(tc_pool)]
                 result, played = play_batch(cutechess, engine, extra_args,
-                                            plus, minus, args, openings)
+                                            plus, minus, args, openings,
+                                            time_tokens)
                 if result is None:
                     print("\n  Interrupted — saving current best.", flush=True)
                     break
@@ -322,7 +402,8 @@ def cmd_run(args):
                 if t % args.report_every == 0 or t == iterations:
                     snap = "  ".join(f"{n}={int(round(theta[n]))}" for n in names)
                     print(f"  iter {t:5d}/{iterations}  ({games_done} games)  "
-                          f"last={result:.2f}\n    {snap}", flush=True)
+                          f"last={result:.2f} [{tc_label}]\n    {snap}",
+                          flush=True)
                 if t % args.checkpoint_every == 0:
                     save_profile(args.out, args.profile, theta)
         except KeyboardInterrupt:
@@ -439,10 +520,17 @@ def main():
                             "(default: per-param, ~range/20)")
     run_p.add_argument("-r", "--r-end", type=float, default=0.002, dest="r_end",
                        help="Final learning rate (default: 0.002)")
-    run_p.add_argument("--st", default="0.5",
-                       help="Fixed time/move seconds (default: 0.5); ignored if --tc")
+    run_p.add_argument("--st", default=None,
+                       help="Fixed time/move seconds; comma-separated to cycle "
+                            "(e.g. '0.5,1.0'). Combined with any --tc entries.")
     run_p.add_argument("--tc", default=None,
-                       help="Real clock, e.g. '8+0.08' (recommended)")
+                       help="Real clock(s), comma-separated to cycle through "
+                            "(e.g. '300+3,180+2,60+1'). Combined with any --st "
+                            "entries into a pool, one TC per iteration. When "
+                            "neither --tc nor --st is given, a curated default "
+                            "cycle spanning bullet->5+3 plus fixed-time is used. "
+                            "Dynamic TM only engages under a clock, so tuning "
+                            "the Tm* params needs at least one --tc entry.")
     run_p.add_argument("--concurrency", type=int, default=1,
                        help="Concurrent games (default: 1)")
     run_p.add_argument("--openings", default=str(DEFAULT_OPENINGS),

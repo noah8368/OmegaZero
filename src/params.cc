@@ -13,10 +13,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "nnue.h"
 
@@ -104,59 +107,67 @@ static auto ParseNumberFields(const string& block) -> std::map<string, double> {
   return fields;
 }
 
-auto LoadProfileInto(const string& path, const string& profile,
-                     SearchParams& out) -> bool {
+auto ParamsPathFromExe(const string& argv0) -> string {
+  const size_t slash = argv0.find_last_of('/');
+  const string dir = (slash == string::npos) ? "" : argv0.substr(0, slash + 1);
+  return dir + "../params.json";
+}
+
+// Print a fatal params.json error to stderr and terminate. Parameter values
+// have no in-code defaults, so a missing/incomplete file is unrecoverable.
+static auto ParamsFatal(const string& path, const string& msg) -> void {
+  std::cerr << "FATAL: params.json (" << path << "): " << msg << "\n"
+            << "params.json is required and holds every search parameter; "
+               "regenerate or restore it (both \"nnue\" and \"hce\" profiles)."
+            << std::endl;
+  std::exit(EXIT_FAILURE);
+}
+
+auto LoadParamsOrDie(const string& path, const string& profile)
+    -> SearchParams {
   std::ifstream f(path);
-  if (!f) return false;
+  if (!f) {
+    ParamsFatal(path, "could not open file");
+  }
   std::stringstream buf;
   buf << f.rdbuf();
   const string block = ExtractProfileBlock(buf.str(), profile);
-  if (block.empty()) return false;
+  if (block.empty()) {
+    ParamsFatal(path, "profile \"" + profile + "\" not found");
+  }
 
   const std::map<string, double> fields = ParseNumberFields(block);
+
+  // Every registry key must be present: no field may fall back to a code value.
+  std::vector<string> missing;
   for (const IntOpt& o : kIntOpts) {
-    auto it = fields.find(o.name);
-    if (it != fields.end()) {
-      out.*o.field = std::clamp(static_cast<int>(std::lround(it->second)),
-                                o.min, o.max);
-    }
+    if (fields.find(o.name) == fields.end()) missing.push_back(o.name);
   }
   for (const DblOpt& o : kDblOpts) {
-    auto it = fields.find(o.name);
-    if (it != fields.end()) {
-      const int scaled = std::clamp(static_cast<int>(std::lround(it->second)),
-                                    o.min, o.max);
-      out.*o.field = scaled / static_cast<double>(o.divisor);
-    }
+    if (fields.find(o.name) == fields.end()) missing.push_back(o.name);
   }
-  return true;
-}
-
-auto WriteParamsJson(
-    const string& path,
-    const std::vector<std::pair<string, SearchParams>>& profiles) -> bool {
-  std::ofstream f(path);
-  if (!f) return false;
-
-  f << "{\n";
-  for (size_t p = 0; p < profiles.size(); ++p) {
-    const SearchParams& sp = profiles[p].second;
-    f << "  \"" << profiles[p].first << "\": {\n";
-
-    bool first = true;
-    auto emit = [&](const char* name, long value) {
-      if (!first) f << ",\n";
-      first = false;
-      f << "    \"" << name << "\": " << value;
-    };
-    for (const IntOpt& o : kIntOpts) emit(o.name, sp.*o.field);
-    for (const DblOpt& o : kDblOpts) {
-      emit(o.name, std::lround(sp.*o.field * o.divisor));
+  if (!missing.empty()) {
+    string list;
+    for (size_t i = 0; i < missing.size(); ++i) {
+      list += (i ? ", " : "") + missing[i];
     }
-    f << "\n  }" << (p + 1 < profiles.size() ? "," : "") << "\n";
+    ParamsFatal(path, "profile \"" + profile +
+                          "\" is missing required key(s): " + list);
   }
-  f << "}\n";
-  return static_cast<bool>(f);
+
+  SearchParams out;
+  for (const IntOpt& o : kIntOpts) {
+    const double raw = fields.at(o.name);
+    out.*o.field =
+        std::clamp(static_cast<int>(std::lround(raw)), o.min, o.max);
+  }
+  for (const DblOpt& o : kDblOpts) {
+    const double raw = fields.at(o.name);
+    const int scaled =
+        std::clamp(static_cast<int>(std::lround(raw)), o.min, o.max);
+    out.*o.field = scaled / static_cast<double>(o.divisor);
+  }
+  return out;
 }
 
 }  // namespace omegazero

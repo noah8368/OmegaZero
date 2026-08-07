@@ -18,6 +18,7 @@
 #include "board.h"
 #include "engine.h"
 #include "nnue.h"
+#include "params.h"
 
 namespace omegazero {
 
@@ -45,7 +46,7 @@ const BenchPos kBenchPositions[] = {
   {"endgame",  "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"},
 };
 
-void RunNpsBench(float search_time) {
+void RunNpsBench(float search_time, const SearchParams& params) {
   uint64_t total_nodes = 0;
   double total_elapsed = 0;
 
@@ -55,6 +56,7 @@ void RunNpsBench(float search_time) {
     Board board(pos.fen);
     TranspositionTable tt;
     Engine engine(&tt, &board, 'w', search_time);
+    engine.SetParams(params);
     engine.AddPosToHistory();
 
     auto start = std::chrono::high_resolution_clock::now();
@@ -101,6 +103,8 @@ auto main(int argc, char* argv[]) -> int {
   float search_time = 5.0f;
   if (argc > 1) search_time = std::atof(argv[1]);
 
-  RunNpsBench(search_time);
+  const SearchParams params =
+      LoadParamsOrDie(ParamsPathFromExe(argv[0]), ProfileForEvalMode());
+  RunNpsBench(search_time, params);
   return 0;
 }

@@ -9,6 +9,7 @@
 #include "uci.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -39,10 +40,10 @@ UciHandler::UciHandler(const string& book_path, const string& params_path)
   engine_ = std::make_unique<Engine>(pool_.GetTt(), board_.get(), 'w', 5.0f);
   engine_->SetInfoCallback(
       [this](const SearchInfo& info) { PrintInfo(info); });
-  // Seed the runtime search parameters from params.json (profile matching the
-  // active eval mode). `setoption` overrides these; a missing file/profile
-  // leaves the built-in SearchParams defaults in place.
-  LoadProfileInto(params_path, ProfileForEvalMode(), uci_params_);
+  // Load the runtime search parameters from params.json (profile matching the
+  // active eval mode); `setoption` overrides these afterward. There are no
+  // in-code defaults, so a missing/incomplete file is fatal (LoadParamsOrDie).
+  uci_params_ = LoadParamsOrDie(params_path, ProfileForEvalMode());
   LoadOpeningBook(book_path_);
 }
 
@@ -83,13 +84,17 @@ auto UciHandler::HandleUci() -> void {
   std::cout << "id name OmegaZero" << std::endl;
   std::cout << "id author Noah Himed" << std::endl;
   // Advertise the tunable search parameters as spin options (SPSA targets).
+  // The advertised default is the value loaded from params.json (in the same
+  // integer units the options use), since there are no in-code defaults.
   for (const IntOpt& o : kIntOpts) {
-    std::cout << "option name " << o.name << " type spin default " << o.def
-              << " min " << o.min << " max " << o.max << std::endl;
+    std::cout << "option name " << o.name << " type spin default "
+              << uci_params_.*o.field << " min " << o.min << " max " << o.max
+              << std::endl;
   }
   for (const DblOpt& o : kDblOpts) {
-    std::cout << "option name " << o.name << " type spin default " << o.def
-              << " min " << o.min << " max " << o.max << std::endl;
+    std::cout << "option name " << o.name << " type spin default "
+              << std::lround(uci_params_.*o.field * o.divisor) << " min "
+              << o.min << " max " << o.max << std::endl;
   }
   // Lazy SMP worker count (1 = single-threaded, the untouched search path);
   // defaults to the machine's core count.

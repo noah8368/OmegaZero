@@ -34,6 +34,7 @@
 #include "board.h"
 #include "engine.h"
 #include "move.h"
+#include "params.h"
 
 using namespace omegazero;
 using std::cerr;
@@ -185,12 +186,13 @@ static auto PlayRandomOpeningMoves(Board& board, Engine& engine,
   return plies_played;
 }
 
-static auto PlayGame(float search_time, std::mt19937& rng,
-                     vector<Position>& positions,
+static auto PlayGame(float search_time, const SearchParams& params,
+                     std::mt19937& rng, vector<Position>& positions,
                      std::unordered_set<U64>& seen_hashes) -> GameResult {
   Board board(kStartFen);
   TranspositionTable tt;
   Engine engine(&tt, &board, 'w', search_time);
+  engine.SetParams(params);
   engine.AddPosToHistory();
 
   int plies_played = PlayRandomOpeningMoves(board, engine, rng);
@@ -434,8 +436,8 @@ static auto CheckMilestones(int done) -> void {
 }
 
 static auto WorkerThread(int worker_id, int num_games, float search_time,
-                         const string& output_dir, float validation_fraction,
-                         WorkerStats& stats) -> void {
+                         const SearchParams& params, const string& output_dir,
+                         float validation_fraction, WorkerStats& stats) -> void {
  try {
   std::mt19937 rng(std::random_device{}() + worker_id);
 
@@ -461,7 +463,8 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
       positions.reserve(32);
 
       size_t hashes_before = seen_hashes.size();
-      GameResult result = PlayGame(search_time, rng, positions, seen_hashes);
+      GameResult result =
+          PlayGame(search_time, params, rng, positions, seen_hashes);
       int deduped = static_cast<int>(seen_hashes.size() - hashes_before);
       stats.duplicates_skipped += (static_cast<int>(positions.size()) - deduped);
 
@@ -638,6 +641,12 @@ auto main() -> int {
   g_email = cfg.email;
   g_name = cfg.name;
 
+  // Datagen self-play uses HCE (no NNUE is loaded), so this resolves the "hce"
+  // profile. Run from the repo root, where params.json (and nnue/config.json)
+  // live. A missing/incomplete file is fatal -- there are no in-code defaults.
+  const SearchParams params =
+      LoadParamsOrDie("params.json", ProfileForEvalMode());
+
   if (num_workers < 1) num_workers = 1;
   if (total_games < 1) total_games = 1;
 
@@ -719,8 +728,8 @@ auto main() -> int {
 
   for (int w = 0; w < num_workers; ++w) {
     int games = games_per_worker + (w < remainder ? 1 : 0);
-    threads.emplace_back(WorkerThread, w, games, search_time, output_dir,
-                         validation_fraction, std::ref(stats[w]));
+    threads.emplace_back(WorkerThread, w, games, search_time, std::cref(params),
+                         output_dir, validation_fraction, std::ref(stats[w]));
   }
 
   for (auto& t : threads) t.join();

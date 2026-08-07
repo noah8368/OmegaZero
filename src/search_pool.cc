@@ -30,7 +30,8 @@ SearchPool::SearchPool(S8 num_threads) {
 }
 
 auto SearchPool::StartHelpers(const Board& root,
-                              const vector<U64>& pos_history) -> void {
+                              const vector<U64>& pos_history,
+                              const SearchParams& params) -> void {
   helper_ctxs_.clear();
   helper_threads_.clear();
   helper_ctxs_.reserve(num_helpers_);
@@ -41,6 +42,8 @@ auto SearchPool::StartHelpers(const Board& root,
   for (S8 i = 0; i < num_helpers_; ++i) {
     helper_ctxs_.push_back(std::make_unique<SearchContext>(
         &tt_, root, pos_history, kHelperPlaceholderTime));
+    // Helpers must search with the same parameters as the main engine.
+    helper_ctxs_[i]->engine_.SetParams(params);
     helper_ctxs_[i]->engine_.SetInfiniteSearch();
   }
   for (S8 i = 0; i < num_helpers_; ++i) {
@@ -64,7 +67,7 @@ auto SearchPool::StopHelpers() -> void {
 
 auto SearchPool::LazySmpSearch(Engine& main, const Board& root,
                                const vector<U64>& pos_history) -> Move {
-  StartHelpers(root, pos_history);
+  StartHelpers(root, pos_history, main.GetParams());
   // Tear the helpers down on scope exit, including if the main search throws.
   HelperTeardown teardown(*this);
 

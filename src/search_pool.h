@@ -67,8 +67,12 @@ class SearchPool {
 
  private:
   // Spawn / stop-and-join the helper threads. Private: callers go through
-  // LazySmpSearch, which brackets the main search with these.
-  auto StartHelpers(const Board& root, const vector<U64>& pos_history) -> void;
+  // LazySmpSearch, which brackets the main search with these. `params` is the
+  // main engine's search configuration, copied into every helper so they search
+  // with the same tuned parameters (there are no in-code defaults to fall back
+  // on).
+  auto StartHelpers(const Board& root, const vector<U64>& pos_history,
+                    const SearchParams& params) -> void;
   auto StopHelpers() -> void;
 
   // Stops and joins the helper threads on scope exit (RAII), so an exception in

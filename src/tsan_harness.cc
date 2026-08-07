@@ -19,12 +19,17 @@
 #include "board.h"
 #include "engine.h"
 #include "move.h"
+#include "params.h"
 #include "search_pool.h"
 
 using omegazero::Board;
 using omegazero::Engine;
+using omegazero::LoadParamsOrDie;
 using omegazero::Move;
+using omegazero::ParamsPathFromExe;
+using omegazero::ProfileForEvalMode;
 using omegazero::S8;
+using omegazero::SearchParams;
 using omegazero::SearchPool;
 using omegazero::U64;
 using std::cout;
@@ -50,11 +55,15 @@ auto main(int argc, char* argv[]) -> int {
   cout << "TSan Lazy-SMP harness: " << static_cast<int>(threads) << " threads, "
        << search_time << "s/position" << endl;
 
+  const SearchParams params =
+      LoadParamsOrDie(ParamsPathFromExe(argv[0]), ProfileForEvalMode());
+
   for (const string& fen : kPositions) {
     Board board(fen);
     vector<U64> pos_history = {board.GetBoardHash()};
     SearchPool pool(threads);
     Engine main(pool.GetTt(), &board, 'w', search_time, pos_history);
+    main.SetParams(params);
     Move best = pool.LazySmpSearch(main, board, pos_history);
     cout << "  " << fen << " -> " << (best.IsEmpty() ? "NO MOVE" : "ok")
          << endl;

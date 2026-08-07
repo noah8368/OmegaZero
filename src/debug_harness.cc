@@ -21,6 +21,7 @@
 #include "board.h"
 #include "engine.h"
 #include "move.h"
+#include "params.h"
 
 namespace omegazero {
 
@@ -117,7 +118,8 @@ string FormatMoveHistory(const vector<string>& move_history) {
   return s.str();
 }
 
-bool RunSelfPlay(int num_games, float search_time, const string& out_dir) {
+bool RunSelfPlay(int num_games, float search_time, const string& out_dir,
+                 const SearchParams& params) {
   constexpr int kMaxMovesPerGame = 200;
   const string kStartFen =
       "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -128,6 +130,7 @@ bool RunSelfPlay(int num_games, float search_time, const string& out_dir) {
     Board board(kStartFen);
     TranspositionTable tt;
     Engine engine(&tt, &board, 'w', search_time);
+    engine.SetParams(params);
     vector<string> move_history;
     string error_msg;
 
@@ -228,8 +231,11 @@ auto main(int argc, char* argv[]) -> int {
   if (argc > 1) num_games = std::atoi(argv[1]);
   if (argc > 2) search_time = std::atof(argv[2]);
 
+  const SearchParams params =
+      LoadParamsOrDie(ParamsPathFromExe(argv[0]), ProfileForEvalMode());
+
   cout << "=== Self-play ===" << endl;
   cout << "  Games: " << num_games << "  Search time: " << search_time << "s" << endl;
-  bool ok = RunSelfPlay(num_games, search_time, out_dir);
+  bool ok = RunSelfPlay(num_games, search_time, out_dir, params);
   return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
