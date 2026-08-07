@@ -169,6 +169,10 @@ static evaluations driving these decisions are further refined by a
 
 A custom [Transposition Table](https://www.chessprogramming.org/Transposition_Table) is heavily integrated into search, allowing OmegaZero to avoid re-evaluating previously explored positions and efficiently track the principal variation between iterations. [Zobrist Hashing](https://www.chessprogramming.org/Zobrist_Hashing) is used to hash positions efficiently. The table uses a [two-tier replacement scheme](https://www.chessprogramming.org/Transposition_Table#Two-tier_System). Table entries store node types, search depths, and best moves.
 
+#### Parallel Search
+
+On multi-core machines, OmegaZero searches in parallel using [Lazy SMP](https://www.chessprogramming.org/Lazy_SMP): multiple threads search the same position independently and share knowledge through the transposition table, which is [lock-free](https://www.chessprogramming.org/Shared_Hash_Table#Lock-less) so threads can probe and update it concurrently without locking. The thread count defaults to the number of available cores and is configurable via the UCI `Threads` option or the `--threads` flag.
+
 #### Move Ordering
 
 During Aspiration + PV Search, OmegaZero prioritizes moves using:
@@ -302,6 +306,11 @@ To use the handcrafted eval instead of NNUE, add `--hce`:
 OmegaZero --hce -p b --st 1
 ```
 
+Search runs across all available CPU cores by default ([Lazy SMP](https://www.chessprogramming.org/Lazy_SMP)). Set the thread count with `--threads`:
+```
+OmegaZero --threads 4 -p w --st 1
+```
+
 The board display defaults to dark terminal backgrounds (filled glyphs = white pieces). If using a light terminal, add `--light-theme`:
 ```
 OmegaZero --light-theme
@@ -345,7 +354,7 @@ OmegaZero supports the [Universal Chess Interface](https://www.chessprogramming.
 ```
 OmegaZero --uci
 ```
-The search itself is single-threaded, but it runs on a worker thread so the main loop can keep reading input, which enables the full set of `go` limits: `wtime`/`btime`/`winc`/`binc`/`movestogo`, `movetime`, `depth`, `nodes`, and `infinite`, with `stop` aborting an in-progress search and returning the best move found so far.
+The search runs on a worker thread so the main loop can keep reading input, which enables the full set of `go` limits: `wtime`/`btime`/`winc`/`binc`/`movestogo`, `movetime`, `depth`, `nodes`, and `infinite`, with `stop` aborting an in-progress search and returning the best move found so far. The number of search threads ([Lazy SMP](https://www.chessprogramming.org/Lazy_SMP)) is set with the `Threads` option, defaulting to the machine's core count.
 
 ### Testing
 
