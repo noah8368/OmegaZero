@@ -13,15 +13,13 @@ namespace omegazero {
 
 Syzygy g_syzygy;
 
-namespace {
-
 // Fathom wants per-color occupancy plus per-type bitboards (both colors), all
 // in the same a1=0 LERF layout OmegaZero uses, so no square flipping is needed.
 struct TbInputs {
   U64 white, black, kings, queens, rooks, bishops, knights, pawns;
 };
 
-auto BuildInputs(const Board& board) -> TbInputs {
+static auto BuildInputs(const Board& board) -> TbInputs {
   U64 wk = board.GetPiecesByType(kKing, kWhite);
   U64 bk = board.GetPiecesByType(kKing, kBlack);
   U64 wq = board.GetPiecesByType(kQueen, kWhite);
@@ -46,7 +44,39 @@ auto BuildInputs(const Board& board) -> TbInputs {
   return in;
 }
 
-}  // namespace
+// Map Fathom's 5-valued WDL (TB_LOSS..TB_WIN) to our enum.
+static auto MapWdl(unsigned wdl) -> TbWdl {
+  switch (wdl) {
+    case TB_LOSS:
+      return TbWdl::kLoss;
+    case TB_BLESSED_LOSS:
+      return TbWdl::kBlessedLoss;
+    case TB_DRAW:
+      return TbWdl::kDraw;
+    case TB_CURSED_WIN:
+      return TbWdl::kCursedWin;
+    case TB_WIN:
+      return TbWdl::kWin;
+    default:  // TB_RESULT_FAILED
+      return TbWdl::kFailed;
+  }
+}
+
+// Map Fathom's promotion code to a piece type (kNA when not a promotion).
+static auto MapPromo(unsigned tb_promo) -> S8 {
+  switch (tb_promo) {
+    case TB_PROMOTES_QUEEN:
+      return kQueen;
+    case TB_PROMOTES_ROOK:
+      return kRook;
+    case TB_PROMOTES_BISHOP:
+      return kBishop;
+    case TB_PROMOTES_KNIGHT:
+      return kKnight;
+    default:  // TB_PROMOTES_NONE
+      return kNA;
+  }
+}
 
 auto Syzygy::Init(const std::string& path) -> bool {
   if (path.empty() || !tb_init(path.c_str())) {
@@ -81,20 +111,28 @@ auto Syzygy::ProbeWdl(const Board& board) const -> TbWdl {
       in.white, in.black, in.kings, in.queens, in.rooks, in.bishops, in.knights,
       in.pawns, static_cast<unsigned>(board.GetHalfmoveClock()), 0u, ep,
       board.GetPlayerToMove() == kWhite);
-  switch (result) {
-    case TB_LOSS:
-      return TbWdl::kLoss;
-    case TB_BLESSED_LOSS:
-      return TbWdl::kBlessedLoss;
-    case TB_DRAW:
-      return TbWdl::kDraw;
-    case TB_CURSED_WIN:
-      return TbWdl::kCursedWin;
-    case TB_WIN:
-      return TbWdl::kWin;
-    default:  // TB_RESULT_FAILED
-      return TbWdl::kFailed;
+  return MapWdl(result);
+}
+
+auto Syzygy::ProbeRoot(const Board& board, TbRootMove& out) const -> bool {
+  TbInputs in = BuildInputs(board);
+  S8 ep_sq = board.GetEpTargetSq();
+  unsigned ep = (ep_sq == kNA) ? 0u : static_cast<unsigned>(ep_sq);
+  unsigned results[TB_MAX_MOVES];
+  // Root DTZ probe: works at any rule50 (it accounts for the 50-move rule);
+  // castling is 0 since the caller only probes with no castling rights.
+  unsigned res = tb_probe_root(
+      in.white, in.black, in.kings, in.queens, in.rooks, in.bishops, in.knights,
+      in.pawns, static_cast<unsigned>(board.GetHalfmoveClock()), 0u, ep,
+      board.GetPlayerToMove() == kWhite, results);
+  if (res == TB_RESULT_FAILED) {
+    return false;
   }
+  out.from_sq = static_cast<S8>(TB_GET_FROM(res));
+  out.to_sq = static_cast<S8>(TB_GET_TO(res));
+  out.promo_piece = MapPromo(TB_GET_PROMOTES(res));
+  out.wdl = MapWdl(TB_GET_WDL(res));
+  return true;
 }
 
 }  // namespace omegazero

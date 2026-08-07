@@ -237,10 +237,19 @@ class Engine {
   auto ZugzwangUnlikely() const -> bool;
   auto ValidateTtMove(const Move& move) const -> bool;
   auto ProbeTt(int& alpha, int& beta, int depth, int ply, int& result) -> bool;
-  // Whether a Syzygy WDL probe is valid at the current position: tables loaded,
-  // few enough pieces, no castling rights, and rule50 == 0 (Fathom's WDL probe
-  // requires it). No-op unless SyzygyPath/--syzygy loaded tables.
+  // Common Syzygy probe eligibility: tables loaded, few enough pieces, and no
+  // castling rights (Syzygy positions have none). No-op unless SyzygyPath/
+  // --syzygy loaded tables.
+  auto TbPositionEligible() const -> bool;
+  // Whether a Syzygy WDL probe is valid: eligible and rule50 == 0 (Fathom's WDL
+  // probe requires a zeroed 50-move counter).
   auto ShouldProbeTb() const -> bool;
+  // If the root is a tablebase position, decode the DTZ-optimal move, match it
+  // to a `root_moves` entry (so it carries the full Move fields), set
+  // `score_out` to a TB score, and return it in `tb_move`. Root DTZ probing is
+  // valid at any rule50 (it handles the 50-move rule).
+  auto ProbeTbRoot(const vector<Move>& root_moves, Move& tb_move, int& score_out)
+      -> bool;
   auto ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
                            bool at_pv_node, bool in_check) -> bool;
   auto ShouldReverseFutilityPrune(int static_eval, int depth, int beta,

@@ -20,6 +20,16 @@ namespace omegazero {
 // kCursedWin/kBlessedLoss are wins/losses that the 50-move rule draws.
 enum class TbWdl { kFailed, kLoss, kBlessedLoss, kDraw, kCursedWin, kWin };
 
+// A tablebase-optimal root move: the DTZ probe's recommended move (which
+// converts the win / holds the draw correctly under the 50-move rule), given as
+// squares + promotion so the caller can match it to a generated Move.
+struct TbRootMove {
+  S8 from_sq;
+  S8 to_sq;
+  S8 promo_piece;  // kNA, or kQueen/kRook/kBishop/kKnight
+  TbWdl wdl;
+};
+
 class Syzygy {
  public:
   // Load tablebases from `path` (Fathom's path syntax). Returns whether any
@@ -34,6 +44,10 @@ class Syzygy {
   // Probe the WDL tables. Returns kFailed if the position isn't covered or the
   // probe's preconditions (see Engine::ShouldProbeTb) aren't met.
   auto ProbeWdl(const Board& board) const -> TbWdl;
+  // Probe the DTZ tables at the root; on success, fill `out` with the optimal
+  // move and return true. Valid at any rule50 (handles the 50-move rule), but
+  // still requires no castling rights.
+  auto ProbeRoot(const Board& board, TbRootMove& out) const -> bool;
 
  private:
   int max_pieces_ = 0;

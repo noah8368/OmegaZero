@@ -24,10 +24,9 @@
 
 namespace omegazero {
 
-namespace {
 // Map a Syzygy WDL result to a search score, root-relative at `ply` (shorter
 // wins/losses rank better). Cursed wins and blessed losses are 50-move draws.
-auto TbWdlToScore(TbWdl wdl, int ply) -> int {
+static auto TbWdlToScore(TbWdl wdl, int ply) -> int {
   switch (wdl) {
     case TbWdl::kWin:
       return kTbWin - ply;
@@ -37,7 +36,6 @@ auto TbWdlToScore(TbWdl wdl, int ply) -> int {
       return kNeutralEval;
   }
 }
-}  // namespace
 
 using std::begin;
 using std::end;
@@ -173,6 +171,15 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   soft_time_ = std::max(0.01f, soft_time_ - fallback_secs);
   hard_time_ = std::max(0.01f, hard_time_ - fallback_secs);
   base_time_ = std::max(0.01f, base_time_ - fallback_secs);
+
+  // Syzygy DTZ root probe: in a tablebase position, play the tablebase-optimal
+  // move directly (perfect play, correct 50-move conversion) rather than
+  // searching. No-op unless tables are loaded and the position qualifies.
+  if (Move tb_move; ProbeTbRoot(fallback_moves, tb_move, score_out)) {
+    board_->ResetPos();
+    pos_history_.resize(saved_history_size);
+    return tb_move;
+  }
 
   has_obvious_recapture_ = false;
   if (dynamic_tm_) {
@@ -1223,15 +1230,11 @@ auto Engine::ProbeTt(int& alpha, int& beta, int depth, int ply, int& result)
   return false;
 }
 
-auto Engine::ShouldProbeTb() const -> bool {
+auto Engine::TbPositionEligible() const -> bool {
   if (!g_syzygy.IsLoaded()) {
     return false;
   }
-  // Fathom's WDL probe requires a zeroed 50-move counter and no castling rights
-  // (Syzygy positions have neither).
-  if (board_->GetHalfmoveClock() != 0) {
-    return false;
-  }
+  // Syzygy positions have no castling rights.
   if (board_->GetCastlingRight(kWhite, kQueenSide) ||
       board_->GetCastlingRight(kWhite, kKingSide) ||
       board_->GetCastlingRight(kBlack, kQueenSide) ||
@@ -1239,6 +1242,40 @@ auto Engine::ShouldProbeTb() const -> bool {
     return false;
   }
   return g_syzygy.PieceCount(*board_) <= g_syzygy.MaxPieces();
+}
+
+auto Engine::ShouldProbeTb() const -> bool {
+  // Fathom's WDL probe additionally requires a zeroed 50-move counter.
+  return TbPositionEligible() && board_->GetHalfmoveClock() == 0;
+}
+
+auto Engine::ProbeTbRoot(const vector<Move>& root_moves, Move& tb_move,
+                         int& score_out) -> bool {
+  if (!TbPositionEligible()) {
+    return false;
+  }
+  TbRootMove root;
+  if (!g_syzygy.ProbeRoot(*board_, root)) {
+    return false;
+  }
+  // Match the tablebase's from/to/promotion to a generated pseudo-legal move so
+  // tb_move carries the full Move fields, and confirm the move is legal.
+  for (const Move& move : root_moves) {
+    if (move.start_sq != root.from_sq || move.target_sq != root.to_sq ||
+        move.promoted_to_piece != root.promo_piece) {
+      continue;
+    }
+    try {
+      board_->MakeMove(move);
+      board_->UnmakeMove(move);
+    } catch (BadMove&) {
+      continue;
+    }
+    tb_move = move;
+    score_out = TbWdlToScore(root.wdl, kRootNodePly);
+    return true;
+  }
+  return false;
 }
 
 auto Engine::ShouldNullMovePrune(int alpha, int beta, int depth, int ply,

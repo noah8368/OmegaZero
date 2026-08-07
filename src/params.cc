@@ -28,12 +28,11 @@ auto ProfileForEvalMode() -> string {
   return g_nnue.IsLoaded() ? "nnue" : "hce";
 }
 
-namespace {
-
 // Return the substring of `text` between the braces of the object bound to
 // key `"<profile>"`, or empty if the key/object is not found. Braces inside
 // quoted strings are ignored so nested object matching stays correct.
-auto ExtractProfileBlock(const string& text, const string& profile) -> string {
+static auto ExtractProfileBlock(const string& text, const string& profile)
+    -> string {
   const string key = "\"" + profile + "\"";
   size_t pos = text.find(key);
   if (pos == string::npos) return "";
@@ -65,7 +64,7 @@ auto ExtractProfileBlock(const string& text, const string& profile) -> string {
 
 // Scan a profile block for "<key>": <number> pairs into a map. Tolerant of
 // whitespace/commas/newlines; values may be negative or decimal.
-auto ParseNumberFields(const string& block) -> std::map<string, double> {
+static auto ParseNumberFields(const string& block) -> std::map<string, double> {
   std::map<string, double> fields;
   size_t i = 0;
   const size_t n = block.size();
@@ -104,8 +103,6 @@ auto ParseNumberFields(const string& block) -> std::map<string, double> {
   }
   return fields;
 }
-
-}  // namespace
 
 auto LoadProfileInto(const string& path, const string& profile,
                      SearchParams& out) -> bool {
