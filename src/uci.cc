@@ -23,6 +23,7 @@
 #include "game.h"
 #include "move.h"
 #include "params.h"
+#include "syzygy.h"
 #include "time_control.h"
 
 namespace omegazero {
@@ -94,6 +95,9 @@ auto UciHandler::HandleUci() -> void {
   // defaults to the machine's core count.
   std::cout << "option name Threads type spin default " << num_threads_
             << " min 1 max " << kMaxThreads << std::endl;
+  // Syzygy endgame tablebases (empty = disabled); path to the .rtbw/.rtbz files.
+  std::cout << "option name SyzygyPath type string default <empty>"
+            << std::endl;
   std::cout << "uciok" << std::endl;
 }
 
@@ -108,6 +112,15 @@ auto UciHandler::HandleSetOption(const string& line) -> void {
   while (iss >> token && token != "value") {
     if (!name.empty()) name += ' ';
     name += token;
+  }
+  if (name == "SyzygyPath") {
+    // A filesystem path (may contain spaces), so take the rest of the line
+    // verbatim rather than a single token. Empty clears/disables the tables.
+    string path;
+    std::getline(iss, path);
+    size_t start = path.find_first_not_of(' ');
+    g_syzygy.Init(start == string::npos ? "" : path.substr(start));
+    return;
   }
   string value_str;
   if (!(iss >> value_str)) return;  // spin options require a value

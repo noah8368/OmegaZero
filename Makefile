@@ -1,44 +1,47 @@
 CC = g++
 UNAME_S := $(shell uname -s)
 
-FLAGS = -march=native -pedantic -std=c++17 -Wall -Werror -Wextra -Wshadow -MMD -MP -pthread
+FLAGS = -march=native -pedantic -std=c++17 -Wall -Werror -Wextra -Wshadow -MMD -MP -pthread -Isrc/fathom
 OPT_FLAGS = -O3 -fno-signed-zeros -fno-trapping-math -funroll-loops
 DEBUG_FLAGS = -O0 -g -fsanitize=address -fno-omit-frame-pointer -DDEBUG
 TSAN_FLAGS = -O1 -g -fsanitize=thread -fno-omit-frame-pointer
+# Vendored third-party Fathom prober: relaxed warnings (not written to -Werror
+# -Wextra -Wshadow -pedantic), compiled as C++ (its atomics use <atomic>).
+FATHOM_FLAGS = -std=c++17 -O2 -w -march=native -pthread -Isrc/fathom
 
 OBJECTS = build/play/board.o build/play/engine.o build/play/game.o build/play/magics.o \
           build/play/main.o build/play/masks.o build/play/nnue.o build/play/transposition_table.o \
-          build/play/params.o build/play/piece_sq_tables.o build/play/search_pool.o \
+          build/play/params.o build/play/piece_sq_tables.o build/play/search_pool.o build/play/syzygy.o build/play/tbprobe.o \
           build/play/uci.o
 
 DEBUG_OBJECTS = build/debug/board.o build/debug/engine.o build/debug/game.o \
                 build/debug/magics.o build/debug/nnue.o build/debug/debug_harness.o \
                 build/debug/masks.o build/debug/transposition_table.o \
-                build/debug/search_pool.o \
+                build/debug/search_pool.o build/debug/syzygy.o build/debug/tbprobe.o \
                 build/debug/piece_sq_tables.o
 
 BENCH_OBJECTS = build/bench/board.o build/bench/engine.o build/bench/game.o \
                 build/bench/magics.o build/bench/nnue.o build/bench/bench_harness.o \
                 build/bench/masks.o build/bench/transposition_table.o \
-                build/bench/search_pool.o \
+                build/bench/search_pool.o build/bench/syzygy.o build/bench/tbprobe.o \
                 build/bench/piece_sq_tables.o
 
 DATAGEN_OBJECTS = build/datagen/board.o build/datagen/engine.o build/datagen/game.o \
                   build/datagen/magics.o build/datagen/nnue.o build/datagen/datagen.o \
                   build/datagen/masks.o build/datagen/transposition_table.o \
-                  build/datagen/search_pool.o \
+                  build/datagen/search_pool.o build/datagen/syzygy.o build/datagen/tbprobe.o \
                   build/datagen/piece_sq_tables.o
 
 PERFT_OBJECTS = build/perft/board.o build/perft/engine.o build/perft/game.o \
                 build/perft/magics.o build/perft/nnue.o build/perft/perft_harness.o \
                 build/perft/masks.o build/perft/transposition_table.o \
-                build/perft/search_pool.o \
+                build/perft/search_pool.o build/perft/syzygy.o build/perft/tbprobe.o \
                 build/perft/piece_sq_tables.o
 
 TSAN_OBJECTS = build/tsan/board.o build/tsan/engine.o build/tsan/game.o \
                build/tsan/magics.o build/tsan/nnue.o build/tsan/tsan_harness.o \
                build/tsan/masks.o build/tsan/transposition_table.o \
-               build/tsan/piece_sq_tables.o build/tsan/search_pool.o
+               build/tsan/piece_sq_tables.o build/tsan/search_pool.o build/tsan/syzygy.o build/tsan/tbprobe.o
 
 all : build/play $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS) $(OPT_FLAGS)
@@ -76,6 +79,18 @@ build/tsan/magics.o: src/magics.cc
 	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/tsan/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(TSAN_FLAGS)
+build/play/tbprobe.o: src/fathom/tbprobe.c
+	$(CC) -c -o $@ $< $(FATHOM_FLAGS)
+build/debug/tbprobe.o: src/fathom/tbprobe.c
+	$(CC) -c -o $@ $< $(FATHOM_FLAGS)
+build/bench/tbprobe.o: src/fathom/tbprobe.c
+	$(CC) -c -o $@ $< $(FATHOM_FLAGS)
+build/datagen/tbprobe.o: src/fathom/tbprobe.c
+	$(CC) -c -o $@ $< $(FATHOM_FLAGS)
+build/perft/tbprobe.o: src/fathom/tbprobe.c
+	$(CC) -c -o $@ $< $(FATHOM_FLAGS)
+build/tsan/tbprobe.o: src/fathom/tbprobe.c
+	$(CC) -c -o $@ $< $(FATHOM_FLAGS)
 
 build :
 	mkdir $@

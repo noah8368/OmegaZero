@@ -22,3 +22,7 @@ scripts/sync_from_server.sh
 compile_commands.json
 .clang-format
 .cache/**
+
+# Syzygy tablebase files (downloaded into syzygy_tables/ by scripts/setup.sh;
+# ~1 GB for 3-4-5 man, larger for 6/7 man). Not committed.
+syzygy_tables/

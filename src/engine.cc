@@ -19,9 +19,25 @@
 #include "game.h"
 #include "move.h"
 #include "out_of_time.h"
+#include "syzygy.h"
 #include "transposition_table.h"
 
 namespace omegazero {
+
+namespace {
+// Map a Syzygy WDL result to a search score, root-relative at `ply` (shorter
+// wins/losses rank better). Cursed wins and blessed losses are 50-move draws.
+auto TbWdlToScore(TbWdl wdl, int ply) -> int {
+  switch (wdl) {
+    case TbWdl::kWin:
+      return kTbWin - ply;
+    case TbWdl::kLoss:
+      return -kTbWin + ply;
+    default:  // kDraw, kCursedWin, kBlessedLoss
+      return kNeutralEval;
+  }
+}
+}  // namespace
 
 using std::begin;
 using std::end;
@@ -579,6 +595,18 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       (ply > 0 && RepDetected())) {
     return kNeutralEval;
   }
+
+  // Syzygy WDL probe: at a small, castling-free, rule50 == 0 position the
+  // tablebase gives an exact result, returned as a cutoff. The root (ply 0) is
+  // left to normal search (DTZ root probing is a later phase). No-op unless
+  // tables are loaded, so the default build is unchanged.
+  if (ply > 0 && ShouldProbeTb()) {
+    TbWdl wdl = g_syzygy.ProbeWdl(*board_);
+    if (wdl != TbWdl::kFailed) {
+      return TbWdlToScore(wdl, ply);
+    }
+  }
+
   if (depth <= 0) {
     return QuiescenceSearch(alpha, beta, ply);
   }
@@ -1193,6 +1221,24 @@ auto Engine::ProbeTt(int& alpha, int& beta, int depth, int ply, int& result)
     return true;
   }
   return false;
+}
+
+auto Engine::ShouldProbeTb() const -> bool {
+  if (!g_syzygy.IsLoaded()) {
+    return false;
+  }
+  // Fathom's WDL probe requires a zeroed 50-move counter and no castling rights
+  // (Syzygy positions have neither).
+  if (board_->GetHalfmoveClock() != 0) {
+    return false;
+  }
+  if (board_->GetCastlingRight(kWhite, kQueenSide) ||
+      board_->GetCastlingRight(kWhite, kKingSide) ||
+      board_->GetCastlingRight(kBlack, kQueenSide) ||
+      board_->GetCastlingRight(kBlack, kKingSide)) {
+    return false;
+  }
+  return g_syzygy.PieceCount(*board_) <= g_syzygy.MaxPieces();
 }
 
 auto Engine::ShouldNullMovePrune(int alpha, int beta, int depth, int ply,

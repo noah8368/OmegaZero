@@ -4,8 +4,10 @@
 # and builds the engine.
 #
 # Usage:
-#   ./scripts/setup.sh            — full dev install
-#   ./scripts/setup.sh --datagen  — minimal install for datagen server only
+#   ./scripts/setup.sh             — full dev install (incl. 3-4-5 man Syzygy
+#                                    tablebases, ~1 GB, into syzygy_tables/)
+#   ./scripts/setup.sh --no-syzygy — full install, skip the tablebase download
+#   ./scripts/setup.sh --datagen   — minimal install for datagen server only
 #
 # After setup, activate the venv with:
 #   source .venv/bin/activate
@@ -22,9 +24,14 @@ warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[x]${NC} $1"; }
 
 SERVER_ONLY=false
-if [[ "${1:-}" == "--datagen" ]]; then
-    SERVER_ONLY=true
-fi
+DOWNLOAD_SYZYGY=true  # tablebases on by default; --no-syzygy or --datagen skips
+for arg in "$@"; do
+    case "$arg" in
+        --datagen)   SERVER_ONLY=true; DOWNLOAD_SYZYGY=false ;;
+        --no-syzygy) DOWNLOAD_SYZYGY=false ;;
+        --syzygy)    DOWNLOAD_SYZYGY=true ;;
+    esac
+done
 
 OS="$(uname -s)"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -179,6 +186,34 @@ build_engine() {
     fi
 }
 
+download_syzygy() {
+    # Download 3-4-5 man Syzygy tablebases (~1 GB) into syzygy_tables/, where the
+    # engine looks for them by default. Idempotent: skips files already present.
+    # For 6- or 7-man, drop those files into the same dir (or point --syzygy /
+    # the SyzygyPath UCI option elsewhere) — the engine auto-detects the size.
+    local dst="$REPO_ROOT/syzygy_tables"
+    local base="http://tablebase.sesse.net/syzygy/3-4-5"
+    mkdir -p "$dst"
+    info "Fetching Syzygy tablebase file list from $base ..."
+    local files
+    files=$(curl -fsSL "$base/" | grep -oE '[A-Za-z0-9]+\.rtb[wz]' | sort -u) || true
+    if [[ -z "$files" ]]; then
+        warn "Could not list tablebase files; skipping Syzygy download."
+        return
+    fi
+    local total; total=$(echo "$files" | wc -l | tr -d ' ')
+    info "Downloading $total files to $dst (~1 GB, skipping existing)..."
+    local i=0
+    for f in $files; do
+        i=$((i + 1))
+        [[ -s "$dst/$f" ]] && continue
+        printf '\r  [%d/%d] %s          ' "$i" "$total" "$f"
+        curl -fsSL -o "$dst/$f" "$base/$f" || warn "failed: $f"
+    done
+    echo ""
+    info "Syzygy tablebases ready in $dst."
+}
+
 # ---------- Main ----------
 
 if [[ "$OS" == "Darwin" ]]; then
@@ -198,6 +233,10 @@ if [[ "$SERVER_ONLY" != true ]]; then
 fi
 build_engine
 
+if [[ "$DOWNLOAD_SYZYGY" == true ]]; then
+    download_syzygy
+fi
+
 echo ""
 info "Setup complete!"
 echo ""
@@ -209,4 +248,7 @@ else
     echo "  Datagen binary:     build/datagen_harness"
     echo "  Run tests:          python3 scripts/perft.py run"
     echo "  Train NNUE:         python3 scripts/train_nnue.py"
+    if [[ "$DOWNLOAD_SYZYGY" != true ]]; then
+        echo "  Syzygy tablebases:  ./scripts/setup.sh --syzygy   (~1 GB into syzygy_tables/)"
+    fi
 fi

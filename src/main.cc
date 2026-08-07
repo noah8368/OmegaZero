@@ -15,6 +15,7 @@
 #include "move.h"
 #include "nnue.h"
 #include "params.h"
+#include "syzygy.h"
 #include "uci.h"
 
 using std::cout;
@@ -29,6 +30,7 @@ static void PrintUsage(const char* prog) {
        << "  --st TIME      Search time per move in seconds (default: 5)\n"
        << "  --threads N    Number of search threads (Lazy SMP; default: all "
           "cores)\n"
+       << "  --syzygy DIR   Syzygy tablebase directory (default: repo root)\n"
        << "  --tc TIME      Clock time in seconds (enables timed game)\n"
        << "  --inc TIME     Increment in seconds (default: 0)\n"
        << "  -i FEN         Initial position as FEN string\n"
@@ -50,6 +52,8 @@ auto main(int argc, char* argv[]) -> int {
   string init_pos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   string opening_book_path = exe_dir + "../openings.pgn";
   string nnue_path = exe_dir + "../nnue/nnue.bin";
+  string syzygy_path =
+      exe_dir + "../syzygy_tables";  // where setup.sh puts the tables
   string params_path = exe_dir + "../params.json";
   string pgn_opponent;
   float search_time = 5.0f;
@@ -93,6 +97,8 @@ auto main(int argc, char* argv[]) -> int {
       opening_book_path = argv[++i];
     } else if ((arg == "-n" || arg == "--nnue") && i + 1 < argc) {
       nnue_path = argv[++i];
+    } else if (arg == "--syzygy" && i + 1 < argc) {
+      syzygy_path = argv[++i];
     } else if (arg == "--pgn" && i + 1 < argc) {
       pgn_opponent = argv[++i];
     } else {
@@ -120,6 +126,13 @@ auto main(int argc, char* argv[]) -> int {
   } else if (!omegazero::g_nnue.Load(nnue_path)) {
     if (!uci_mode)
       cout << "WARNING: NNUE weights not found. Using HCE instead." << endl;
+  }
+
+  // Load Syzygy endgame tablebases (default: the repo root; override --syzygy).
+  // A no-op when no .rtbw/.rtbz files are present at the path.
+  if (omegazero::g_syzygy.Init(syzygy_path) && !uci_mode) {
+    cout << "Syzygy: " << omegazero::g_syzygy.MaxPieces()
+         << "-man tablebases loaded." << endl;
   }
 
   if (uci_mode) {

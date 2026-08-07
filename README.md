@@ -173,6 +173,10 @@ A custom [Transposition Table](https://www.chessprogramming.org/Transposition_Ta
 
 On multi-core machines, OmegaZero searches in parallel using [Lazy SMP](https://www.chessprogramming.org/Lazy_SMP): multiple threads search the same position independently and share knowledge through the transposition table, which is [lock-free](https://www.chessprogramming.org/Shared_Hash_Table#Lock-less) so threads can probe and update it concurrently without locking. The thread count defaults to the number of available cores and is configurable via the UCI `Threads` option or the `--threads` flag.
 
+#### Endgame Tablebases
+
+When [Syzygy](https://www.chessprogramming.org/Syzygy_Bases) tablebases are present, the search probes them for a perfect Win/Draw/Loss verdict at low-piece positions (via the vendored [Fathom](https://github.com/jdart1/Fathom) prober), returning an exact score and cutting off the subtree. Probing is thread-safe, so it works within the parallel search. See [Endgame Tablebases (Syzygy)](#endgame-tablebases-syzygy) for setup.
+
 #### Move Ordering
 
 During Aspiration + PV Search, OmegaZero prioritizes moves using:
@@ -225,10 +229,15 @@ OmegaZero uses a PGN opening book containing 2,678 openings spanning the full EC
 The `Makefile` supports GNU/Linux and macOS. The easiest way to install everything is with the setup script:
 
 ```bash
-./scripts/setup.sh            # full install (build tools, venv, Python packages, Stockfish, cutechess)
-./scripts/setup.sh --datagen  # minimal install for datagen server (g++, make, python3 only)
-source .venv/bin/activate     # activate the Python environment
+./scripts/setup.sh             # full install (build tools, venv, Python, Stockfish, cutechess, Syzygy tablebases)
+./scripts/setup.sh --no-syzygy # full install, skip the ~1 GB Syzygy tablebase download
+./scripts/setup.sh --datagen   # minimal install for datagen server (g++, make, python3 only)
+source .venv/bin/activate      # activate the Python environment
 ```
+
+#### Endgame Tablebases (Syzygy)
+
+The full install downloads the 3-4-5 man [Syzygy](https://www.chessprogramming.org/Syzygy_Bases) tablebases (`.rtbw`/`.rtbz`, ~1 GB) into a `syzygy_tables/` directory at the repo root, where the engine loads them automatically (skip with `--no-syzygy`). They're `.gitignore`d, not committed. The engine auto-detects the largest table size present, so to use 6- or 7-man tables later, drop those files into `syzygy_tables/` (or point `--syzygy DIR` / the `SyzygyPath` UCI option elsewhere) — no rebuild needed. Tablebases are optional; the engine runs normally without them.
 
 Both modes are idempotent — safe to re-run. The script detects your platform (macOS via Homebrew, Linux via apt/dnf/yum), creates a `.venv/` Python environment, and skips anything already installed.
 

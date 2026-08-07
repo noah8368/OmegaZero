@@ -56,23 +56,37 @@ constexpr int kNeutralEval = -25;
 constexpr int kWorstEval = -32000;
 constexpr int kInvalidEval = 32001;
 
+// Syzygy tablebase win/loss scores occupy the band just below the mate band, so
+// a forced mate is still preferred over a TB win. A TB win found `ply` plies
+// from the root scores kTbWin - ply (shorter wins rank higher); a loss negates.
+constexpr int kTbWin = kBestEval - kSearchLimit;
+
 // Mate scores are encoded root-relative as kBestEval minus plies-to-mate (or
 // kWorstEval plus plies-to-being-mated), so any score within kSearchLimit of an
 // extreme is a mate score.
 inline auto IsMateScore(int score) -> bool {
   return score > kBestEval - kSearchLimit || score < kWorstEval + kSearchLimit;
 }
-// Rebase a mate score between root-relative and node-relative (at `ply`) so it
-// stays valid across TT hits at different root distances. ScoreToTt stores,
-// ScoreFromTt retrieves; non-mate scores pass through unchanged.
+// Whether `score` is a Syzygy win/loss score: the kSearchLimit-wide band just
+// below the mate band on each side. Provably disjoint from both mate scores and
+// normal evals (which never approach the extremes).
+inline auto IsTbScore(int score) -> bool {
+  return (score > kBestEval - 2 * kSearchLimit && score <= kTbWin) ||
+         (score < kWorstEval + 2 * kSearchLimit && score >= -kTbWin);
+}
+// Rebase a mate or TB score between root-relative and node-relative (at `ply`)
+// so it stays valid across TT hits at different root distances. ScoreToTt
+// stores, ScoreFromTt retrieves; ordinary scores pass through unchanged.
 inline auto ScoreToTt(int score, int ply) -> int {
   if (score > kBestEval - kSearchLimit) return score + ply;
   if (score < kWorstEval + kSearchLimit) return score - ply;
+  if (IsTbScore(score)) return score > 0 ? score + ply : score - ply;
   return score;
 }
 inline auto ScoreFromTt(int score, int ply) -> int {
   if (score > kBestEval - kSearchLimit) return score - ply;
   if (score < kWorstEval + kSearchLimit) return score + ply;
+  if (IsTbScore(score)) return score > 0 ? score - ply : score + ply;
   return score;
 }
 
@@ -223,6 +237,10 @@ class Engine {
   auto ZugzwangUnlikely() const -> bool;
   auto ValidateTtMove(const Move& move) const -> bool;
   auto ProbeTt(int& alpha, int& beta, int depth, int ply, int& result) -> bool;
+  // Whether a Syzygy WDL probe is valid at the current position: tables loaded,
+  // few enough pieces, no castling rights, and rule50 == 0 (Fathom's WDL probe
+  // requires it). No-op unless SyzygyPath/--syzygy loaded tables.
+  auto ShouldProbeTb() const -> bool;
   auto ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
                            bool at_pv_node, bool in_check) -> bool;
   auto ShouldReverseFutilityPrune(int static_eval, int depth, int beta,
