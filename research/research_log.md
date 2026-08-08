@@ -6,6 +6,29 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-08-08 — Pruning-integration design nailed down
+
+Worked out the concrete bridge from `p(u|x)` to the search heuristics (Noah's framing:
+one SPSA-tuned constant for "acceptable eval unreliability to prune"). Key refinement:
+don't gate on unreliability alone — combine it with distance-to-bound. Deriving from
+`P(false prune) = P(u > v̂ − β | x) ≤ C` shows the rule collapses to the **existing**
+prune `eval − margin ≥ β` with **`margin = Q_{1−C}(u|x)`** — the per-position error
+quantile — and the single SPSA constant is the **risk level `C`** (which quantile to
+read). Falls out of this:
+- One quantile read does both jobs: its mean replaces corr-hist (H6), its spread is the
+  margin (H1).
+- H1 restated cleanly: conditional quantile vs unconditional quantile, both at tuned `C`.
+- Per-heuristic, one-sided reads (RFP/razoring = upper tail, futility = lower tail) —
+  the concrete payoff of signed error (H3); each can get its own `C`.
+- Caveat: SPSA on `C` masks miscalibration → calibration (H2) and Elo (H1) stay separate
+  axes; report both.
+- Open flag: label `v*` is at a fixed depth, so the model learns error-*at-that-depth*,
+  mismatched to shallow nodes — may need a depth term later.
+
+New note: notes/pruning_integration.md (full derivation), linked from H1/H5.
+
+---
+
 ## 2026-08-08 — Design decisions settled + correction-history reframe
 
 Worked through the design forks from the proposal review, one at a time. Settled:

@@ -30,8 +30,14 @@ just as well." Beating the *current shipped* margins isn't enough (they could ju
 under-tuned); the baseline is a **freshly SPSA-tuned constant** so a win isolates the
 value of *conditioning*, not tuning effort.
 
+**Integration.** The per-position margin *is* the model's predicted error quantile
+`Q_{1−C}(u|x)`, and the SPSA-tuned constant is the **risk level `C`**; the baseline is the
+*unconditional* quantile. So H1 restated: does the conditional quantile beat the
+unconditional one at tuned `C`? See
+[notes/pruning_integration.md](notes/pruning_integration.md) for the derivation.
+
 **Decides:** whether this becomes a search feature or "just" a calibration study.
-**Status:** open · **Experiments:** (planned, post-integration)
+**Status:** open · **Experiments:** (planned, post-integration — NF-004)
 
 ---
 
@@ -87,6 +93,10 @@ it.
 
 **Kill condition.** If even a folded head costs more NPS than the pruning saves in nodes,
 integration is a net loss regardless of calibration quality.
+
+**Integration design:** `margin = Q_{1−C}(u|x)` reuses the existing `eval − margin ≥ β`
+prune untouched — only the margin *value* changes. See
+[notes/pruning_integration.md](notes/pruning_integration.md).
 
 **Status:** open · **Experiments:** (integration spike, Week 3)
 
