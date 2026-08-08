@@ -31,6 +31,9 @@ Parameters (train subcommand, CLI args override nnue/config.json):
                                                               (default: 0.7)
     --val-split   Fraction of data for validation if no
                   separate val file                           (default: 0.05)
+    --workers     DataLoader worker processes; -1 = auto
+                  (all logical cores)                         (default: -1)
+    --prefetch    Batches each worker prefetches ahead        (default: 4)
     --output      Model checkpoint directory                  (default: nnue/model)
 
 Parameters (plot subcommand):
@@ -263,12 +266,29 @@ class BinaryNnueDataset(Dataset):
     """Memory-mapped binary dataset. Scales to 100M+ positions without OOM."""
 
     def __init__(self, path):
+        self.path = path
         file_size = os.path.getsize(path)
         self.num_records = file_size // RECORD_DTYPE.itemsize
-        self.data = np.memmap(
-            path, dtype=RECORD_DTYPE, mode="r", shape=(self.num_records,)
-        )
+        # Opened lazily (see .data) so each DataLoader worker maps the file in
+        # its own process. Mapping eagerly here would, under the 'spawn' start
+        # method (macOS default), pickle a materialized copy into every worker.
+        self._data = None
         print(f"Loaded {self.num_records:,} positions from {path} (memory-mapped)")
+
+    @property
+    def data(self):
+        if self._data is None:
+            self._data = np.memmap(
+                self.path, dtype=RECORD_DTYPE, mode="r",
+                shape=(self.num_records,),
+            )
+        return self._data
+
+    def __getstate__(self):
+        # Never ship an open memmap across the process boundary.
+        state = self.__dict__.copy()
+        state["_data"] = None
+        return state
 
     def __len__(self):
         return self.num_records
@@ -720,14 +740,26 @@ def train(args):
 
     pin = (device.type == "cuda")
     collate = binary_collate if isinstance(dataset, BinaryNnueDataset) else None
-    train_loader = DataLoader(
-        train_set, batch_size=args.batch, shuffle=True,
-        num_workers=0, pin_memory=pin, collate_fn=collate,
+
+    # Data loading (not GPU compute) is the bottleneck for this tiny sparse net,
+    # so fan the per-item decode + collate across as many workers as available.
+    # workers < 0 means "auto" -> all logical cores.
+    num_workers = args.workers if args.workers is not None and args.workers >= 0 \
+        else (os.cpu_count() or 0)
+    loader_kwargs = dict(
+        batch_size=args.batch, pin_memory=pin, collate_fn=collate,
+        num_workers=num_workers,
     )
-    val_loader = DataLoader(
-        val_set, batch_size=args.batch, shuffle=False,
-        num_workers=0, pin_memory=pin, collate_fn=collate,
-    )
+    if num_workers > 0:
+        # Keep workers alive across epochs and let each pre-stage a few batches
+        # so the GPU never stalls waiting on the input pipeline.
+        loader_kwargs["persistent_workers"] = True
+        loader_kwargs["prefetch_factor"] = args.prefetch
+    print(f"DataLoader workers: {num_workers}"
+          + (f" (prefetch_factor={args.prefetch})" if num_workers > 0 else ""))
+
+    train_loader = DataLoader(train_set, shuffle=True, **loader_kwargs)
+    val_loader = DataLoader(val_set, shuffle=False, **loader_kwargs)
 
     model = NnueNetwork().to(device)
     total_params = sum(p.numel() for p in model.parameters())
@@ -1159,6 +1191,14 @@ def main():
     train_parser.add_argument(
         "--device", default=t.get("device"),
         help="Device: cpu, mps, or cuda (default: auto-detect)",
+    )
+    train_parser.add_argument(
+        "--workers", type=int, default=t.get("workers", -1),
+        help="DataLoader worker processes; -1 = auto (all logical cores) (default: -1)",
+    )
+    train_parser.add_argument(
+        "--prefetch", type=int, default=t.get("prefetch", 4),
+        help="Batches each worker prefetches ahead (default: 4)",
     )
 
     # plot subcommand

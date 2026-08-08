@@ -13,6 +13,8 @@
     "lr": 0.001,
     "wd": 1e-6,
     "lmbda": 0.7,
-    "val_split": 0.05
+    "val_split": 0.05,
+    "workers": -1,
+    "prefetch": 4
   }
 }
