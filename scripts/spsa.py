@@ -146,13 +146,15 @@ def write_params_json(path, data):
     Path(path).write_text(json.dumps(data, indent=2) + "\n")
 
 
-def save_profile(path, profile, theta):
-    """Round theta into params.json[profile], preserving all other content."""
+def save_profile(path, profile, theta, out_path=None):
+    """Round theta into params.json[profile] and write the result to `out_path`
+    (defaults to `path`), preserving all other content. Reading the full file
+    from `path` keeps every checkpoint a complete, drop-in params.json."""
     data = load_params_json(path)
     prof = data.setdefault(profile, {})
     for name, val in theta.items():
         prof[name] = int(round(val))
-    write_params_json(path, data)
+    write_params_json(out_path or path, data)
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +340,8 @@ def cmd_run(args):
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_dir = RESULTS_DIR / f"{ts}_{args.profile}_{sprt.get_version_tag()}"
     run_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir = run_dir / "checkpoint"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
     history_csv = run_dir / "history.csv"
     names = list(tuned)
 
@@ -360,7 +364,7 @@ def cmd_run(args):
           f"= {iterations} iterations")
     print(f"  Time controls (cycled): {tc_desc}")
     print(f"  Params: {', '.join(names)}")
-    print(f"  Writing results to {args.out} and {run_dir}/")
+    print(f"  Checkpoints -> {checkpoint_dir}/ (best -> best.json; {args.out} read-only)")
     print(f"{'=' * 68}\n")
 
     rng = random.Random(args.seed)
@@ -405,18 +409,21 @@ def cmd_run(args):
                           f"last={result:.2f} [{tc_label}]\n    {snap}",
                           flush=True)
                 if t % args.checkpoint_every == 0:
-                    save_profile(args.out, args.profile, theta)
+                    save_profile(args.out, args.profile, theta,
+                                 out_path=checkpoint_dir / f"iter_{t:05d}.json")
         except KeyboardInterrupt:
             print("\n  Interrupted — saving current best.", flush=True)
 
-    save_profile(args.out, args.profile, theta)
+    best_json = checkpoint_dir / "best.json"
+    save_profile(args.out, args.profile, theta, out_path=best_json)
     print(f"\n{'=' * 68}")
     print(f"  Done. Tuned {len(names)} params over {games_done} games.")
-    print(f"  Final values written to {args.out} [{args.profile}]:")
+    print(f"  Best values written to {best_json} [{args.profile}]:")
     for n in names:
         start = float(profile_vals.get(n, opts[n][0]))
         print(f"    {n:<26} {int(round(start)):>6} -> {int(round(theta[n])):>6}")
-    print(f"  History: {history_csv}")
+    print(f"  History:     {history_csv}")
+    print(f"  Checkpoints: {checkpoint_dir}/")
     print(f"{'=' * 68}")
     return 0
 
