@@ -34,6 +34,8 @@ Parameters (train subcommand, CLI args override nnue/config.json):
     --workers     DataLoader worker processes; -1 = auto
                   (all logical cores)                         (default: -1)
     --prefetch    Batches each worker prefetches ahead        (default: 4)
+    --checkpoint-every  Save a per-epoch checkpoint every N
+                  epochs; 0 = off (best/final always saved)   (default: 0)
     --output      Model checkpoint directory                  (default: nnue/model)
 
 Parameters (plot subcommand):
@@ -294,42 +296,61 @@ class BinaryNnueDataset(Dataset):
         return self.num_records
 
     def __getitem__(self, idx):
-        record = self.data[idx]
-        nw = int(record["num_white"])
-        nb = int(record["num_black"])
-        return (record["white_indices"][:nw].copy(),
-                record["black_indices"][:nb].copy(),
-                float(record["score"]),
-                float(record["result"]) / 2.0,
-                float(record["stm"]))
+        # Return the raw fixed-size record; all decode happens vectorized in
+        # binary_collate. Keeping per-item work to a bare memmap read is what
+        # lets many workers scale.
+        return self.data[idx]
+
+    def __getitems__(self, indices):
+        # Fast batched path: one fancy-index copy yields the whole batch as a
+        # structured (B,) array. PyTorch's fetcher calls this when present,
+        # skipping the per-sample Python loop entirely.
+        return self.data[indices]
+
+
+def _worker_init(worker_id):
+    """Pin each DataLoader worker to a single thread.
+
+    Workers only do numpy indexing + a tensor wrap, so extra threads there just
+    contend with the main process's forward/backward. One thread per worker
+    keeps the cores available for compute.
+    """
+    torch.set_num_threads(1)
 
 
 def binary_collate(batch):
-    """Pack sparse indices for EmbeddingBag — no dense tensors needed."""
-    white_indices = []
-    black_indices = []
-    white_offsets = [0]
-    black_offsets = [0]
-    scores = []
-    results = []
-    stms = []
+    """Pack a batch of raw records into EmbeddingBag inputs, fully vectorized.
 
-    for wf, bf, score, result, stm in batch:
-        white_indices.append(torch.from_numpy(wf.astype(np.int64)))
-        black_indices.append(torch.from_numpy(bf.astype(np.int64)))
-        white_offsets.append(white_offsets[-1] + len(wf))
-        black_offsets.append(black_offsets[-1] + len(bf))
-        scores.append(score)
-        results.append(result)
-        stms.append(stm)
+    Accepts either a structured (B,) ndarray (from __getitems__, the fast path)
+    or a Python list of records (the per-sample __getitem__ fallback). Produces
+    the flat-indices + offsets layout EmbeddingBag expects, identical in meaning
+    to the old per-sample loop.
+    """
+    if not isinstance(batch, np.ndarray):
+        batch = np.array(batch, dtype=RECORD_DTYPE)
 
-    return (torch.cat(white_indices),
-            torch.tensor(white_offsets[:-1], dtype=torch.long),
-            torch.cat(black_indices),
-            torch.tensor(black_offsets[:-1], dtype=torch.long),
-            torch.tensor(scores, dtype=torch.float32),
-            torch.tensor(results, dtype=torch.float32),
-            torch.tensor(stms, dtype=torch.float32))
+    nw = batch["num_white"].astype(np.int64)          # (B,)
+    nb = batch["num_black"].astype(np.int64)
+    cols = np.arange(batch["white_indices"].shape[1])  # (MAX_FEATURES,)
+
+    # Row-major gather of the first num_* entries of each row == concatenation
+    # of each sample's active features, exactly what EmbeddingBag consumes.
+    w_flat = batch["white_indices"][cols[None, :] < nw[:, None]].astype(np.int64)
+    b_flat = batch["black_indices"][cols[None, :] < nb[:, None]].astype(np.int64)
+
+    # Offsets = start index of each bag = exclusive prefix sum of lengths.
+    w_off = np.zeros(len(batch), dtype=np.int64)
+    b_off = np.zeros(len(batch), dtype=np.int64)
+    np.cumsum(nw[:-1], out=w_off[1:])
+    np.cumsum(nb[:-1], out=b_off[1:])
+
+    return (torch.from_numpy(w_flat),
+            torch.from_numpy(w_off),
+            torch.from_numpy(b_flat),
+            torch.from_numpy(b_off),
+            torch.from_numpy(batch["score"].astype(np.float32)),
+            torch.from_numpy(batch["result"].astype(np.float32) / 2.0),
+            torch.from_numpy(batch["stm"].astype(np.float32)))
 
 
 def load_dataset(path):
@@ -683,6 +704,13 @@ def train(args):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
+    if device.type == "cpu":
+        # On CPU the forward/backward is the bottleneck, so give the main
+        # process every core for intra-op parallelism. Workers get pinned to a
+        # single thread each (see _worker_init) to avoid oversubscription.
+        torch.set_num_threads(os.cpu_count() or 1)
+        print(f"Torch intra-op threads: {torch.get_num_threads()}")
+
     data_path = args.data
     if Path(data_path).is_dir():
         data_path = resolve_latest_data(data_path)
@@ -752,9 +780,12 @@ def train(args):
     )
     if num_workers > 0:
         # Keep workers alive across epochs and let each pre-stage a few batches
-        # so the GPU never stalls waiting on the input pipeline.
+        # so the device never stalls waiting on the input pipeline. Pin each
+        # worker to one thread so N workers don't fight the main process (and
+        # each other) for the same cores.
         loader_kwargs["persistent_workers"] = True
         loader_kwargs["prefetch_factor"] = args.prefetch
+        loader_kwargs["worker_init_fn"] = _worker_init
     print(f"DataLoader workers: {num_workers}"
           + (f" (prefetch_factor={args.prefetch})" if num_workers > 0 else ""))
 
@@ -901,7 +932,11 @@ def train(args):
             f"train={train_loss:.6f}  val={val_loss:.6f}  lr={lr:.2e}{improved}"
         )
 
-        torch.save(model.state_dict(), out_dir / f"epoch_{epoch}.pt")
+        # best.pt (above) and final.pt (after the loop) always cover recovery.
+        # Per-epoch snapshots are opt-in: at 42 MB each, saving all 200 wrote
+        # ~8 GB per run and competed for disk bandwidth.
+        if args.checkpoint_every > 0 and epoch % args.checkpoint_every == 0:
+            torch.save(model.state_dict(), out_dir / f"epoch_{epoch}.pt")
 
         history_writer.writerow([
             epoch, f"{train_loss:.8f}", f"{val_loss:.8f}", f"{lr:.2e}",
@@ -1199,6 +1234,11 @@ def main():
     train_parser.add_argument(
         "--prefetch", type=int, default=t.get("prefetch", 4),
         help="Batches each worker prefetches ahead (default: 4)",
+    )
+    train_parser.add_argument(
+        "--checkpoint-every", type=int, default=t.get("checkpoint_every", 0),
+        help="Save a per-epoch checkpoint every N epochs; 0 = off "
+             "(best.pt/final.pt are always saved) (default: 0)",
     )
 
     # plot subcommand

@@ -1,0 +1,261 @@
+{
+  "profile": "hce",
+  "params": {
+    "TmWindow": {
+      "value": 5,
+      "min": 1,
+      "max": 30,
+      "c_end": 1.45,
+      "r_end": 0.002,
+      "tune": false
+    },
+    "AspirationDelta": {
+      "value": 25,
+      "min": 1,
+      "max": 200,
+      "c_end": 9.95,
+      "r_end": 0.151,
+      "tune": true
+    },
+    "FutilityMargin": {
+      "value": 200,
+      "min": 20,
+      "max": 600,
+      "c_end": 29.0,
+      "r_end": 0.052,
+      "tune": true
+    },
+    "MaxFutilityPruningDepth": {
+      "value": 2,
+      "min": 0,
+      "max": 8,
+      "c_end": 1.0,
+      "r_end": 0.002,
+      "tune": false
+    },
+    "MaxLateMovePruningDepth": {
+      "value": 2,
+      "min": 0,
+      "max": 8,
+      "c_end": 1.0,
+      "r_end": 0.002,
+      "tune": false
+    },
+    "MaxSeePruningDepth": {
+      "value": 5,
+      "min": 0,
+      "max": 12,
+      "c_end": 1.0,
+      "r_end": 0.002,
+      "tune": false
+    },
+    "SeeMargin": {
+      "value": 100,
+      "min": 10,
+      "max": 400,
+      "c_end": 19.5,
+      "r_end": 0.077,
+      "tune": true
+    },
+    "HistoryLmrThreshold": {
+      "value": -1000,
+      "min": -8000,
+      "max": 0,
+      "c_end": 400.0,
+      "r_end": 0.02,
+      "tune": true
+    },
+    "NumEarlyMoves": {
+      "value": 3,
+      "min": 1,
+      "max": 12,
+      "c_end": 1.0,
+      "r_end": 0.002,
+      "tune": false
+    },
+    "MinReductionDepth": {
+      "value": 3,
+      "min": 1,
+      "max": 8,
+      "c_end": 1.0,
+      "r_end": 0.002,
+      "tune": false
+    },
+    "MinIirDepth": {
+      "value": 4,
+      "min": 1,
+      "max": 12,
+      "c_end": 1.0,
+      "r_end": 0.002,
+      "tune": false
+    },
+    "MaxRazoringDepth": {
+      "value": 3,
+      "min": 0,
+      "max": 8,
+      "c_end": 1.0,
+      "r_end": 0.002,
+      "tune": false
+    },
+    "RazoringMargin": {
+      "value": 350,
+      "min": 50,
+      "max": 1000,
+      "c_end": 47.5,
+      "r_end": 0.032,
+      "tune": true
+    },
+    "SingularDepthMin": {
+      "value": 6,
+      "min": 3,
+      "max": 16,
+      "c_end": 1.0,
+      "r_end": 0.002,
+      "tune": false
+    },
+    "NullMoveDepthMin": {
+      "value": 4,
+      "min": 1,
+      "max": 12,
+      "c_end": 1.0,
+      "r_end": 0.002,
+      "tune": false
+    },
+    "NullMoveDepthHighR": {
+      "value": 6,
+      "min": 2,
+      "max": 16,
+      "c_end": 1.0,
+      "r_end": 0.002,
+      "tune": false
+    },
+    "QsDelta": {
+      "value": 900,
+      "min": 100,
+      "max": 2000,
+      "c_end": 95.0,
+      "r_end": 0.02,
+      "tune": true
+    },
+    "TmMoveDecay": {
+      "value": 60,
+      "min": 0,
+      "max": 100,
+      "c_end": 5.0,
+      "r_end": 0.3,
+      "tune": true
+    },
+    "TmMoveWeight": {
+      "value": 50,
+      "min": 0,
+      "max": 300,
+      "c_end": 15.0,
+      "r_end": 0.1,
+      "tune": true
+    },
+    "TmScoreWeight": {
+      "value": 30,
+      "min": 0,
+      "max": 300,
+      "c_end": 15.0,
+      "r_end": 0.1,
+      "tune": true
+    },
+    "TmScoreScale": {
+      "value": 100,
+      "min": 10,
+      "max": 1000,
+      "c_end": 49.5,
+      "r_end": 0.03,
+      "tune": true
+    },
+    "TmOscWeight": {
+      "value": 50,
+      "min": 0,
+      "max": 300,
+      "c_end": 15.0,
+      "r_end": 0.1,
+      "tune": true
+    },
+    "TmMateDifficulty": {
+      "value": 50,
+      "min": 1,
+      "max": 300,
+      "c_end": 14.95,
+      "r_end": 0.1,
+      "tune": true
+    },
+    "TmObviousDifficulty": {
+      "value": 25,
+      "min": 1,
+      "max": 300,
+      "c_end": 14.95,
+      "r_end": 0.1,
+      "tune": true
+    },
+    "TmSubtreeWeight": {
+      "value": 20,
+      "min": 0,
+      "max": 300,
+      "c_end": 15.0,
+      "r_end": 0.1,
+      "tune": true
+    },
+    "TmSubtreeEmaAlpha": {
+      "value": 50,
+      "min": 1,
+      "max": 100,
+      "c_end": 4.95,
+      "r_end": 0.3,
+      "tune": true
+    },
+    "TmDifficultyMin": {
+      "value": 45,
+      "min": 1,
+      "max": 100,
+      "c_end": 4.95,
+      "r_end": 0.3,
+      "tune": true
+    },
+    "TmDifficultyMax": {
+      "value": 250,
+      "min": 100,
+      "max": 500,
+      "c_end": 20.0,
+      "r_end": 0.075,
+      "tune": true
+    },
+    "TmEbfMin": {
+      "value": 150,
+      "min": 100,
+      "max": 400,
+      "c_end": 15.0,
+      "r_end": 0.1,
+      "tune": true
+    },
+    "TmEbfMax": {
+      "value": 400,
+      "min": 100,
+      "max": 800,
+      "c_end": 35.0,
+      "r_end": 0.043,
+      "tune": true
+    },
+    "TmEbfFallback": {
+      "value": 200,
+      "min": 100,
+      "max": 400,
+      "c_end": 15.0,
+      "r_end": 0.1,
+      "tune": true
+    },
+    "Threads": {
+      "value": 10,
+      "min": 1,
+      "max": 64,
+      "c_end": 3.15,
+      "r_end": 0.002,
+      "tune": false
+    }
+  }
+}
