@@ -36,6 +36,10 @@ Parameters (train subcommand, CLI args override nnue/config.json):
     --prefetch    Batches each worker prefetches ahead        (default: 4)
     --checkpoint-every  Save a per-epoch checkpoint every N
                   epochs; 0 = off (best/final always saved)   (default: 0)
+    --patience    Early stop after N epochs with no val
+                  improvement; 0 = off (run full --epochs)    (default: 0)
+    --min-delta   Min val-loss decrease counting as an
+                  improvement for early stopping              (default: 0.0)
     --output      Model checkpoint directory                  (default: nnue/model)
 
 Parameters (plot subcommand):
@@ -832,6 +836,7 @@ def train(args):
 
     best_val_loss = float("inf")
     best_epoch = 0
+    epochs_since_best = 0  # for early stopping
     train_losses = []
     val_losses = []
     learning_rates = []
@@ -939,11 +944,14 @@ def train(args):
         learning_rates.append(lr)
 
         improved = ""
-        if val_loss < best_val_loss:
+        if val_loss < best_val_loss - args.min_delta:
             best_val_loss = val_loss
             best_epoch = epoch
+            epochs_since_best = 0
             torch.save(model.state_dict(), out_dir / "best.pt")
             improved = " *"
+        else:
+            epochs_since_best += 1
 
         epoch_pbar.set_postfix_str(
             f"train={train_loss:.6f}  val={val_loss:.6f}  lr={lr:.2e}{improved}"
@@ -960,6 +968,16 @@ def train(args):
             f"{best_val_loss:.8f}", f"{epoch_time:.1f}",
         ])
         history_file.flush()
+
+        # Early stopping: bail out once val loss has stalled for `patience`
+        # epochs. patience <= 0 disables it (run the full --epochs). best.pt is
+        # already from best_epoch, so stopping early costs no model quality.
+        if args.patience > 0 and epochs_since_best >= args.patience:
+            epoch_pbar.close()
+            print(f"\nEarly stopping at epoch {epoch}: no val improvement "
+                  f"for {args.patience} epochs (best epoch {best_epoch}, "
+                  f"val {best_val_loss:.6f}).")
+            break
 
     history_file.close()
     total_time = time.time() - training_start
@@ -1256,6 +1274,16 @@ def main():
         "--checkpoint-every", type=int, default=t.get("checkpoint_every", 0),
         help="Save a per-epoch checkpoint every N epochs; 0 = off "
              "(best.pt/final.pt are always saved) (default: 0)",
+    )
+    train_parser.add_argument(
+        "--patience", type=int, default=t.get("patience", 0),
+        help="Early stop after N epochs with no val improvement; 0 = off "
+             "(run full --epochs) (default: 0)",
+    )
+    train_parser.add_argument(
+        "--min-delta", type=float, default=t.get("min_delta", 0.0),
+        help="Minimum val-loss decrease to count as an improvement for "
+             "early stopping (default: 0.0)",
     )
 
     # plot subcommand

@@ -16,6 +16,8 @@
     "val_split": 0.05,
     "workers": -1,
     "prefetch": 4,
-    "checkpoint_every": 0
+    "checkpoint_every": 0,
+    "patience": 0,
+    "min_delta": 0.0
   }
 }
