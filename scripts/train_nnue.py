@@ -443,7 +443,10 @@ class NnueNetwork(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.ft = nn.EmbeddingBag(HALFKP_SIZE, L1_SIZE, mode="sum")
+        # sparse=True: only the ~30 active feature rows per sample get gradients
+        # instead of materializing a dense 40960x256 grad every step. Requires a
+        # SparseAdam optimizer for ft.weight (set up in train()).
+        self.ft = nn.EmbeddingBag(HALFKP_SIZE, L1_SIZE, mode="sum", sparse=True)
         self.ft_bias = nn.Parameter(torch.zeros(L1_SIZE))
         self.l2 = nn.Linear(L1_SIZE * 2, L2_SIZE)
         self.l3 = nn.Linear(L2_SIZE, L3_SIZE)
@@ -796,10 +799,21 @@ def train(args):
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Parameters: {total_params:,}")
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
-    scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=max(1, args.epochs // 4), gamma=0.5
-    )
+    # ft.weight produces sparse gradients (sparse=True), so it needs SparseAdam;
+    # every other (dense) parameter uses Adam. SparseAdam has no weight_decay, so
+    # wd applies only to the dense layers — standard for NNUE feature transformers.
+    # Both optimizers are stepped together and share one LR schedule.
+    dense_params = [p for n, p in model.named_parameters() if n != "ft.weight"]
+    optimizers = [
+        torch.optim.SparseAdam([model.ft.weight], lr=args.lr),
+        torch.optim.Adam(dense_params, lr=args.lr, weight_decay=args.wd),
+    ]
+    schedulers = [
+        torch.optim.lr_scheduler.StepLR(
+            opt, step_size=max(1, args.epochs // 4), gamma=0.5
+        )
+        for opt in optimizers
+    ]
 
     def format_pos_count(n):
         if n >= 1_000_000:
@@ -868,14 +882,17 @@ def train(args):
 
             loss = F.mse_loss(pred_sigmoid, target)
 
-            optimizer.zero_grad()
+            for opt in optimizers:
+                opt.zero_grad()
             loss.backward()
-            optimizer.step()
+            for opt in optimizers:
+                opt.step()
 
             train_loss_sum += loss.item() * batch_size
             train_count += batch_size
 
-        scheduler.step()
+        for sched in schedulers:
+            sched.step()
         train_loss = train_loss_sum / train_count
 
         # --- Validate ---
@@ -914,7 +931,7 @@ def train(args):
                 val_count += batch_size
 
         val_loss = val_loss_sum / val_count
-        lr = optimizer.param_groups[0]["lr"]
+        lr = optimizers[0].param_groups[0]["lr"]
         epoch_time = time.time() - epoch_start
 
         train_losses.append(train_loss)
