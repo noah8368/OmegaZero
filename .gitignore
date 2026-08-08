@@ -30,3 +30,7 @@ compile_commands.json
 # Syzygy tablebase files (downloaded into syzygy_tables/ by scripts/setup.sh;
 # ~1 GB for 3-4-5 man, larger for 6/7 man). Not committed.
 syzygy_tables/
+
+# Research: per-run experiment outputs (plots, summaries). Regenerated on demand;
+# commit representative figures deliberately if a result is worth keeping.
+research/figs/

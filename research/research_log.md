@@ -1,0 +1,62 @@
+# Research Log
+
+Chronological lab notebook. Append-only; **newest entry at top**. Keep entries short and
+factual — decisions, results, dead ends, and what changed. Detailed analysis lives in
+the per-experiment files under `experiments/`.
+
+---
+
+## 2026-08-08 — Design decisions settled + correction-history reframe
+
+Worked through the design forks from the proposal review, one at a time. Settled:
+
+- **Flow's role:** *best tool wins.* The contribution is uncertainty-aware pruning, not
+  the flow. CNF is one candidate vs QR/MDN; "flow refuted" is fine. → H1 is the headline;
+  H2 demoted.
+- **Truth target `v*`:** deep OmegaZero, **fixed depth** + node cap. No Stockfish (H4).
+- **Error sign:** **signed** `v̂ − v*` (H3).
+- **H1 baseline:** a **freshly SPSA-tuned constant**, not the current shipped margins —
+  so a win isolates *conditioning* from tuning effort.
+- **Model target eval → REPLACE correction history (H6).** Grounding the proposal in the
+  code revealed the key insight: `GetCorrectedEval` + `UpdateCorrectionHistory` are
+  already a crude conditional-*mean* eval-error estimator (E[error | pawn hash], online).
+  So the research is a **distributional generalization of correction history**. Decision:
+  model the error of the **raw static eval** (deterministic, clean labels); the model's
+  mean *replaces* corr-hist, its quantiles set margins. One learned object, both jobs.
+  Reverses the earlier "corrected-eval additive layer" pick — replacing is cleaner and
+  bolder, and Noah's "they do the same job" instinct was the better argument for it.
+  - Real risk logged: corr-hist is *online*, the model is *frozen* → must SPRT the
+    corrector-swap **in isolation** (NF-003) before margins (NF-004). Fallback: small
+    residual online corr-hist.
+  - NPS consequence: the correction/quantile head must be **folded into the NNUE forward
+    pass** from day one (H5), not a later distillation.
+
+Docs updated: hypotheses.md (H0–H6, reframed), notes/correction_history.md (new,
+centerpiece), NF-002.md (schema locked). Superseded the proposal's qsearch-eval target.
+
+**Next:** install scipy+zuko into `.venv`, scaffold `research/experiments/nf001_synthetic.py`.
+
+---
+
+## 2026-08-08 — Research track opened
+
+- Branched `research` off `main`. Scaffolded `research/` (README, hypotheses, log,
+  experiments/, notes/).
+- Project: **uncertainty-aware alpha–beta search** via conditional normalizing flows.
+  Proposal reviewed; distilled into five load-bearing hypotheses ([hypotheses.md](hypotheses.md))
+  plus an implementation-correctness pre-req (H0).
+- **Key scheduling insight.** The model conditions on the NNUE embedding, but the NNUE
+  net won't exist for ~3 weeks (training data pending; SPSA on HCE params running). So
+  the next 3 weeks target *net-independent* work: synthetic validation (H0/H2), the
+  label+embedding pipeline shaken out on the current eval, and an integration/NPS spike.
+  Real data collection waits for the net.
+- **Design decisions taken up front** (to be validated, not assumed):
+  - Model *signed* error, not `|error|` — pruning is one-sided (H3).
+  - Build a quantile-regression baseline the flow must beat (H2); QR may also be the
+    deployment path (H5).
+  - Lean toward deep-OmegaZero targets over Stockfish for the pruning goal (H4).
+  - The headline experiment is the constant-margin null hypothesis (H1).
+- Allocated **NF-001** (synthetic validation of flow + baselines). Environment gap:
+  need `scipy` and a flow lib (`zuko` preferred) in `.venv`.
+
+**Next:** confirm zuko is the right pick, install research deps, scaffold NF-001.
