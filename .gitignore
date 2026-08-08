@@ -17,6 +17,10 @@ nnue/*
 nnue/model/**/*.pt
 config.json
 datagen.log
+spsa*.log
+# SPSA per-iteration checkpoints + history (keep best.json)
+/results/spsa/**/checkpoint/iter_*.json
+/results/spsa/**/history.csv
 scripts/ssh_hetzner.sh
 scripts/sync_from_server.sh
 compile_commands.json
