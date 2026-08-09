@@ -6,6 +6,35 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-08-08 — Generalized the margin derivation to the rest of the tree
+
+Pushed the [pruning_integration.md](notes/pruning_integration.md) "estimate − conditional
+quantile ≥ bound" logic onto the heuristics it *doesn't* cover, and found they don't collapse
+into one distribution — they split into **three uncertainty objects**:
+- **O1 eval error** `u = v̂ − v*` — what H1–H6 already train. Beyond RFP/razoring/futility it
+  *also* drives aspiration windows, delta pruning, singular margins, LMR-depth, and time
+  management **for free** (same head, no new labels).
+- **O2 move-value error** `e(m) = ĝ(m) − g*(m)` — needs a move argument. Serves SEE pruning
+  (clean scalar), LMP (via a best-move *rank survival* function induced by O2), LMR-amount
+  (soft LMP), and move ordering. A whole second project (~10× labels, per-move NPS).
+- **O3 reduced-search error** `w = s_r − v*` — NMP and ProbCut. Its fat upper tail *is* a
+  learned zugzwang detector (auto-suppresses NMP, enables adaptive `R`); ProbCut is the
+  literature's constant-margin baseline, so conditional ProbCut is the cleanest deployment.
+
+Two framing wins: (1) **reduction and extension are one read with opposite sign** — reduce
+when the eval spread is small (resolved), extend when large (unresolved); O1's spread drives
+both LMR and singular extensions. (2) A depth-conditioned `p(u|x,d)` would **merge O1 and
+O3** and make LMR an information-gain budget allocation — the answer to the standing
+depth-mismatch flag, logged as the stretch/grand-unification path.
+
+New notes: notes/uncertainty_taxonomy.md (umbrella + object table) and three companions
+(move_uncertainty, reduced_search_uncertainty, eval_uncertainty_extensions). Registered as
+stretch hypotheses **H7–H11** (unscheduled, ranked by plausibility × low-risk); scope
+pointer added to pruning_integration.md. Nothing here is on the 3-week plan — H1 lands first;
+this is documented *reach*, not a promise.
+
+---
+
 ## 2026-08-08 — Pruning-integration design nailed down
 
 Worked out the concrete bridge from `p(u|x)` to the search heuristics (Noah's framing:

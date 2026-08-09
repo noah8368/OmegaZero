@@ -133,3 +133,39 @@ stronger mean baseline (best of both, at the cost of two mechanisms).
 correctly recover *known* conditional distributions before we trust them on chess data.
 
 **Status:** open · **Experiments:** [NF-001](experiments/NF-001.md)
+
+---
+
+## Stretch hypotheses H7+ *(unscheduled — reach beyond the margin family)*
+
+Derived, not committed. These follow the *same* "estimate − conditional quantile ≥ bound"
+logic as H1 but over **different uncertainty objects**; the taxonomy and per-heuristic
+derivations live in [notes/uncertainty_taxonomy.md](notes/uncertainty_taxonomy.md) and its
+three companions. They are recorded so the reach of the idea isn't lost, ranked by
+plausibility × low-risk. **None is on the 3-week plan; H1 must land first.**
+
+- **H7 — O1's head serves consumers beyond margins.** The *same* `p(u|x)` (object O1),
+  once trained, improves aspiration-window sizing / delta pruning / singular margins / time
+  management with **no new model or labels** — bounded-downside consumers (aspiration, TM)
+  first. Test: SPRT each consumer swap in isolation against its tuned constant. *(open,
+  most-plausible; free of new modeling cost.)*
+  See [notes/eval_uncertainty_extensions.md](notes/eval_uncertainty_extensions.md).
+- **H8 — Conditional ProbCut beats Gaussian ProbCut.** ProbCut (roadmap) is *defined* by a
+  margin `t·σ` = the unconditional quantile; the conditional quantile `Q_{1−C}(w'|x)` should
+  beat it. The cleanest, lowest-risk deployment of the whole program (margin-defined, no
+  existing behavior to regress). *(open; object O3.)*
+  See [notes/reduced_search_uncertainty.md](notes/reduced_search_uncertainty.md).
+- **H9 — Move-value uncertainty (O2) improves SEE/LMP/LMR.** A learned per-move
+  distribution `p(e|x,m)` replaces the depth-scaled SEE/LMP constants and grades LMR; its
+  fat lower tail on sacrifices is a "don't prune the brilliancy" detector. A *second
+  project* — new object, ~10× the datagen labels (one deep search per candidate move), and a
+  per-move NPS bill. *(open; object O2, high cost.)*
+  See [notes/move_uncertainty.md](notes/move_uncertainty.md).
+- **H10 — Learned zugzwang detection replaces NMP's material guard.** `p(w|x,R)`'s upper
+  tail auto-suppresses NMP in zugzwang, replacing the hand-coded low-material guard and
+  enabling adaptive `R`. High-risk (NMP is nearly-free today; a per-node read could cost
+  more than it saves). *(open; object O3.)*
+- **H11 — Depth-conditioned error unifies reductions and O3 *(grand unification)*.** A
+  single `p(u|x,d)` yields LMR-as-information-gain **and** reduced-search error as a
+  depth difference, merging O1/O3. Highest payoff, highest cost; do not assume. *(open,
+  stretch.)*

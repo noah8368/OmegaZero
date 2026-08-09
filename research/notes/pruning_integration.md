@@ -93,6 +93,21 @@ Each can get its **own** SPSA-tuned `C` (they tolerate different risk). A symmet
 quantile would mis-size the one-sided risk — this is the concrete payoff of modeling
 signed error.
 
+## Scope: this covers the margin family only
+
+The derivation above is exact and complete for **RFP / razoring / futility** — the
+heuristics that compare the static eval `v̂` against a bound. It does **not** subsume the
+rest of OmegaZero's pruning: NMP, SEE pruning, LMP, and LMR bet on *different* random
+variables (reduced-search error, move-value error), so they need *different* learned
+distributions even though they share this exact "estimate − quantile ≥ bound" shape. The
+full map, and the analogous derivations for each, are in
+[uncertainty_taxonomy.md](uncertainty_taxonomy.md) (the umbrella) and its three companions:
+[move_uncertainty.md](move_uncertainty.md) (SEE/LMP/LMR),
+[reduced_search_uncertainty.md](reduced_search_uncertainty.md) (NMP/ProbCut), and
+[eval_uncertainty_extensions.md](eval_uncertainty_extensions.md) (the *other* consumers of
+*this* same `p(u|x)` head — aspiration windows, delta pruning, singular margins, time
+management — which come for free once the margin work lands).
+
 ## Caveat: SPSA on `C` masks miscalibration
 Tuning `C` for Elo will compensate for a miscalibrated model (if the "95th percentile" is
 really the 90th, SPSA just shifts `C`). Good for H1 (a mildly miscalibrated model can
