@@ -64,7 +64,16 @@ density network, one wins on held-out NLL and calibration (PIT / coverage) for
 function — close to what QR does directly, so the gap may be small. If the flow only ties
 QR, the cheaper-to-deploy QR head wins on practicality (H5). This is expected and fine.
 
-**Status:** open · **Experiments:** [NF-001](experiments/NF-001.md) (synthetic first — MDN ≥ flow on benign targets) → [NF-001b](experiments/NF-001b.md) (adversarial stress test, budget-matched, decisive)
+**Result (2026-08-09).** **Decided on synthetics: MDN ≥ flow.** Across benign (NF-001) and
+adversarial/budget-matched (NF-001b, 10 seeds) targets, no flow advantage on CRPS or
+tail-qMAE — the flow is last-or-tied-last everywhere, including its best theoretical case
+(heavy tails). Even a *mis-specified* Gaussian MDN tied the flow on `heavy_t`. **Decision:
+MDN primary (lean `mdn_t` — robust + best tails); flow → backstop; QR out (worst tails).**
+One asterisk: `many_modes` didn't yet exceed the MDN's component count, so true MDN
+underfit is untested — one targeted M≫K run remains before H2 is *fully* closed. Re-tested
+on real eval-error once the NNUE embedding exists (NF-002).
+
+**Status:** supported (simpler model wins; flow refuted as primary — pending the M≫K check) · **Experiments:** [NF-001](experiments/NF-001.md) (benign — MDN ≥ flow) → [NF-001b](experiments/NF-001b.md) (adversarial, budget-matched — MDN ≥ flow, decisive)
 
 ---
 

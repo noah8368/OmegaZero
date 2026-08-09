@@ -6,6 +6,31 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-08-09 — NF-001b Phase 1: H2 DECIDED — MDN ≥ flow, flow → backstop
+
+Ran the adversarial, budget-matched stress test (10 seeds, `med` capacity, 4 hard
+generators × 5 models). Results + table in [NF-001b](experiments/NF-001b.md).
+
+- **No flow advantage anywhere.** On CRPS all conditional models are within ~0.5–1% with
+  overlapping CIs; the flow is consistently last-or-tied-last. On tail-qMAE (what a margin
+  reads) the MDN family is clearly best and the flow behind — *including* on `heavy_t` (its
+  best theoretical case) and `regime_switch` (conditioner stress). Pre-registered rule fails
+  on both decisive generators → **MDN primary (lean `mdn_t` — robust + best tails), flow
+  demoted to backstop, QR out (worst tails).**
+- **Convincing despite two caveats:** on `heavy_t` even the *mis-specified* Gaussian MDN tied
+  the flow — so it's not "the exact parametric won," it's "a wrong-family parametric matched
+  the flow on heavy tails." NF-001's benign read holds under stress. Clean negative result for
+  the flow, exactly the pre-approved "flow refuted is fine."
+- **Phase 2 (crossover) skipped** by its own rule (Phase 1 not close, no hint of a win).
+- **Open TODO:** `many_modes` at `med` had M=5 = MDN K=5, so true MDN underfit (modes >
+  components) was never triggered — one targeted M=8–10 run remains to fully close H2.
+  Also: fix a Gaussian-MDN numerical blowup on one `regime_switch` seed.
+
+**Next:** NF-002 (real label pipeline) builds on the **MDN** head once the NNUE embedding
+exists; flow carried only as a backstop.
+
+---
+
 ## 2026-08-09 — NF-001 full runs: H0 CLEARED, first H2 read favors MDN
 
 Ran the full synthetic sweep (n=20k, 150 epochs, 3 seeds, 4 generators × 4 models).
