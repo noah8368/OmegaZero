@@ -34,3 +34,5 @@ syzygy_tables/
 # Research: per-run experiment outputs (plots, summaries). Regenerated on demand;
 # commit representative figures deliberately if a result is worth keeping.
 research/figs/
+# Claude Code project guidance (local-only; not committed).
+CLAUDE.md

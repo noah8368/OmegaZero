@@ -458,6 +458,15 @@ python3 scripts/mine_magics.py
 
 `make` will automatically regenerate these files if they are missing.
 
+## Acknowledgments
+
+OmegaZero is developed and maintained by a single person. As the only human working
+on the engine, I use [Claude](https://en.wikipedia.org/wiki/Claude_(language_model))
+as a debugging and engineering aid to supplement my own effort alongside a full-time
+job. Every design decision, and the direction of the project, remain my own; Claude
+serves as an assistant for debugging, code review, and working through implementation
+details.
+
 ---
 
 <sup>1</sup> Lichess rating
