@@ -1,8 +1,15 @@
 # Hypotheses
 
 Falsifiable claims driving the uncertainty-aware search work. Each has a status and
-links to the experiments that test it. Ordered roughly by how load-bearing they are:
-if an early one is refuted, the ones below it may be moot.
+links to the experiments that test it.
+
+**Reading order = chronology.** Sections are ordered by *when each is resolved in the
+experiment sequence* — the H0 correctness gate first, the H1 payoff last — so the file
+reads as the actual arc of the work (NF-001 → NF-001b → NF-002 → NF-003 → NF-004). The
+chain is also a **dependency chain**: if an earlier link fails, the ones after it may be
+moot. The **H-numbers are stable identifiers, not positions** — they are referenced by
+number across the experiment files, notes, and log, so they stay fixed even though the
+order below is not sequential.
 
 Status legend: `open` · `supported` · `refuted` · `abandoned`
 
@@ -17,27 +24,33 @@ subsumes correction history** and whose **quantiles set pruning margins**. See
 
 ---
 
-## H1 — Position-conditional margins beat a freshly-tuned constant *(the crux, headline)*
+## H0 — The implementation is correct *(pre-req, not a research claim)*
 
-**Claim.** A pruning margin conditioned on the position (via predicted evaluation-error
-quantiles) yields more Elo than a single constant margin **re-tuned by SPSA under the
-same conditions**.
+**Claim.** Our conditional-density implementations (NSF flow, QR, MDN) and calibration
+diagnostics (PIT, coverage, quantile-MAE) correctly recover *known* conditional
+distributions `p(u|x)` — so that any later result on chess data reflects the *data*, not a
+bug in the model or the metric. This is a gate, not a discovery: it must pass before any
+H1–H6 result is trustworthy.
 
-**Why it's the crux.** OmegaZero's heuristics already scale margins by depth and
-`improving_`, and (post-H6) run on mean-corrected eval — so they implicitly capture
-*some* position-dependent uncertainty. The honest null is "an equally-tuned constant does
-just as well." Beating the *current shipped* margins isn't enough (they could just be
-under-tuned); the baseline is a **freshly SPSA-tuned constant** so a win isolates the
-value of *conditioning*, not tuning effort.
+**Pass criterion (pre-registered).** On synthetic targets with closed-form CDF/quantiles:
+(a) the density models recover the oracle to small **ΔNLL** (near-zero vs the generator's
+own NLL); (b) **PIT** is ≈uniform and **coverage** ≈nominal at every tested quantile; (c)
+tail **quantile-MAE** is small; and (d) as a *negative control*, an **unconditional**
+baseline is clearly worse on all of the above — proving the diagnostics *detect* conditional
+signal when it exists and *punish* its removal. Failing (d) would mean the metrics can't
+tell conditioning from noise, which is as disqualifying as failing (a)–(c).
 
-**Integration.** The per-position margin *is* the model's predicted error quantile
-`Q_{1−C}(u|x)`, and the SPSA-tuned constant is the **risk level `C`**; the baseline is the
-*unconditional* quantile. So H1 restated: does the conditional quantile beat the
-unconditional one at tuned `C`? See
-[notes/pruning_integration.md](notes/pruning_integration.md) for the derivation.
+**Falsified if** a model that should recover a target cannot, or a diagnostic passes a
+model that is visibly miscalibrated (or flags a correct one) — either implicates the code,
+not the science, and blocks everything downstream until fixed.
 
-**Decides:** whether this becomes a search feature or "just" a calibration study.
-**Status:** open · **Experiments:** (planned, post-integration — NF-004)
+**Result (2026-08-09).** **CLEARED.** flow and MDN hit ΔNLL ≈ +0.007…+0.030 nats with
+near-nominal PIT/coverage and small tail qMAE; the unconditional floor blew up exactly as
+required (ΔNLL up to +1.28, qMAE@.99 up to 1.6). One implementation caveat logged, not a
+failure: QR's finite-difference NLL is not a proper density score (dips below oracle) — QR
+is judged on PIT/coverage/quantile-MAE instead. See [NF-001](experiments/NF-001.md).
+
+**Status:** supported (cleared) · **Experiments:** [NF-001](experiments/NF-001.md)
 
 ---
 
@@ -51,19 +64,7 @@ density network, one wins on held-out NLL and calibration (PIT / coverage) for
 function — close to what QR does directly, so the gap may be small. If the flow only ties
 QR, the cheaper-to-deploy QR head wins on practicality (H5). This is expected and fine.
 
-**Status:** open · **Experiments:** [NF-001](experiments/NF-001.md) (synthetic first)
-
----
-
-## H3 — Signed/directional error is the right target
-
-**Claim.** Modeling *signed* error `v̂ − v*` (and reading one-sided quantiles) produces
-better pruning than modeling `|v̂ − v*|`, because pruning is one-sided: RFP/razoring bet
-the position isn't secretly *worse*; futility bets it isn't secretly *better*. **Settled
-as the design choice**; the prediction to verify is that one-sided coverage conditioned
-on position correlates with incorrect-cutoff rate in a way symmetric `|u|` cannot express.
-
-**Status:** open (design fixed to signed) · **Experiments:** NF-002 schema
+**Status:** open · **Experiments:** [NF-001](experiments/NF-001.md) (synthetic first — MDN ≥ flow on benign targets) → [NF-001b](experiments/NF-001b.md) (adversarial stress test, budget-matched, decisive)
 
 ---
 
@@ -79,26 +80,15 @@ Stockfish dependency. The ground-truth-vs-external-engine calibration study is
 
 ---
 
-## H5 — The margin is NPS-viable via a folded-in head
+## H3 — Signed/directional error is the right target
 
-**Claim.** A per-node uncertainty margin (and the mean correction, per H6) can be
-computed without cratering NPS by **folding the head into the existing NNUE forward
-pass** — one extra output on a pass we already do. NSF's fixed-quantile inverse is
-closed-form, so a distilled monotone head is cheap.
+**Claim.** Modeling *signed* error `v̂ − v*` (and reading one-sided quantiles) produces
+better pruning than modeling `|v̂ − v*|`, because pruning is one-sided: RFP/razoring bet
+the position isn't secretly *worse*; futility bets it isn't secretly *better*. **Settled
+as the design choice**; the prediction to verify is that one-sided coverage conditioned
+on position correlates with incorrect-cutoff rate in a way symmetric `|u|` cannot express.
 
-**Note.** H6 (replacing correction history) *forces* this from day one: an MLP forward
-per node purely for eval correction is unaffordable (corr-hist today is a hash lookup +
-shift, ~8% NPS), so the correction/quantile head must ride the NNUE pass, not sit beside
-it.
-
-**Kill condition.** If even a folded head costs more NPS than the pruning saves in nodes,
-integration is a net loss regardless of calibration quality.
-
-**Integration design:** `margin = Q_{1−C}(u|x)` reuses the existing `eval − margin ≥ β`
-prune untouched — only the margin *value* changes. See
-[notes/pruning_integration.md](notes/pruning_integration.md).
-
-**Status:** open · **Experiments:** (integration spike, Week 3)
+**Status:** open (design fixed to signed) · **Experiments:** NF-002 schema
 
 ---
 
@@ -127,12 +117,50 @@ stronger mean baseline (best of both, at the cost of two mechanisms).
 
 ---
 
-## H0 — The implementation is correct *(pre-req, not a research claim)*
+## H5 — The margin is NPS-viable via a folded-in head
 
-**Claim.** Our flow/QR/MDN implementations and calibration diagnostics (PIT, coverage)
-correctly recover *known* conditional distributions before we trust them on chess data.
+**Claim.** A per-node uncertainty margin (and the mean correction, per H6) can be
+computed without cratering NPS by **folding the head into the existing NNUE forward
+pass** — one extra output on a pass we already do. NSF's fixed-quantile inverse is
+closed-form, so a distilled monotone head is cheap.
 
-**Status:** open · **Experiments:** [NF-001](experiments/NF-001.md)
+**Note.** H6 (replacing correction history) *forces* this from day one: an MLP forward
+per node purely for eval correction is unaffordable (corr-hist today is a hash lookup +
+shift, ~8% NPS), so the correction/quantile head must ride the NNUE pass, not sit beside
+it.
+
+**Kill condition.** If even a folded head costs more NPS than the pruning saves in nodes,
+integration is a net loss regardless of calibration quality.
+
+**Integration design:** `margin = Q_{1−C}(u|x)` reuses the existing `eval − margin ≥ β`
+prune untouched — only the margin *value* changes. See
+[notes/pruning_integration.md](notes/pruning_integration.md).
+
+**Status:** open · **Experiments:** (integration spike, Week 3)
+
+---
+
+## H1 — Position-conditional margins beat a freshly-tuned constant *(the crux — tested last)*
+
+**Claim.** A pruning margin conditioned on the position (via predicted evaluation-error
+quantiles) yields more Elo than a single constant margin **re-tuned by SPSA under the
+same conditions**.
+
+**Why it's the crux.** OmegaZero's heuristics already scale margins by depth and
+`improving_`, and (post-H6) run on mean-corrected eval — so they implicitly capture
+*some* position-dependent uncertainty. The honest null is "an equally-tuned constant does
+just as well." Beating the *current shipped* margins isn't enough (they could just be
+under-tuned); the baseline is a **freshly SPSA-tuned constant** so a win isolates the
+value of *conditioning*, not tuning effort.
+
+**Integration.** The per-position margin *is* the model's predicted error quantile
+`Q_{1−C}(u|x)`, and the SPSA-tuned constant is the **risk level `C`**; the baseline is the
+*unconditional* quantile. So H1 restated: does the conditional quantile beat the
+unconditional one at tuned `C`? See
+[notes/pruning_integration.md](notes/pruning_integration.md) for the derivation.
+
+**Decides:** whether this becomes a search feature or "just" a calibration study.
+**Status:** open · **Experiments:** (planned, post-integration — NF-004)
 
 ---
 

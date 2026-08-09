@@ -6,6 +6,32 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-08-09 — NF-001 full runs: H0 CLEARED, first H2 read favors MDN
+
+Ran the full synthetic sweep (n=20k, 150 epochs, 3 seeds, 4 generators × 4 models).
+Results + table in [NF-001](experiments/NF-001.md).
+
+- **H0 gate CLEARED.** flow and MDN recover the closed-form conditionals to ΔNLL
+  ≈ +0.007…+0.030 nats, PIT-KS ≈ 0.015–0.038, near-nominal coverage, small tail qMAE.
+  Unconditional floor blows up as designed (ΔNLL up to +1.28, qMAE@.99 up to 1.6) — the
+  diagnostics detect signal and punish its removal. Machinery is trustworthy.
+- **H2 (synthetic-only) — no flow advantage; MDN quietly wins.** MDN ≥ flow on every
+  generator on both ΔNLL and tail qMAE, *including* the flow-favoring cases (bimodal,
+  skewnormal), and it's cheaper (closed-form CDF). Triggers the pre-registered
+  "simpler-model-wins" branch; consistent with "best tool wins, flow not sacred."
+- **Gotcha logged:** QR's NLL is a finite-difference artifact off its coarse quantile grid
+  (dips below oracle — impossible for a real density). Judge QR on PIT-KS/coverage/qMAE
+  only; there it's least-calibrated overall but best on `skewnormal` tails (its home turf).
+- **Caveats:** deck mildly favors MDN (two generators *are* Gaussian mixtures); targets are
+  benign. Prior, not verdict — keep the flow as a backstop for real, nastier chess error.
+
+**Next:** designed **NF-001b** — a synthetic H2 *stress* test on adversarially hard
+targets (genuinely heavy tails, sharp/asymmetric heteroscedastic multimodality) with
+matched capacity/compute budgets and quantile-MAE as the primary metric, to find the
+regime (if any) where the flow separates from MDN/QR before betting on real data.
+
+---
+
 ## 2026-08-08 — Generalized the margin derivation to the rest of the tree
 
 Pushed the [pruning_integration.md](notes/pruning_integration.md) "estimate − conditional
