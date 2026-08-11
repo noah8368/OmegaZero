@@ -33,3 +33,8 @@ syzygy_tables/
 
 # Claude Code project guidance (local-only; not committed).
 CLAUDE.md
+
+# Research notes/experiments live on the `research` branch only. Ignored here on
+# `main` so they never get committed to it (already tracked on `research`, where
+# gitignore doesn't apply to tracked files).
+research/
