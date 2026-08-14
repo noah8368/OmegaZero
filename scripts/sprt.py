@@ -258,19 +258,23 @@ def find_cutechess(cutechess_arg=None):
 
 def run_match(cutechess, test_binary, test_label, base_binary, base_label,
               st, elo0, elo1, alpha, beta, max_games, concurrency,
-              openings=None, pgn_path=None, tc=None):
+              openings=None, pgn_path=None, tc=None, threads=1):
     """Run a single SPRT match. Returns a result dict or None on interrupt."""
 
     # Real clock (tc=) when given, else fixed time per move (st=). A real clock
     # is required to exercise the engine's clock-based (dynamic) time management.
     tc_clause = f"tc={tc}" if tc else f"st={st}"
 
+    # Pin each engine's Threads via a per-engine UCI option; without it the
+    # engine defaults Threads to the core count and concurrent games oversubscribe.
+    threads_opt = f"option.Threads={threads}"
+
     cmd = [
         cutechess,
         "-engine", f"name={test_label}", f"cmd={test_binary}",
-            "arg=--uci", "proto=uci",
+            "arg=--uci", "proto=uci", threads_opt,
         "-engine", f"name={base_label}", f"cmd={base_binary}",
-            "arg=--uci", "proto=uci",
+            "arg=--uci", "proto=uci", threads_opt,
         "-each", tc_clause, "timemargin=500",
         "-sprt", f"elo0={elo0}", f"elo1={elo1}",
             f"alpha={alpha}", f"beta={beta}",
@@ -681,6 +685,7 @@ def cmd_run(args):
         alpha=args.alpha, beta=args.beta,
         max_games=args.max_games, concurrency=args.concurrency,
         openings=args.openings, pgn_path=run_dir / "games.pgn",
+        threads=args.threads,
     )
 
     if summary is None:
@@ -785,6 +790,7 @@ def cmd_match(args):
             alpha=args.alpha, beta=args.beta,
             max_games=args.max_games, concurrency=args.concurrency,
             openings=args.openings, pgn_path=run_dir / "games.pgn",
+            threads=args.threads,
         )
     finally:
         cleanup_worktree(base_wt)
@@ -885,6 +891,7 @@ def cmd_gauntlet(args):
             alpha=args.alpha, beta=args.beta,
             max_games=args.max_games, concurrency=args.concurrency,
             openings=args.openings, pgn_path=run_dir / "games.pgn",
+            threads=args.threads,
         )
 
         cleanup_worktree(base_wt)
@@ -953,6 +960,12 @@ def add_common_args(parser):
                         help="Maximum games before stopping (default: 1000)")
     parser.add_argument("--concurrency", type=int, default=1,
                         help="Concurrent games (default: 1)")
+    parser.add_argument("--threads", type=int, default=1,
+                        help="Threads (UCI option) per engine (default: 1). "
+                             "Keep at 1 for strength tests so concurrent games "
+                             "don't oversubscribe cores and corrupt clock-based "
+                             "TM; the engine otherwise defaults Threads to the "
+                             "core count.")
 
 
 def main():
