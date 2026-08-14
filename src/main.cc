@@ -12,7 +12,6 @@
 #include <string>
 
 #include "game.h"
-#include "move.h"
 #include "nnue.h"
 #include "params.h"
 #include "syzygy.h"
@@ -131,8 +130,8 @@ auto main(int argc, char* argv[]) -> int {
                          on_opening, light_theme, num_threads);
 
     // Apply the params.json profile matching the eval mode set above.
-    game.SetSearchParams(
-        omegazero::LoadParamsOrDie(params_path, omegazero::ProfileForEvalMode()));
+    game.SetSearchParams(omegazero::LoadParamsOrDie(
+        params_path, omegazero::ProfileForEvalMode()));
 
     if (clock_time > 0.0f) {
       game.SetClock(clock_time, increment);

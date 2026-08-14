@@ -260,6 +260,12 @@ STRESS_GENERATORS = {
         make_regime_switch(),
         make_hetero_skew(),
         make_bounded_edge(),
+        # M>K variants close the NF-001b asterisk: at med, MDN K=5, so only these
+        # trigger true MDN underfit (modes > components) — the one regime where the
+        # flow could still separate. Run Phase 1 on them to get the full metric block
+        # (tail-qMAE + paired deltas), which Phase 2's CRPS-only sweep does not report.
+        make_many_modes(8),
+        make_many_modes(10),
     )
 }
 # The four core generators Phase 1 uses by default (bounded_edge is opt-in).
@@ -397,34 +403,48 @@ class MDNP(Model):
         ).to(DEVICE)
 
     def _params(self, xt):
+        """Raw mixture parameters. Returns *logits* (not softmaxed) so the NLL can run
+        through log_softmax in log-space (see fit); callers needing probabilities
+        softmax the logits themselves. The Gaussian sigma floor is raised (exp(-6) ->
+        exp(-4)) so a component cannot collapse onto a ~0.0025 spike that NaNs the NLL
+        (the NF-001b regime_switch blowup). The Student-t path is left byte-identical.
+        """
         out = self.net(xt)
         if self.family == "studentt":
             logits, mu, logsig, logdf = out.chunk(4, dim=1)
             df = torch.nn.functional.softplus(logdf).clamp(1e-3, 98.0) + 2.0
+            sig = logsig.clamp(-6, 4).exp()
         else:
             logits, mu, logsig = out.chunk(3, dim=1)
             df = None
-        return torch.softmax(logits, dim=1), mu, logsig.clamp(-6, 4).exp(), df
+            sig = logsig.clamp(-4, 4).exp()
+        return logits, mu, sig, df
 
     def fit(self, x, u, epochs, batch, lr):
         self.net.train()
 
         def closure(xb, ub):
-            pi, mu, sig, df = self._params(xb)
+            logits, mu, sig, df = self._params(xb)
             if self.family == "studentt":
+                # Byte-identical to the pre-fix path: log(softmax(logits)).
                 comp = torch.distributions.StudentT(df, mu, sig).log_prob(ub)
+                log_pi = torch.log(torch.softmax(logits, dim=1))
             else:
                 comp = -0.5 * ((ub - mu) / sig) ** 2 - torch.log(
                     sig * math.sqrt(2 * math.pi)
                 )
-            return -torch.logsumexp(torch.log(pi) + comp, dim=1).mean()
+                # log_softmax never materializes a 0 to feed log(), killing the
+                # log(0) -> -inf/NaN path that grad-clipping could not rescue.
+                log_pi = torch.log_softmax(logits, dim=1)
+            return -torch.logsumexp(log_pi + comp, dim=1).mean()
 
         _train_loop(self.net, closure, self.net.parameters(), x, u, epochs, batch, lr)
         self.net.eval()
 
     @torch.no_grad()
     def _np_params(self, x):
-        pi, mu, sig, df = self._params(_to_t(x))
+        logits, mu, sig, df = self._params(_to_t(x))
+        pi = torch.softmax(logits, dim=1)
         df = None if df is None else df.cpu().numpy()
         return pi.cpu().numpy(), mu.cpu().numpy(), sig.cpu().numpy(), df
 
@@ -667,7 +687,11 @@ def _verdict(summary, args):
         return
     alts = [m for m in args.model if m in ("mdn", "mdn_t", "qr")]
     print("\n--- Pre-registered H2 verdict (flow vs best alternative) ---")
-    decisive_gens = [g for g in ("heavy_t", "many_modes") if g in summary]
+    # Decisive generators = the flow's best theoretical cases: heavy tails and any
+    # many_modes variant present (incl. the M>K underfit runs that close the asterisk).
+    decisive_gens = [
+        g for g in summary if g == "heavy_t" or g.startswith("many_modes")
+    ]
     flow_wins_all = bool(decisive_gens)
     for gen_name in summary:
         block = summary[gen_name]

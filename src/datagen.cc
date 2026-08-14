@@ -11,6 +11,19 @@
  *   - Zobrist hash deduplication within each worker
  *   - Separate validation set from different games
  *
+ * Uncertainty-label mode (config `mode: uncertainty`, for the NF-002 research
+ * pipeline). Instead of (fen, score, result) it emits, per sampled position,
+ *   fen | v_hat | v_star | u | depth | nodes | result
+ * where v_hat = raw static eval (Board::Evaluate(), STM POV), v_star = a
+ * deterministic fixed-depth + node-capped search score (STM POV), and
+ * u = v_hat - v_star is the signed eval error we model. Differences vs. the NNUE
+ * path: (1) the deep v_star search is amortized -- run only at sampled positions,
+ * and it also supplies the game move; (2) the tactical filters are INVERTED --
+ * in-check / high-|score| positions are KEPT (they carry the fat error tail the
+ * pruning margins read); only true mate-band scores are excluded. v_hat is a pure
+ * function of the position; v_star inherits the game's warm TT / correction
+ * history (representative -- a real deeper search has the same warm state).
+ *
  * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
  */
 
@@ -23,6 +36,7 @@
 #include <ctime>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <random>
 #include <string>
@@ -56,6 +70,12 @@ constexpr int kStartupEmailThreshold = 10;
 static const string kStartFen =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+// Uncertainty-label mode config (NF-002), set from nnue/config.json in main().
+// Declared here (ahead of WriteMetadata) so the metadata writer can report them.
+static bool g_uncertainty_mode = false;
+static int g_target_depth = 12;
+static uint64_t g_node_cap = 2000000;
+
 struct Config {
   int games = 100;
   float st = 0.5f;
@@ -64,6 +84,11 @@ struct Config {
   float val_fraction = 0.1f;
   string email;
   string name;
+  // Uncertainty-label mode (NF-002). "nnue" (default) = legacy (fen,score,result);
+  // "uncertainty" = the (fen,v_hat,v_star,u,depth,nodes,result) pipeline.
+  string mode = "nnue";
+  int target_depth = 12;         // fixed depth for the v_star search
+  uint64_t node_cap = 2000000;   // node safety valve for the v_star search
 };
 
 static auto TrimQuotes(const string& s) -> string {
@@ -102,6 +127,9 @@ static auto LoadConfig(const string& path) -> Config {
     else if (key == "val_fraction") cfg.val_fraction = std::stof(val);
     else if (key == "email") cfg.email = val;
     else if (key == "name") cfg.name = val;
+    else if (key == "mode") cfg.mode = val;
+    else if (key == "target_depth") cfg.target_depth = std::stoi(val);
+    else if (key == "node_cap") cfg.node_cap = std::stoull(val);
   }
   return cfg;
 }
@@ -145,13 +173,27 @@ static auto WriteMetadata(const string& output_dir, int total_games,
       << "sample_interval: " << kSampleInterval << "\n"
       << "max_abs_score: " << kMaxAbsScore << "\n"
       << "adjudicate_threshold: " << kAdjudicateThreshold << "\n"
-      << "adjudicate_count: " << kAdjudicateCount << "\n";
+      << "adjudicate_count: " << kAdjudicateCount << "\n"
+      << "mode: " << (g_uncertainty_mode ? "uncertainty" : "nnue") << "\n";
+  if (g_uncertainty_mode) {
+    out << "target_depth: " << g_target_depth << "\n"
+        << "node_cap: " << g_node_cap << "\n";
+  }
   out.close();
 }
 
 struct Position {
   string fen;
   int score;
+};
+
+// One uncertainty-label sample (NF-002). All evals are STM POV; u = v_hat - v_star.
+struct UncertaintyPosition {
+  string fen;
+  int v_hat;       // raw static eval (Board::Evaluate())
+  int v_star;      // fixed-depth + node-capped search score
+  int depth;       // deepest completed depth of the v_star search
+  uint64_t nodes;  // nodes visited by the v_star search
 };
 
 enum GameResult { kWhiteWin, kBlackWin, kDrawResult };
@@ -191,7 +233,12 @@ static auto PlayGame(float search_time, const SearchParams& params,
                      std::unordered_set<U64>& seen_hashes) -> GameResult {
   Board board(kStartFen);
   TranspositionTable tt;
-  Engine engine(&tt, &board, 'w', search_time);
+  // Heap-allocate the Engine: sizeof(Engine) ~566 KB (large inline history/PV
+  // tables) overflows the default worker-thread stack (~512 KB on macOS; the
+  // Linux datagen fleet's 8 MB stacks masked this). `engine` stays a reference so
+  // all call sites below are unchanged.
+  auto engine_ptr = std::make_unique<Engine>(&tt, &board, 'w', search_time);
+  Engine& engine = *engine_ptr;
   engine.SetParams(params);
   engine.AddPosToHistory();
 
@@ -229,6 +276,101 @@ static auto PlayGame(float search_time, const SearchParams& params,
       }
     }
 
+    if (abs(score_stm) >= kAdjudicateThreshold) {
+      ++consecutive_high;
+    } else {
+      consecutive_high = 0;
+    }
+    if (consecutive_high >= kAdjudicateCount) {
+      return (score_white > 0) ? kWhiteWin : kBlackWin;
+    }
+
+    try {
+      board.MakeMove(best);
+    } catch (BadMove&) {
+      break;
+    }
+    engine.AddPosToHistory();
+  }
+
+  return kDrawResult;
+}
+
+// Uncertainty-label self-play game (NF-002). At each sampled ply it runs one deep,
+// deterministic, fixed-depth + node-capped search (which also supplies the game
+// move) and records (fen, v_hat, v_star, depth, nodes). Tactical filters are
+// inverted vs. PlayGame -- in-check and high-|score| positions are kept; only true
+// mate-band scores are dropped. Non-sampled plies use the ordinary timed search.
+static auto PlayGameUncertainty(int target_depth, uint64_t node_cap,
+                                float search_time, const SearchParams& params,
+                                std::mt19937& rng,
+                                vector<UncertaintyPosition>& positions,
+                                std::unordered_set<U64>& seen_hashes)
+    -> GameResult {
+  Board board(kStartFen);
+  TranspositionTable tt;
+  // Heap-allocate the Engine: sizeof(Engine) ~566 KB (large inline history/PV
+  // tables) overflows the default worker-thread stack (~512 KB on macOS; the
+  // Linux datagen fleet's 8 MB stacks masked this). `engine` stays a reference so
+  // all call sites below are unchanged.
+  auto engine_ptr = std::make_unique<Engine>(&tt, &board, 'w', search_time);
+  Engine& engine = *engine_ptr;
+  engine.SetParams(params);
+  engine.AddPosToHistory();
+
+  // Capture the deepest completed depth of a search via the info callback.
+  int reached_depth = 0;
+  engine.SetInfoCallback(
+      [&reached_depth](const SearchInfo& info) { reached_depth = info.depth; });
+
+  int plies_played = PlayRandomOpeningMoves(board, engine, rng);
+  int consecutive_high = 0;
+  int eligible_count = 0;
+
+  for (int ply = plies_played; ply < kMaxMovesPerGame; ++ply) {
+    S8 status = engine.GetGameStatus();
+    if (status == kPlayerCheckmated) {
+      return (board.GetPlayerToMove() == kWhite) ? kBlackWin : kWhiteWin;
+    }
+    if (status == kDraw) return kDrawResult;
+
+    // Inverted filters: sample past-opening plies regardless of check/tactics.
+    bool sample_this_ply = false;
+    if (ply >= kSkipFirstNPlies) {
+      ++eligible_count;
+      sample_this_ply = (eligible_count % kSampleInterval == 0);
+    }
+
+    Move best;
+    int score_stm = 0;
+    if (sample_this_ply) {
+      int v_hat = board.Evaluate();  // raw static eval, STM POV
+      reached_depth = 0;
+      engine.SetInfiniteSearch();  // drop the time bound (resets depth/node caps)
+      engine.SetDepthLimit(target_depth);
+      engine.SetNodeLimit(node_cap);
+      best = engine.GetBestMove(score_stm);  // score_stm = v_star, STM POV
+      uint64_t nodes = engine.GetTotalNodes();
+      engine.SetSearchTime(search_time);  // restore timed budget for ordinary plies
+
+      // Drop only mate-band scores (their error is not the smooth quantity we
+      // model -- mirrors ProbCut's mate exclusion). v_hat is never a mate score.
+      if (!best.IsEmpty() && !IsMateScore(score_stm)) {
+        U64 hash = board.GetBoardHash();
+        if (seen_hashes.find(hash) == seen_hashes.end()) {
+          seen_hashes.insert(hash);
+          positions.push_back(
+              {board.ToFen(), v_hat, score_stm, reached_depth, nodes});
+        }
+      }
+    } else {
+      engine.SetSearchTime(search_time);
+      best = engine.GetBestMove(score_stm);
+    }
+
+    if (best.IsEmpty()) break;
+
+    int score_white = (board.GetPlayerToMove() == kWhite) ? score_stm : -score_stm;
     if (abs(score_stm) >= kAdjudicateThreshold) {
       ++consecutive_high;
     } else {
@@ -459,22 +601,37 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
 
   for (int g = 0; g < num_games && !g_shutdown.load(); ++g) {
     try {
-      vector<Position> positions;
-      positions.reserve(32);
-
       size_t hashes_before = seen_hashes.size();
-      GameResult result =
-          PlayGame(search_time, params, rng, positions, seen_hashes);
-      int deduped = static_cast<int>(seen_hashes.size() - hashes_before);
-      stats.duplicates_skipped += (static_cast<int>(positions.size()) - deduped);
-
       std::ofstream& out = (g >= val_start_game) ? val_out : train_out;
-      string result_str = ResultToStr(result);
-      for (const auto& pos : positions) {
-        out << pos.fen << " | " << pos.score << " | " << result_str << '\n';
+      GameResult result;
+      int num_positions = 0;
+
+      if (g_uncertainty_mode) {
+        vector<UncertaintyPosition> positions;
+        positions.reserve(32);
+        result = PlayGameUncertainty(g_target_depth, g_node_cap, search_time,
+                                     params, rng, positions, seen_hashes);
+        string result_str = ResultToStr(result);
+        for (const auto& p : positions) {
+          out << p.fen << " | " << p.v_hat << " | " << p.v_star << " | "
+              << (p.v_hat - p.v_star) << " | " << p.depth << " | " << p.nodes
+              << " | " << result_str << '\n';
+        }
+        num_positions = static_cast<int>(positions.size());
+      } else {
+        vector<Position> positions;
+        positions.reserve(32);
+        result = PlayGame(search_time, params, rng, positions, seen_hashes);
+        string result_str = ResultToStr(result);
+        for (const auto& pos : positions) {
+          out << pos.fen << " | " << pos.score << " | " << result_str << '\n';
+        }
+        num_positions = static_cast<int>(positions.size());
       }
 
-      stats.positions += static_cast<int>(positions.size());
+      int deduped = static_cast<int>(seen_hashes.size() - hashes_before);
+      stats.duplicates_skipped += (num_positions - deduped);
+      stats.positions += num_positions;
       stats.games++;
       if (result == kWhiteWin) stats.white_wins++;
       else if (result == kBlackWin) stats.black_wins++;
@@ -640,6 +797,9 @@ auto main() -> int {
   float validation_fraction = cfg.val_fraction;
   g_email = cfg.email;
   g_name = cfg.name;
+  g_uncertainty_mode = (cfg.mode == "uncertainty");
+  g_target_depth = cfg.target_depth;
+  g_node_cap = cfg.node_cap;
 
   // Datagen self-play uses HCE (no NNUE is loaded), so this resolves the "hce"
   // profile. Run from the repo root, where params.json (and nnue/config.json)
@@ -703,15 +863,24 @@ auto main() -> int {
   g_last_heartbeat_time.store(now_epoch);
 
   cout << "Native NNUE data generator\n"
+       << "  Mode: " << (g_uncertainty_mode ? "uncertainty" : "nnue") << "\n"
        << "  Games: " << total_games << "\n"
        << "  Search time: " << search_time << "s/move\n"
        << "  Workers: " << num_workers << "\n"
        << "  Output: " << output_dir << "/\n"
-       << "  Validation: " << static_cast<int>(validation_fraction * 100) << "% of games\n"
-       << "  Filters: skip " << kSkipFirstNPlies << " plies, sample 1/"
-       << kSampleInterval << ", |score| <= " << kMaxAbsScore
-       << ", dedup, no check\n"
-       << "  Email: " << (g_email.empty() ? "(none)" : g_email) << "\n"
+       << "  Validation: " << static_cast<int>(validation_fraction * 100) << "% of games\n";
+  if (g_uncertainty_mode) {
+    cout << "  v_star: fixed depth " << g_target_depth << ", node cap "
+         << g_node_cap << "\n"
+         << "  Filters: skip " << kSkipFirstNPlies << " plies, sample 1/"
+         << kSampleInterval << ", dedup, keep checks+tactics (drop mate band)\n"
+         << "  Row: fen | v_hat | v_star | u | depth | nodes | result\n";
+  } else {
+    cout << "  Filters: skip " << kSkipFirstNPlies << " plies, sample 1/"
+         << kSampleInterval << ", |score| <= " << kMaxAbsScore
+         << ", dedup, no check\n";
+  }
+  cout << "  Email: " << (g_email.empty() ? "(none)" : g_email) << "\n"
        << "  Name: " << (g_name.empty() ? "(none)" : g_name) << "\n" << endl;
 
   std::signal(SIGTERM, SignalHandler);

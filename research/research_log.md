@@ -6,6 +6,38 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-08-14 — H2 fully closed; NF-002 datagen built; deployment design settled
+
+Closed H2's last asterisk and built the NF-002 label pipeline end (C++ side).
+
+- **H2 fully closed — MDN ≥ flow, no asterisk.** Ran the **M≫K** stress run
+  (`many_modes8`/`10`, modes 8/10 > MDN K=5 — the flow's last plausible win). Even
+  underfitting, MDN beats the flow on tail-qMAE (Δ≈−0.02/−0.015, p=0.004) and edges it on
+  CRPS (p=0.006/0.020); QR tail worst; unconditional control blows up. Verdict: KEEP SIMPLER
+  MODEL. Also **fixed the Gaussian-`mdn` NaN blowup**: root cause `log(softmax)`→`log(0)`;
+  grad-clipping *cannot* fix an already-NaN grad (verified byte-identical); scoped fix =
+  `log_softmax` + raised σ floor (exp−6→exp−4), `mdn_t`/flow/QR byte-identical so no re-run.
+  See [NF-001b](experiments/NF-001b.md).
+- **NF-002 datagen — uncertainty-label mode implemented** (`src/datagen.cc`,
+  config `mode: uncertainty`). Per sampled position: fixed-depth + node-capped `v*` (also
+  the game move), `v̂ = Board::Evaluate()` (raw static, STM POV), row
+  `fen | v̂ | v* | u | depth | nodes | result`; **inverted tactical filters** (keep
+  in-check/tactical — the fat error tail; drop only mate band). Search is single-threaded by
+  construction (bare `Engine`, not `SearchPool`) → deterministic `v*`. Smoke-tested (60 rows,
+  correct). **Fixed a latent bug**: `sizeof(Engine)=566 KB` on a spawned worker's ~512 KB
+  macOS stack overflowed (SIGBUS) — the existing nnue mode crashed too; Linux's 8 MB stacks
+  masked it. Heap-allocated the Engine. *Open:* `preprocess_data.py` can't parse the 7-field
+  row yet; corr-hist metadata deferred; warm-TT-vs-clear is an open tunable.
+- **NF-002 design settled** (docs in [NF-002](experiments/NF-002.md)): fresh **~10M**
+  leakage-free dataset (not the 87M HCE corpus — reuse would bias uncertainty low since those
+  FENs trained the net); **frozen NNUE trunk + MDN head**; ProbCut-anchored sizing (~2–5M
+  central, tail-limited by risk `C`; ProbCut fit on ~2,700 positions). **H5 deployment
+  representation decided** ([hypotheses.md](hypotheses.md#h5)): head rides the shared
+  incremental accumulator; distribution baked onto a **fixed-point cp grain** (C51/QR-DQN
+  style) for integer inference, per-heuristic SPSA-tunable `C`.
+
+**Next:** NF-002 training-side (parse the 7-field rows → MDN head), then NF-003 corrector-swap.
+
 ## 2026-08-09 — NF-001b Phase 1: H2 DECIDED — MDN ≥ flow, flow → backstop
 
 Ran the adversarial, budget-matched stress test (10 seeds, `med` capacity, 4 hard

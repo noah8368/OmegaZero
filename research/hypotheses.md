@@ -64,16 +64,17 @@ density network, one wins on held-out NLL and calibration (PIT / coverage) for
 function — close to what QR does directly, so the gap may be small. If the flow only ties
 QR, the cheaper-to-deploy QR head wins on practicality (H5). This is expected and fine.
 
-**Result (2026-08-09).** **Decided on synthetics: MDN ≥ flow.** Across benign (NF-001) and
-adversarial/budget-matched (NF-001b, 10 seeds) targets, no flow advantage on CRPS or
-tail-qMAE — the flow is last-or-tied-last everywhere, including its best theoretical case
-(heavy tails). Even a *mis-specified* Gaussian MDN tied the flow on `heavy_t`. **Decision:
-MDN primary (lean `mdn_t` — robust + best tails); flow → backstop; QR out (worst tails).**
-One asterisk: `many_modes` didn't yet exceed the MDN's component count, so true MDN
-underfit is untested — one targeted M≫K run remains before H2 is *fully* closed. Re-tested
-on real eval-error once the NNUE embedding exists (NF-002).
+**Result (2026-08-14, fully closed).** **MDN ≥ flow — no asterisk.** Across benign (NF-001)
+and adversarial/budget-matched (NF-001b, 10 seeds) targets, no flow advantage on CRPS or
+tail-qMAE — the flow is last-or-tied-last everywhere, including heavy tails. The final
+caveat is now closed: on the **M≫K** run (`many_modes8`/`10`, modes > MDN's K=5), even an
+*underfitting* MDN beats the flow — tail-qMAE Δ(alt−flow) ≈ −0.02/−0.015 (p=0.004), CRPS
+slightly MDN-favoring (p=0.006/0.020). **Decision: MDN primary (lean `mdn_t` — robust + best
+tails); flow → backstop; QR out (worst tails).** (A separate Gaussian-`mdn` NaN blowup was
+root-caused to `log(softmax)` and fixed with `log_softmax` + a raised σ floor; grad-clipping
+was shown not to fix it.) Re-tested on real eval-error once the NNUE embedding exists (NF-002).
 
-**Status:** supported (simpler model wins; flow refuted as primary — pending the M≫K check) · **Experiments:** [NF-001](experiments/NF-001.md) (benign — MDN ≥ flow) → [NF-001b](experiments/NF-001b.md) (adversarial, budget-matched — MDN ≥ flow, decisive)
+**Status:** supported — simpler model wins, flow refuted as primary (fully closed 2026-08-14) · **Experiments:** [NF-001](experiments/NF-001.md) (benign — MDN ≥ flow) → [NF-001b](experiments/NF-001b.md) (adversarial + M≫K — MDN ≥ flow, decisive)
 
 ---
 
@@ -145,7 +146,32 @@ integration is a net loss regardless of calibration quality.
 prune untouched — only the margin *value* changes. See
 [notes/pruning_integration.md](notes/pruning_integration.md).
 
-**Status:** open · **Experiments:** (integration spike, Week 3)
+**Deployment representation — DECIDED 2026-08-14 (grain-quantized distributional head).**
+The head rides the **shared NNUE trunk**, so it inherits the incremental
+("recompute-only-changed-features") accumulator *for free* — incrementality lives entirely
+in the feature transformer → `accum_` (pushed/popped on make/unmake), and everything
+downstream is recomputed fresh per eval anyway. **Hard rule:** the head must read shared
+accumulator/hidden activations, never its own feature encoding (a separate encoding would
+need its own incremental machinery or a from-scratch recompute — the NPS killer). Branch
+the head **late** off a shared hidden layer so its marginal cost is one small projection.
+
+To stay on the **integer** inference path (no float `exp`/`erf`/bisection at search time),
+deploy the distribution on a **fixed-point grain** — a quantized `u`-grid in centipawns
+(≈4–8 cp bins, bounded/asymmetric range covering the modeled tail, clamp beyond, consistent
+with the mate/tactical exclusion). The learned model (float MDN, the H2 winner) is baked
+*offline* onto the grain; at inference a quantile read is an integer prefix-sum+threshold
+(categorical) or direct lookup (QR-on-grid). This is the C51 / QR-DQN discretized-head
+trick — **the grain is a deployment format, not the learned model** (learn with the MDN,
+deploy the quantiles; note QR was demoted as a *learner* in H2 but is an excellent integer
+*deployment* format). One grid output serves every heuristic's own one-sided `C`, and
+**SPSA can retune `C` with no retraining**; because `C` is tuned on the deployed grain head,
+discretization bias is absorbed into `C` (Elo preserved; calibration still reported
+separately). Seed the trunk from the trained NNUE and **freeze it** (init the head's mean ≈ 0
+so `corrected ≈ raw` at step 0; unfreeze-as-fallback carries no NPS risk — incrementality
+depends on *which* weight columns change, not their values). See
+[NF-002](experiments/NF-002.md) "Data strategy".
+
+**Status:** open (deployment representation decided) · **Experiments:** (integration spike, Week 3)
 
 ---
 

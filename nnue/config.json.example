@@ -7,6 +7,10 @@
   "output": "nnue/data",
   "email": "you@gmail.com",
   "name": "macbook",
+  "_comment_mode": "mode: 'nnue' (default) writes fen|score|result; 'uncertainty' (NF-002) writes fen|v_hat|v_star|u|depth|nodes|result, running a fixed-depth node-capped v* search at each sampled position and keeping tactical/in-check positions.",
+  "mode": "nnue",
+  "target_depth": 12,
+  "node_cap": 2000000,
   "training": {
     "epochs": 200,
     "batch": 16384,
