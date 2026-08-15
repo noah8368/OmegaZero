@@ -6,6 +6,39 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-08-15 — NF-002 pilot data generated; fit-training harness verified end-to-end
+
+Ran the full net-independent pilot: datagen → preprocess → frozen-trunk embed → `mdn_t` fit →
+calibration read. **Everything runs.** Caveat up front: this is a **harness-verification**
+pilot, not a research result — the labels are **HCE-eval** error (no `nnue.bin` at datagen
+time) while the conditioning embedding is from a (weak, overfit) **NNUE** trunk, so embedding
+and labels describe *different* evals. A coherent read needs NNUE-eval labels.
+
+- **Pilot datagen** (`mode: uncertainty`, depth 8 / node_cap 500k, 1500 games, 8 workers,
+  ~2.1h): **34,479 positions** (31,011 train / 3,468 val, split by game) →
+  `nnue/data_uncertainty/combined/`. Clean: all 7-field, 0 `u==v̂−v*` violations, mean(u)=−21.8cp,
+  mean|u|=124cp, **fat tail intact** (|u|≥100cp=36%, ≥300=11%, ≥600=2.6%, max 2209cp — the
+  inverted filters kept the tactical tail), `v*` depth uniformly 8.
+- **Trunk**: LFS-pulled `nnue/model/2026-06-07…61d0444_6.0M_pos/best.bin` (6M/3-epoch, overfit;
+  the preferred 80M/1-epoch checkpoint was never saved). Embedding reconstructed **directly from
+  the quantized FT block** (int16/127, clamp[0,1]) + stored HalfKP indices → 512-dim
+  STM-relative accum, matching `train_nnue.py` `forward` exactly. Using the quantized weights is
+  arguably *more* faithful to deployment (engine runs int16 accum) than a float `.pt` would be.
+- **Fit** (`research/experiments/nf002_fit_pilot.py`, `mdn_t` K=5 Student-t head):
+  conditional beats the unconditional floor — **val NLL 1.023 vs 1.102** (+0.079), pinball qMAE
+  lower at all quantiles (τ=.1/.5/.9). Coverage near nominal (90/95% dead on; 50% a touch under
+  at 44%), PIT KS 0.044. Overfit slightly (early stop epoch 13 — 31k is small). Sanity confirmed:
+  the trunk embedding carries signal about `u`, and the calibration pipeline is sound.
+- **Prod gaps identified** (harness core is reusable; plumbing is not): (1) regen NNUE-coherent
+  labels, (2) leakage-free positions disjoint from the net's training set, (3) the pure-Python
+  per-record embed + all-in-RAM won't scale to 2–5M, (4) H5 C++ deployment inference +
+  fixed-point cp-grain bake + SPSA `C` are out of scope here.
+
+**Next:** NF-003 — drop the net to `nnue/nnue.bin`, rebuild, regen datagen for NNUE-coherent
+labels, rerun this harness for a *real* calibration read; then the corrector-swap SPRT.
+
+---
+
 ## 2026-08-14 — H2 fully closed; NF-002 datagen built; deployment design settled
 
 Closed H2's last asterisk and built the NF-002 label pipeline end (C++ side).
