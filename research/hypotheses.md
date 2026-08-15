@@ -232,3 +232,16 @@ plausibility × low-risk. **None is on the 3-week plan; H1 must land first.**
   single `p(u|x,d)` yields LMR-as-information-gain **and** reduced-search error as a
   depth difference, merging O1/O3. Highest payoff, highest cost; do not assume. *(open,
   stretch.)*
+- **H12 — A fine-tuned (non-frozen) trunk beats the frozen trunk for `p(u|x)` — but the
+  deployment cost may not be worth it.** The frozen trunk encodes features tuned for *eval*,
+  not *error*; unfreezing (fully, or last-N-layers / low-LR) lets the trunk learn
+  error-relevant features → plausibly better calibration and tail-qMAE. **The catch is H5:**
+  the whole NPS argument rests on the uncertainty head *sharing the eval's frozen accumulator
+  for free*. A trunk fine-tuned for error is **no longer the eval trunk** → either (a) a
+  second forward pass / separate accumulator (real per-node NPS bill), or (b) you let it
+  change the eval itself (couples eval + uncertainty, risks eval regression). Plus more
+  compute + higher overfit/leakage exposure. **Test:** ablate frozen vs partial-unfreeze vs
+  full-unfreeze on ΔNLL / tail-qMAE / coverage, and pair every calibration gain with its
+  *deployment* cost (NPS delta, eval-drift SPRT). Supersedes the NF-002 "freeze-first,
+  unfreeze-as-fallback" note by making the comparison an explicit study, not just a fallback
+  trigger. *(open, stretch; decision hinges on gain-vs-NPS, not calibration alone.)*
