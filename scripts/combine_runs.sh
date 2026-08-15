@@ -37,6 +37,26 @@ echo "=== Merging unmerged worker files ==="
 merged_runs=0
 skipped_runs=0
 
+# Guard against mixing schemas: uncertainty runs (unc_*, 7-field rows) and nnue
+# eval runs (nnue_*, 3-field rows) must never be combined into one file. Run
+# dirs are mode-prefixed by datagen.cc; if both appear here, the data dir was
+# misconfigured — bail rather than silently produce a corrupt combined file.
+has_unc=false
+has_nnue=false
+for run_dir in "$DATA_DIR"/*/; do
+    [[ -d "$run_dir" ]] || continue
+    case "$(basename "$run_dir")" in
+        unc_*) has_unc=true ;;
+        nnue_*) has_nnue=true ;;
+    esac
+done
+if [[ "$has_unc" == true && "$has_nnue" == true ]]; then
+    echo "Error: $DATA_DIR contains both uncertainty (unc_*) and nnue (nnue_*) runs."
+    echo "These have incompatible row schemas and must not be combined together."
+    echo "Point each mode at its own 'output' directory in nnue/config.json."
+    exit 1
+fi
+
 for run_dir in "$DATA_DIR"/*/; do
     [[ "$(basename "$run_dir")" == "combined" ]] && continue
     [[ -d "$run_dir" ]] || continue

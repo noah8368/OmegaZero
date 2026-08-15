@@ -810,13 +810,16 @@ auto main() -> int {
   if (num_workers < 1) num_workers = 1;
   if (total_games < 1) total_games = 1;
 
-  // Create timestamped subdirectory: <output_dir>/<YYYY-MM-DD_HH-MM-SS>_<githash>/
+  // Create timestamped subdirectory, mode-prefixed so uncertainty (NF-002) and
+  // nnue eval runs are distinguishable at a glance:
+  // <output_dir>/<mode>_<YYYY-MM-DD_HH-MM-SS>_<githash>/
   {
     auto now = std::chrono::system_clock::now();
     std::time_t t = std::chrono::system_clock::to_time_t(now);
     char ts_buf[64];
     std::strftime(ts_buf, sizeof(ts_buf), "%Y-%m-%d_%H-%M-%S", std::localtime(&t));
-    string subdir = string(ts_buf) + "_" + GetGitHash();
+    string mode_tag = g_uncertainty_mode ? "unc" : "nnue";
+    string subdir = mode_tag + "_" + string(ts_buf) + "_" + GetGitHash();
     output_dir += "/" + subdir;
   }
 
