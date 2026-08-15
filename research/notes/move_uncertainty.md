@@ -11,7 +11,7 @@ learned object — the conditional distribution of **move-value error**. See
 For a move `m` at position `x`, let
 
 ```
-ĝ(m) = v̂ + δ(m)          cheap estimate of the value after m
+ĝ(m) = v + δ(m)          cheap estimate of the value after m
                           (δ = SEE swing, or history/continuation score, or 0)
 g*(m)                     true deep value after m
 e(m) = ĝ(m) − g*(m)       signed move-value error
@@ -26,7 +26,7 @@ OmegaZero search of the child, reusing the H4 target machinery).
 
 Current rule (`ShouldSeePrune`, `engine.h:586`): prune a capture when
 `see_val < −depth · see_margin`. It is a bet that `g*(m) ≤ α` (the move won't raise alpha),
-using `ĝ(m) = v̂ + see(m)`. Wrong when the move is *actually* good — a sacrifice SEE can't
+using `ĝ(m) = v + see(m)`. Wrong when the move is *actually* good — a sacrifice SEE can't
 see.
 
 ```

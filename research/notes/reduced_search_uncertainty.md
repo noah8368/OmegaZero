@@ -26,7 +26,7 @@ logic: if passing still leaves the opponent unable to pull us below β, a real m
 as good — *unless* we are in **zugzwang**, where being forced to move is bad and passing
 *overstates* our value.
 
-Cast it exactly like RFP, with `s_null` in place of `v̂` and `w` in place of `u`:
+Cast it exactly like RFP, with `s_null` in place of `v` and `w` in place of `u`:
 
 ```
 prune believes  v* ≥ β

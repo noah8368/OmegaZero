@@ -92,8 +92,8 @@ Stockfish dependency. The ground-truth-vs-external-engine calibration study is
 
 ## H3 — Signed/directional error is the right target
 
-**Claim.** Modeling *signed* error `v̂ − v*` (and reading one-sided quantiles) produces
-better pruning than modeling `|v̂ − v*|`, because pruning is one-sided: RFP/razoring bet
+**Claim.** Modeling *signed* error `v − v*` (and reading one-sided quantiles) produces
+better pruning than modeling `|v − v*|`, because pruning is one-sided: RFP/razoring bet
 the position isn't secretly *worse*; futility bets it isn't secretly *better*. **Settled
 as the design choice**; the prediction to verify is that one-sided coverage conditioned
 on position correlates with incorrect-cutoff rate in a way symmetric `|u|` cannot express.

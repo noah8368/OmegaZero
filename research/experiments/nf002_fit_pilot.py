@@ -2,7 +2,7 @@
 """NF-002 fit-training pilot: MDN (Student-t) head on a frozen NNUE trunk embedding.
 
 This is a HARNESS-VERIFICATION pilot, not a research read. The uncertainty labels
-(v_hat, v_star, u) in the dataset were generated with the HCE eval (no nnue.bin at
+(v, v_star, u) in the dataset were generated with the HCE eval (no nnue.bin at
 datagen time), while the conditioning embedding x here comes from a trained (weak,
 overfit) NNUE trunk -> the embedding and the labels describe DIFFERENT evals. So the
 numbers below verify that the pipeline runs end to end (loader -> frozen trunk embed

@@ -5,12 +5,12 @@ Preprocess NF-002 uncertainty-label data from text to binary format.
 The uncertainty datagen mode (`mode: uncertainty` in nnue/config.json, see
 src/datagen.cc::PlayGameUncertainty) emits a 7-field row per sampled position:
 
-    FEN | v_hat | v_star | u | depth | nodes | result
+    FEN | v | v_star | u | depth | nodes | result
 
 where (all scores are STM POV, centipawns):
-    v_hat  = raw static eval (Board::Evaluate(), uncorrected)
+    v  = raw static eval (Board::Evaluate(), uncorrected)
     v_star = fixed-depth + node-capped deep search score (the target)
-    u      = v_hat - v_star, the signed eval error we model  p(u | x)
+    u      = v - v_star, the signed eval error we model  p(u | x)
     depth  = deepest completed depth of the v_star search
     nodes  = nodes visited by the v_star search
     result = game outcome, White POV (0.0 / 0.5 / 1.0)
@@ -38,7 +38,7 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from preprocess_data import fen_to_halfkp, MAX_FEATURES  # noqa: E402
 
-# v_hat / v_star / u are int32, NOT int16: NF-002's signal is the fat signed-error
+# v / v_star / u are int32, NOT int16: NF-002's signal is the fat signed-error
 # tail from the KEPT tactical positions (the filters are inverted vs. NNUE datagen),
 # and clipping those to +/-32767 would corrupt exactly the tail the margins read.
 UNC_RECORD_DTYPE = np.dtype([
@@ -47,9 +47,9 @@ UNC_RECORD_DTYPE = np.dtype([
     ("num_black", np.uint8),
     ("black_indices", np.uint16, (MAX_FEATURES,)),
     ("stm", np.uint8),       # 0=black, 1=white
-    ("v_hat", np.int32),     # raw static eval, STM POV (centipawns)
+    ("v", np.int32),     # raw static eval, STM POV (centipawns)
     ("v_star", np.int32),    # fixed-depth search target, STM POV (centipawns)
-    ("u", np.int32),         # signed error v_hat - v_star (the modeled quantity)
+    ("u", np.int32),         # signed error v - v_star (the modeled quantity)
     ("depth", np.uint8),     # deepest completed depth of the v_star search
     ("nodes", np.uint32),    # nodes visited by the v_star search
     ("result", np.uint8),    # 0=loss(0.0), 1=draw(0.5), 2=win(1.0), White POV
@@ -63,7 +63,7 @@ def main():
         description="Preprocess NF-002 uncertainty-label data to binary format"
     )
     parser.add_argument(
-        "input", help="Input text file (FEN | v_hat | v_star | u | depth | nodes | result)"
+        "input", help="Input text file (FEN | v | v_star | u | depth | nodes | result)"
     )
     parser.add_argument(
         "-o", "--output",
@@ -104,7 +104,7 @@ def main():
 
             try:
                 fen = parts[0].strip()
-                v_hat = int(parts[1].strip())
+                v = int(parts[1].strip())
                 v_star = int(parts[2].strip())
                 u = int(parts[3].strip())
                 depth = int(parts[4].strip())
@@ -114,12 +114,12 @@ def main():
                 skipped += 1
                 continue
 
-            # Self-consistency guard: u must equal v_hat - v_star (the C++ writes
+            # Self-consistency guard: u must equal v - v_star (the C++ writes
             # all three). A mismatch means a malformed/corrupt row -> recompute
             # rather than trust it, and count it so upstream corruption surfaces.
-            if u != v_hat - v_star:
+            if u != v - v_star:
                 mismatched_u += 1
-                u = v_hat - v_star
+                u = v - v_star
 
             fen_parts = fen.split()
             stm_is_white = (fen_parts[1] == "w") if len(fen_parts) > 1 else True
@@ -136,7 +136,7 @@ def main():
             record["num_black"] = len(bf)
             record["black_indices"][:len(bf)] = bf
             record["stm"] = 1 if stm_is_white else 0
-            record["v_hat"] = v_hat
+            record["v"] = v
             record["v_star"] = v_star
             record["u"] = u
             record["depth"] = min(depth, 255)
@@ -155,7 +155,7 @@ def main():
     print("\nDone:")
     print(f"  Positions: {idx:,} ({skipped:,} skipped)")
     if mismatched_u:
-        print(f"  WARNING: {mismatched_u:,} rows had u != v_hat - v_star (recomputed)")
+        print(f"  WARNING: {mismatched_u:,} rows had u != v - v_star (recomputed)")
     print(f"  Output: {output_path} ({file_size / 1024 / 1024:.1f} MB)")
     print(f"  Record size: {UNC_RECORD_DTYPE.itemsize} bytes")
 

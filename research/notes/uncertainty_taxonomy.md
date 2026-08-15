@@ -22,11 +22,11 @@ changes.
 
 | # | Object | Random variable | Conditioning | Trained by | Serves |
 |---|--------|-----------------|--------------|-----------|--------|
-| **O1** | **Eval error** | `u = v̂ − v*` | position `x` | H1–H6 (this program) | RFP, razoring, futility, delta pruning, aspiration windows, singular margin, LMR-depth, time mgmt |
+| **O1** | **Eval error** | `u = v − v*` | position `x` | H1–H6 (this program) | RFP, razoring, futility, delta pruning, aspiration windows, singular margin, LMR-depth, time mgmt |
 | **O2** | **Move-value error** | `e(m) = ĝ(m) − g*(m)` | position `x`, move `m` | *new model* | SEE pruning, LMP, LMR-amount, move ordering |
 | **O3** | **Reduced-search error** | `w = s_r − v*` | position `x`, reduction `R` | *new model* | NMP (+ adaptive R / zugzwang), ProbCut, multi-cut |
 
-`v̂` = static eval; `v*` = deep target; `ĝ(m) = v̂ + δ(m)` = cheap post-move value estimate
+`v` = static eval; `v*` = deep target; `ĝ(m) = v + δ(m)` = cheap post-move value estimate
 (δ = SEE swing / history / …); `g*(m)` = deep value after `m`; `s_r` = a reduced- or
 shallow-depth search return.
 
@@ -38,7 +38,7 @@ shallow-depth search return.
   `p(g*(m) | x, m)` for every move you can *induce* the rank survival function LMP needs
   (see [move_uncertainty.md](move_uncertainty.md)) — so O2 is really the fundamental
   move-level object and LMP/LMR/ordering are all read-outs of it.
-- **O1 → O3** replaces the static eval `v̂` with a *searched* estimate `s_r`. NMP's evidence
+- **O1 → O3** replaces the static eval `v` with a *searched* estimate `s_r`. NMP's evidence
   is a reduced null-window result, not `Evaluate()`; its error bundles reduced-depth error
   **and** zugzwang (the pass being illegal in spirit). Different variable, different tails —
   and the tails are exactly where zugzwang lives, which is why a learned `p(w|x,R)`

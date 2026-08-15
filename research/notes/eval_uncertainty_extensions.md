@@ -7,7 +7,7 @@ no new labels**: they are the highest-leverage, lowest-risk follow-ons once O1 e
 one genuinely ambitious idea (LMR-depth via information gain) that needs a depth-conditioned
 O1. See [uncertainty_taxonomy.md](uncertainty_taxonomy.md) for the object map.
 
-Convention as always (H3): `u = v̂ − v*`, quantiles `Q_p(u|x)`, risk `C`. The recurring
+Convention as always (H3): `u = v − v*`, quantiles `Q_p(u|x)`, risk `C`. The recurring
 figure of merit is the **predicted spread**
 `σ̂(x) := Q_{1−C}(u|x) − Q_{C}(u|x)` — a per-position "how unresolved is this eval."
 
@@ -37,7 +37,7 @@ with its captured material) is a pure futility bet at a leaf, so it takes the O1
 margin directly:
 
 ```
-skip capture if   v̂ + captured_value + Q_C(u|x) ≤ α
+skip capture if   v + captured_value + Q_C(u|x) ≤ α
 node-level:        stand_pat + Q_C(u|x) ≤ α        replaces the constant qs_delta
 ```
 

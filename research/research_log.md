@@ -16,7 +16,7 @@ and labels describe *different* evals. A coherent read needs NNUE-eval labels.
 
 - **Pilot datagen** (`mode: uncertainty`, depth 8 / node_cap 500k, 1500 games, 8 workers,
   ~2.1h): **34,479 positions** (31,011 train / 3,468 val, split by game) →
-  `nnue/data_uncertainty/combined/`. Clean: all 7-field, 0 `u==v̂−v*` violations, mean(u)=−21.8cp,
+  `nnue/data_uncertainty/combined/`. Clean: all 7-field, 0 `u==v−v*` violations, mean(u)=−21.8cp,
   mean|u|=124cp, **fat tail intact** (|u|≥100cp=36%, ≥300=11%, ≥600=2.6%, max 2209cp — the
   inverted filters kept the tactical tail), `v*` depth uniformly 8.
 - **Trunk**: LFS-pulled `nnue/model/2026-06-07…61d0444_6.0M_pos/best.bin` (6M/3-epoch, overfit;
@@ -37,7 +37,7 @@ and labels describe *different* evals. A coherent read needs NNUE-eval labels.
 **Next — GATED ON A FULLY TRAINED NNUE.** With the pilot done, the *entire* remaining research
 line now depends on the deployment-quality NNUE existing. This pilot was the **only**
 net-independent piece; there is no further net-free work to do. NF-003 onward requires the real
-net for two independent reasons: (1) **coherence + relevance** — labels (`v̂ = NNUE eval`) and
+net for two independent reasons: (1) **coherence + relevance** — labels (`v = NNUE eval`) and
 the embedding must come from the *same* net, and it must be the net we'll actually ship
 (uncertainty of a weak net ≠ uncertainty of the deployed net); (2) **leakage** — margin
 positions must be disjoint from that net's training set, so we can't even pick positions until
@@ -61,8 +61,8 @@ Closed H2's last asterisk and built the NF-002 label pipeline end (C++ side).
   See [NF-001b](experiments/NF-001b.md).
 - **NF-002 datagen — uncertainty-label mode implemented** (`src/datagen.cc`,
   config `mode: uncertainty`). Per sampled position: fixed-depth + node-capped `v*` (also
-  the game move), `v̂ = Board::Evaluate()` (raw static, STM POV), row
-  `fen | v̂ | v* | u | depth | nodes | result`; **inverted tactical filters** (keep
+  the game move), `v = Board::Evaluate()` (raw static, STM POV), row
+  `fen | v | v* | u | depth | nodes | result`; **inverted tactical filters** (keep
   in-check/tactical — the fat error tail; drop only mate band). Search is single-threaded by
   construction (bare `Engine`, not `SearchPool`) → deterministic `v*`. Smoke-tested (60 rows,
   correct). **Fixed a latent bug**: `sizeof(Engine)=566 KB` on a spawned worker's ~512 KB
@@ -135,7 +135,7 @@ regime (if any) where the flow separates from MDN/QR before betting on real data
 Pushed the [pruning_integration.md](notes/pruning_integration.md) "estimate − conditional
 quantile ≥ bound" logic onto the heuristics it *doesn't* cover, and found they don't collapse
 into one distribution — they split into **three uncertainty objects**:
-- **O1 eval error** `u = v̂ − v*` — what H1–H6 already train. Beyond RFP/razoring/futility it
+- **O1 eval error** `u = v − v*` — what H1–H6 already train. Beyond RFP/razoring/futility it
   *also* drives aspiration windows, delta pruning, singular margins, LMR-depth, and time
   management **for free** (same head, no new labels).
 - **O2 move-value error** `e(m) = ĝ(m) − g*(m)` — needs a move argument. Serves SEE pruning
@@ -164,7 +164,7 @@ this is documented *reach*, not a promise.
 Worked out the concrete bridge from `p(u|x)` to the search heuristics (Noah's framing:
 one SPSA-tuned constant for "acceptable eval unreliability to prune"). Key refinement:
 don't gate on unreliability alone — combine it with distance-to-bound. Deriving from
-`P(false prune) = P(u > v̂ − β | x) ≤ C` shows the rule collapses to the **existing**
+`P(false prune) = P(u > v − β | x) ≤ C` shows the rule collapses to the **existing**
 prune `eval − margin ≥ β` with **`margin = Q_{1−C}(u|x)`** — the per-position error
 quantile — and the single SPSA constant is the **risk level `C`** (which quantile to
 read). Falls out of this:
@@ -190,7 +190,7 @@ Worked through the design forks from the proposal review, one at a time. Settled
   the flow. CNF is one candidate vs QR/MDN; "flow refuted" is fine. → H1 is the headline;
   H2 demoted.
 - **Truth target `v*`:** deep OmegaZero, **fixed depth** + node cap. No Stockfish (H4).
-- **Error sign:** **signed** `v̂ − v*` (H3).
+- **Error sign:** **signed** `v − v*` (H3).
 - **H1 baseline:** a **freshly SPSA-tuned constant**, not the current shipped margins —
   so a win isolates *conditioning* from tuning effort.
 - **Model target eval → REPLACE correction history (H6).** Grounding the proposal in the

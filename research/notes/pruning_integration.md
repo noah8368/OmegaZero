@@ -21,27 +21,27 @@ The uncertainty must be combined with the distance to the bound.
 
 ## Derivation: the margin *is* the predicted quantile
 
-Convention: **signed** error `u = v̂ − v*` (H3), where `v̂` is the eval used and `v*` the
-deep-OmegaZero target. So `v* = v̂ − u`.
+Convention: **signed** error `u = v − v*` (H3), where `v` is the eval used and `v*` the
+deep-OmegaZero target. So `v* = v − u`.
 
 Take reverse futility pruning (fail-high): it prunes believing `v* ≥ β`. The prune is
 *wrong* exactly when `v* < β`:
 
 ```
-v* < β  ⟺  v̂ − u < β  ⟺  u > v̂ − β
+v* < β  ⟺  v − u < β  ⟺  u > v − β
 ```
 
 Bound the false-prune probability by a risk tolerance `C`:
 
 ```
-P(u > v̂ − β | x) ≤ C
+P(u > v − β | x) ≤ C
 ```
 
 Using the conditional quantile `Q_{1−C}(u | x)` (the value the upper tail probability C
 sits above):
 
 ```
-v̂ − β ≥ Q_{1−C}(u | x)   ⟺   v̂ − Q_{1−C}(u | x) ≥ β
+v − β ≥ Q_{1−C}(u | x)   ⟺   v − Q_{1−C}(u | x) ≥ β
 ```
 
 That final form is the **existing prune** `eval − margin ≥ β`, with
@@ -53,7 +53,7 @@ margin(x) = Q_{1−C}(u | x)     ← per-position (1−C) error quantile
 **So:** the per-position margin is just the model's predicted error quantile, and the
 single **SPSA-tuned constant is the risk level `C`** (equivalently, *which quantile* to
 read). The rule accounts for both uncertainty *and* cushion, because it compares the
-quantile against `v̂ − β`, not against a bare threshold. Integration risk stays low (H5) —
+quantile against `v − β`, not against a bare threshold. Integration risk stays low (H5) —
 only the *value* of `margin` changes; the pruning machinery is untouched.
 
 This is exactly "how much could more depth move this eval, at confidence 1−C?" compared
@@ -63,10 +63,10 @@ against "does that movement cross the bound?"
 
 ### 1. One quantile read does both jobs (H6 + H1 unified)
 `Q_{1−C}(u|x)` bakes in the distribution's **mean** (which replaces correction history —
-H6) and its **spread** (the margin — H1). Concretely, with `v_corrected = v̂ − E[u|x]`:
+H6) and its **spread** (the margin — H1). Concretely, with `v_corrected = v − E[u|x]`:
 
 ```
-v̂ − Q_{1−C}(u|x) = v_corrected − ( Q_{1−C}(u|x) − E[u|x] )
+v − Q_{1−C}(u|x) = v_corrected − ( Q_{1−C}(u|x) − E[u|x] )
                     └ mean-correction ┘   └── one-sided spread cushion ──┘
 ```
 
@@ -96,7 +96,7 @@ signed error.
 ## Scope: this covers the margin family only
 
 The derivation above is exact and complete for **RFP / razoring / futility** — the
-heuristics that compare the static eval `v̂` against a bound. It does **not** subsume the
+heuristics that compare the static eval `v` against a bound. It does **not** subsume the
 rest of OmegaZero's pruning: NMP, SEE pruning, LMP, and LMR bet on *different* random
 variables (reduced-search error, move-value error), so they need *different* learned
 distributions even though they share this exact "estimate − quantile ≥ bound" shape. The

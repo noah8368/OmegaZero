@@ -13,14 +13,14 @@
  *
  * Uncertainty-label mode (config `mode: uncertainty`, for the NF-002 research
  * pipeline). Instead of (fen, score, result) it emits, per sampled position,
- *   fen | v_hat | v_star | u | depth | nodes | result
- * where v_hat = raw static eval (Board::Evaluate(), STM POV), v_star = a
+ *   fen | v | v_star | u | depth | nodes | result
+ * where v = raw static eval (Board::Evaluate(), STM POV), v_star = a
  * deterministic fixed-depth + node-capped search score (STM POV), and
- * u = v_hat - v_star is the signed eval error we model. Differences vs. the NNUE
+ * u = v - v_star is the signed eval error we model. Differences vs. the NNUE
  * path: (1) the deep v_star search is amortized -- run only at sampled positions,
  * and it also supplies the game move; (2) the tactical filters are INVERTED --
  * in-check / high-|score| positions are KEPT (they carry the fat error tail the
- * pruning margins read); only true mate-band scores are excluded. v_hat is a pure
+ * pruning margins read); only true mate-band scores are excluded. v is a pure
  * function of the position; v_star inherits the game's warm TT / correction
  * history (representative -- a real deeper search has the same warm state).
  *
@@ -85,7 +85,7 @@ struct Config {
   string email;
   string name;
   // Uncertainty-label mode (NF-002). "nnue" (default) = legacy (fen,score,result);
-  // "uncertainty" = the (fen,v_hat,v_star,u,depth,nodes,result) pipeline.
+  // "uncertainty" = the (fen,v,v_star,u,depth,nodes,result) pipeline.
   string mode = "nnue";
   int target_depth = 12;         // fixed depth for the v_star search
   uint64_t node_cap = 2000000;   // node safety valve for the v_star search
@@ -187,10 +187,10 @@ struct Position {
   int score;
 };
 
-// One uncertainty-label sample (NF-002). All evals are STM POV; u = v_hat - v_star.
+// One uncertainty-label sample (NF-002). All evals are STM POV; u = v - v_star.
 struct UncertaintyPosition {
   string fen;
-  int v_hat;       // raw static eval (Board::Evaluate())
+  int v;       // raw static eval (Board::Evaluate())
   int v_star;      // fixed-depth + node-capped search score
   int depth;       // deepest completed depth of the v_star search
   uint64_t nodes;  // nodes visited by the v_star search
@@ -298,7 +298,7 @@ static auto PlayGame(float search_time, const SearchParams& params,
 
 // Uncertainty-label self-play game (NF-002). At each sampled ply it runs one deep,
 // deterministic, fixed-depth + node-capped search (which also supplies the game
-// move) and records (fen, v_hat, v_star, depth, nodes). Tactical filters are
+// move) and records (fen, v, v_star, depth, nodes). Tactical filters are
 // inverted vs. PlayGame -- in-check and high-|score| positions are kept; only true
 // mate-band scores are dropped. Non-sampled plies use the ordinary timed search.
 static auto PlayGameUncertainty(int target_depth, uint64_t node_cap,
@@ -344,7 +344,7 @@ static auto PlayGameUncertainty(int target_depth, uint64_t node_cap,
     Move best;
     int score_stm = 0;
     if (sample_this_ply) {
-      int v_hat = board.Evaluate();  // raw static eval, STM POV
+      int v = board.Evaluate();  // raw static eval, STM POV
       reached_depth = 0;
       engine.SetInfiniteSearch();  // drop the time bound (resets depth/node caps)
       engine.SetDepthLimit(target_depth);
@@ -354,13 +354,13 @@ static auto PlayGameUncertainty(int target_depth, uint64_t node_cap,
       engine.SetSearchTime(search_time);  // restore timed budget for ordinary plies
 
       // Drop only mate-band scores (their error is not the smooth quantity we
-      // model -- mirrors ProbCut's mate exclusion). v_hat is never a mate score.
+      // model -- mirrors ProbCut's mate exclusion). v is never a mate score.
       if (!best.IsEmpty() && !IsMateScore(score_stm)) {
         U64 hash = board.GetBoardHash();
         if (seen_hashes.find(hash) == seen_hashes.end()) {
           seen_hashes.insert(hash);
           positions.push_back(
-              {board.ToFen(), v_hat, score_stm, reached_depth, nodes});
+              {board.ToFen(), v, score_stm, reached_depth, nodes});
         }
       }
     } else {
@@ -613,8 +613,8 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
                                      params, rng, positions, seen_hashes);
         string result_str = ResultToStr(result);
         for (const auto& p : positions) {
-          out << p.fen << " | " << p.v_hat << " | " << p.v_star << " | "
-              << (p.v_hat - p.v_star) << " | " << p.depth << " | " << p.nodes
+          out << p.fen << " | " << p.v << " | " << p.v_star << " | "
+              << (p.v - p.v_star) << " | " << p.depth << " | " << p.nodes
               << " | " << result_str << '\n';
         }
         num_positions = static_cast<int>(positions.size());
@@ -877,7 +877,7 @@ auto main() -> int {
          << g_node_cap << "\n"
          << "  Filters: skip " << kSkipFirstNPlies << " plies, sample 1/"
          << kSampleInterval << ", dedup, keep checks+tactics (drop mate band)\n"
-         << "  Row: fen | v_hat | v_star | u | depth | nodes | result\n";
+         << "  Row: fen | v | v_star | u | depth | nodes | result\n";
   } else {
     cout << "  Filters: skip " << kSkipFirstNPlies << " plies, sample 1/"
          << kSampleInterval << ", |score| <= " << kMaxAbsScore
