@@ -34,8 +34,16 @@ and labels describe *different* evals. A coherent read needs NNUE-eval labels.
   per-record embed + all-in-RAM won't scale to 2–5M, (4) H5 C++ deployment inference +
   fixed-point cp-grain bake + SPSA `C` are out of scope here.
 
-**Next:** NF-003 — drop the net to `nnue/nnue.bin`, rebuild, regen datagen for NNUE-coherent
-labels, rerun this harness for a *real* calibration read; then the corrector-swap SPRT.
+**Next — GATED ON A FULLY TRAINED NNUE.** With the pilot done, the *entire* remaining research
+line now depends on the deployment-quality NNUE existing. This pilot was the **only**
+net-independent piece; there is no further net-free work to do. NF-003 onward requires the real
+net for two independent reasons: (1) **coherence + relevance** — labels (`v̂ = NNUE eval`) and
+the embedding must come from the *same* net, and it must be the net we'll actually ship
+(uncertainty of a weak net ≠ uncertainty of the deployed net); (2) **leakage** — margin
+positions must be disjoint from that net's training set, so we can't even pick positions until
+the net + its corpus are fixed. So: finish NNUE training (see nnue-local-training-plan) →
+`nnue/nnue.bin` → rebuild → regen datagen for NNUE-coherent labels → rerun
+`nf002_fit_pilot.py` for a *real* calibration read → NF-003 corrector-swap SPRT.
 
 ---
 
