@@ -133,18 +133,8 @@ Engine::Engine(TranspositionTable* tt, Board* board, S8 player_side,
 
 constexpr int kRootNodePly = 0;
 
-auto Engine::GetBestMove(int& score_out) -> Move {
-  assert(!pos_history_.empty());
-  board_->ClearPawnTable();
-  for (auto& km : killer_moves_) km = {};
-  size_t saved_history_size = pos_history_.size();
-  Move best_move;
-  Move move = {};
-  board_->SavePos();
-
-  auto fallback_start = high_resolution_clock::now();
-  vector<Move> fallback_moves = GenerateMoves();
-  for (const Move& m : fallback_moves) {
+auto Engine::FirstLegalFallbackMove(const vector<Move>& moves) -> Move {
+  for (const Move& m : moves) {
     // Honor `go searchmoves`: the fallback must also be a permitted root move.
     if (!search_moves_.empty()) {
       bool allowed = false;
@@ -154,37 +144,43 @@ auto Engine::GetBestMove(int& score_out) -> Move {
           break;
         }
       }
-      if (!allowed) continue;
+      if (!allowed) {
+        continue;
+      }
     }
     try {
       board_->MakeMove(m);
-      best_move = m;
       board_->UnmakeMove(m);
-      break;
+      return m;
     } catch (BadMove&) {
       continue;
     }
   }
-  auto fallback_end = high_resolution_clock::now();
-  float fallback_secs =
-      std::chrono::duration<float>(fallback_end - fallback_start).count();
-  soft_time_ = std::max(0.01f, soft_time_ - fallback_secs);
-  hard_time_ = std::max(0.01f, hard_time_ - fallback_secs);
-  base_time_ = std::max(0.01f, base_time_ - fallback_secs);
+  return Move{};
+}
+
+auto Engine::GetBestMove(int& score_out) -> Move {
+  assert(!pos_history_.empty());
+  board_->ClearPawnTable();
+  for (auto& km : killer_moves_) km = {};
+  size_t saved_history_size = pos_history_.size();
+  board_->SavePos();
+
+  // Pseudo-legal root moves; also the candidate list for the Syzygy probe and
+  // the empty-search fallback below.
+  vector<Move> fallback_moves = GenerateMoves();
 
   // Syzygy DTZ root probe: in a tablebase position, play the tablebase-optimal
   // move directly (perfect play, correct 50-move conversion) rather than
   // searching. No-op unless tables are loaded and the position qualifies.
-  if (Move tb_move; ProbeTbRoot(fallback_moves, tb_move, score_out)) {
+  Move tb_move;
+  if (ProbeTbRoot(fallback_moves, tb_move, score_out)) {
     board_->ResetPos();
     pos_history_.resize(saved_history_size);
     return tb_move;
   }
 
-  has_obvious_recapture_ = false;
-  if (dynamic_tm_) {
-    DetectObviousRecapture();
-  }
+  InitTimeManagement();
 
   search_start_ = high_resolution_clock::now();
   nodes_since_time_check_ = 0;
@@ -192,10 +188,11 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   int search_depth = 1;
   total_nodes_ = 0;
   iter_elapsed_[0] = 0.0f;
-  subtree_ema_init_ = false;
   completed_pv_len_ = 0;
+  Move best_move;
+  Move move = {};
 
-  const int max_depth = std::min(depth_limit_, kSearchLimit);
+  const int max_depth = min(depth_limit_, kSearchLimit);
   for (; search_depth <= max_depth; ++search_depth) {
     try {
       prev_score =
@@ -207,10 +204,8 @@ auto Engine::GetBestMove(int& score_out) -> Move {
       break;
     }
 
-    // Record this iteration's result and rescale the soft bound by search
-    // difficulty (stable positions spend less, unstable ones more). Then stop
-    // if the soft bound is crossed, or if the next iteration is unlikely to
-    // finish before it.
+    // Record this iteration's result; the soft-bound rescale and stop decision
+    // happen in UpdateSoftBoundAndShouldStop below.
     float elapsed = duration_cast<duration<float>>(
                         high_resolution_clock::now() - search_start_)
                         .count();
@@ -221,8 +216,8 @@ auto Engine::GetBestMove(int& score_out) -> Move {
     // Snapshot the completed root PV (pv_table_[0] gets reset by the next
     // iteration's entry, which may then abort before repopulating it).
     completed_pv_len_ = pv_length_[0];
-    for (int i = 0; i < completed_pv_len_; ++i) {
-      completed_pv_[i] = pv_table_[0][i];
+    for (int pv_idx = 0; pv_idx < completed_pv_len_; ++pv_idx) {
+      completed_pv_[pv_idx] = pv_table_[0][pv_idx];
     }
 
     // Report this completed depth (only completed depths reach here; an
@@ -246,17 +241,7 @@ auto Engine::GetBestMove(int& score_out) -> Move {
       }
     }
 
-    if (dynamic_tm_) {
-      UpdateSubtreeShare();
-      double difficulty = ComputeDifficulty(search_depth);
-      soft_time_ = static_cast<float>(
-          std::clamp(static_cast<double>(base_time_) * difficulty, 0.01,
-                     static_cast<double>(hard_time_)));
-    }
-    if (elapsed >= soft_time_) {
-      break;
-    }
-    if (dynamic_tm_ && PredictNextIterExceeds(search_depth)) {
+    if (UpdateSoftBoundAndShouldStop(search_depth, elapsed)) {
       break;
     }
   }
@@ -269,6 +254,15 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   score_out = prev_score;
   board_->ResetPos();
   pos_history_.resize(saved_history_size);
+
+  // If the search was aborted before it ever assigned a best move (e.g. a UCI
+  // `stop` or a node limit hit during the first root move), fall back to the
+  // first legal root move so we never return an empty move. The board is back
+  // at the root here, so this probe is a no-op in the common case.
+  if (best_move.IsEmpty()) {
+    best_move = FirstLegalFallbackMove(fallback_moves);
+  }
+
   assert(!best_move.IsEmpty() || GetGameStatus() == kPlayerCheckmated ||
          GetGameStatus() == kDraw);
   return best_move;
@@ -422,8 +416,8 @@ auto Engine::ScoreStabilitySignal(int depth) const -> double {
     weight *= params_.tm_move_decay;
   }
   double magnitude =
-      std::min((weighted_abs / total_weight) / params_.tm_score_scale, 1.0);
-  double instability = std::min(
+      min((weighted_abs / total_weight) / params_.tm_score_scale, 1.0);
+  double instability = min(
       magnitude + params_.tm_osc_weight * (oscillation / total_weight), 1.0);
   return 2.0 * instability - 1.0;
 }
@@ -463,6 +457,31 @@ auto Engine::DetectObviousRecapture() -> void {
   }
 }
 
+auto Engine::InitTimeManagement() -> void {
+  has_obvious_recapture_ = false;
+  if (dynamic_tm_) {
+    DetectObviousRecapture();
+  }
+  subtree_ema_init_ = false;
+}
+
+auto Engine::UpdateSoftBoundAndShouldStop(int depth, float elapsed) -> bool {
+  // Rescale the soft bound by search difficulty (stable positions spend less,
+  // unstable ones more). Then stop if the soft bound is crossed, or if the next
+  // iteration is unlikely to finish before it.
+  if (dynamic_tm_) {
+    UpdateSubtreeShare();
+    double difficulty = ComputeDifficulty(depth);
+    soft_time_ = static_cast<float>(
+        std::clamp(static_cast<double>(base_time_) * difficulty, 0.01,
+                   static_cast<double>(hard_time_)));
+  }
+  if (elapsed >= soft_time_) {
+    return true;
+  }
+  return dynamic_tm_ && PredictNextIterExceeds(depth);
+}
+
 auto Engine::UpdateSubtreeShare() -> void {
   // Fold the fraction of root nodes spent on the best move (from the last root
   // search) into an EMA. A dominant best move -> share near 1; effort spread
@@ -471,8 +490,8 @@ auto Engine::UpdateSubtreeShare() -> void {
     return;
   }
   uint64_t total = 0;
-  for (int i = 0; i < root_move_count_; ++i) {
-    total += root_move_nodes_[i];
+  for (int move_idx = 0; move_idx < root_move_count_; ++move_idx) {
+    total += root_move_nodes_[move_idx];
   }
   if (total == 0) {
     return;
@@ -690,8 +709,8 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   if (ply == kRootNodePly) {
     root_move_count_ =
         std::min(static_cast<int>(move_list.size()), kMaxRootMoves);
-    for (int i = 0; i < root_move_count_; ++i) {
-      root_move_nodes_[i] = 0;
+    for (int move_idx = 0; move_idx < root_move_count_; ++move_idx) {
+      root_move_nodes_[move_idx] = 0;
     }
     best_root_idx_ = -1;
   }
@@ -805,8 +824,8 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       if (collect_pv && search_eval > alpha) {
         pv_table_[ply][0] = move;
         int child_len = min(pv_length_[ply + 1], kSearchLimit - 1);
-        for (int i = 0; i < child_len; ++i) {
-          pv_table_[ply][i + 1] = pv_table_[ply + 1][i];
+        for (int pv_idx = 0; pv_idx < child_len; ++pv_idx) {
+          pv_table_[ply][pv_idx + 1] = pv_table_[ply + 1][pv_idx];
         }
         pv_length_[ply] = child_len + 1;
       }
@@ -1340,7 +1359,5 @@ auto Engine::BenchmarkReport(int search_depth) -> void {
             << "  NPS: " << nps << endl;
 }
 #endif
-
-// --- Guarded: search trace ---
 
 }  // namespace omegazero

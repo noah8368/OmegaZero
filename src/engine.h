@@ -273,6 +273,17 @@ class Engine {
   auto ComputeDifficulty(int depth) const -> double;
   // Whether the next iteration is predicted to exceed the soft bound.
   auto PredictNextIterExceeds(int depth) const -> bool;
+  // Reset per-search time-management state (obvious-recapture detection and the
+  // best-move node-share EMA) before the iterative-deepening loop.
+  auto InitTimeManagement() -> void;
+  // After a completed iteration at `depth` (with `elapsed` seconds spent so
+  // far), rescale the soft bound by search difficulty and report whether the
+  // loop should stop (soft bound crossed, or next iteration unlikely to finish).
+  auto UpdateSoftBoundAndShouldStop(int depth, float elapsed) -> bool;
+  // First legal move among `moves` (honoring `go searchmoves`), or an empty
+  // Move if none is legal. Used to guarantee a non-empty best move when the
+  // search is aborted before it assigns one.
+  auto FirstLegalFallbackMove(const std::vector<Move>& moves) -> Move;
 
   // Search and scoring (int).
   // Negamax search over the move tree for the moving player's best evaluation.
