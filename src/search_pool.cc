@@ -19,9 +19,9 @@ SearchContext::SearchContext(TranspositionTable* tt, const Board& board,
                              float search_time)
     : board_(board),
       // Engine's player_side is a UI-perspective char ('w'/'b'/'r') that the
-      // search never reads; GetPlayerToMove() returns kWhite/kBlack (0/1), which
-      // the Engine ctor would reject as an invalid side. Pass the side to move
-      // as its char so construction is valid.
+      // search never reads; GetPlayerToMove() returns kWhite/kBlack (0/1),
+      // which the Engine ctor would reject as an invalid side. Pass the side to
+      // move as its char so construction is valid.
       engine_(tt, &board_, board_.GetPlayerToMove() == kWhite ? 'w' : 'b',
               search_time, pos_history) {}
 
@@ -29,8 +29,7 @@ SearchPool::SearchPool(S8 num_threads) {
   num_helpers_ = num_threads > 0 ? num_threads - 1 : 0;
 }
 
-auto SearchPool::StartHelpers(const Board& root,
-                              const vector<U64>& pos_history,
+auto SearchPool::StartHelpers(const Board& root, const vector<U64>& pos_history,
                               const SearchParams& params) -> void {
   helper_ctxs_.clear();
   helper_threads_.clear();
@@ -39,12 +38,12 @@ auto SearchPool::StartHelpers(const Board& root,
   // Placeholder budget; each helper immediately switches to an unbounded search
   // and is ended by StopHelpers() when the main search finishes.
   constexpr float kHelperPlaceholderTime = 1.0f;
-  for (S8 i = 0; i < num_helpers_; ++i) {
+  for (S8 helper_idx = 0; helper_idx < num_helpers_; ++helper_idx) {
     helper_ctxs_.push_back(std::make_unique<SearchContext>(
         &tt_, root, pos_history, kHelperPlaceholderTime));
     // Helpers must search with the same parameters as the main engine.
-    helper_ctxs_[i]->engine_.SetParams(params);
-    helper_ctxs_[i]->engine_.SetInfiniteSearch();
+    helper_ctxs_[helper_idx]->engine_.SetParams(params);
+    helper_ctxs_[helper_idx]->engine_.SetInfiniteSearch();
   }
   for (S8 i = 0; i < num_helpers_; ++i) {
     SearchContext* ctx = helper_ctxs_[i].get();
