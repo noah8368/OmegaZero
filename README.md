@@ -320,6 +320,12 @@ Search runs across all available CPU cores by default ([Lazy SMP](https://www.ch
 OmegaZero --threads 4 -p w --st 1
 ```
 
+To save the completed game as a PGN under `games/`, add `--pgn` with the opponent's name:
+```
+OmegaZero --pgn Noah -p w --st 1
+```
+The saved PGN includes a note recording which of OmegaZero's resources were in play — whether the NNUE or handcrafted eval was used, and whether the Syzygy tablebases were loaded and actually reached during the game.
+
 The board display defaults to dark terminal backgrounds (filled glyphs = white pieces). If using a light terminal, add `--light-theme`:
 ```
 OmegaZero --light-theme
@@ -355,7 +361,7 @@ to avoid ambiguity in a movement command. Some valid example moves are
  - Queenside castle: `0-0-0`
  - Kingside castle: `0-0`
 
-To resign, a user must enter `q` on their turn.
+On their turn, a user may also enter `u` to undo their previous move (this takes back both the engine's reply and the user's own last move, returning to the user's prior turn), or `r` to resign.
 
 ### UCI Mode
 

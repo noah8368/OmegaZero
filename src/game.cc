@@ -23,6 +23,8 @@
 #include "board.h"
 #include "engine.h"
 #include "move.h"
+#include "nnue.h"
+#include "syzygy.h"
 #include "time_control.h"
 
 namespace omegazero {
@@ -316,6 +318,15 @@ void Game::Play() {
     return;
   }
 
+  // Snapshot the state a single ply mutates so the move can be pushed onto
+  // ply_stack_ (and later reversed by UndoLastUserMove) once it is played.
+  Move made_move;
+  size_t undo_move_history_len = move_history_.size();
+  size_t undo_played_moves_len = played_fide_moves_.size();
+  int undo_turn_num = turn_num_;
+  float undo_clock_white = clock_[kWhite];
+  float undo_clock_black = clock_[kBlack];
+
   string move_str;
   if (player_to_move == user_side) {
     string player_name = GetPlayerStr(player_to_move);
@@ -326,18 +337,28 @@ void Game::Play() {
     auto move_start = clock::now();
 
     for (;;) {
-      cout << "Enter move: ";
+      cout << "Enter move ('u' to undo, 'r' to resign): ";
       getline(cin, move_str);
 
-      if (move_str == "q") {
+      if (move_str == "r") {
         game_active_ = false;
         winner_ = GetOtherPlayer(player_to_move);
         RecordFinalScore();
         return;
       }
+      if (move_str == "u") {
+        if (UndoLastUserMove()) {
+          // The board is back at the user's previous turn; re-enter Play() so it
+          // re-displays and re-records the reverted position.
+          return;
+        }
+        cout << "Nothing to undo." << endl;
+        continue;
+      }
       try {
         user_move = ParseMoveCmd(move_str);
         board_.MakeMove(user_move);
+        made_move = user_move;
         break;
       } catch (BadMove& e) {
         cout << "ERROR: Bad Move: " << e.what() << endl;
@@ -389,8 +410,49 @@ void Game::Play() {
     cout << "\n\n"
          << GetPlayerStr(player_to_move) << "'s move: " << move_str << endl;
     board_.MakeMove(engine_move);
+    made_move = engine_move;
   }
   UpdateMoveHistory(move_str);
+
+  // Record this ply so a subsequent 'u' at the user's prompt can take it back.
+  ply_stack_.push_back({made_move, undo_move_history_len, undo_played_moves_len,
+                        undo_turn_num, undo_clock_white, undo_clock_black});
+}
+
+auto Game::UndoLastUserMove() -> bool {
+  // A full round (the engine's reply plus the user's own move) is needed to give
+  // the user back a position they can move from. With fewer plies there is no
+  // prior user decision to replay.
+  if (ply_stack_.size() < 2) {
+    return false;
+  }
+
+  // Called from the user's move prompt, where the top of this Play() has already
+  // recorded the present position (RecordBoardState + Engine::AddPosToHistory)
+  // without a move yet. Drop those so re-entering Play() re-records cleanly.
+  DecrementPosHistory();
+  engine_.PopPosFromHistory();
+
+  // Reverse the engine's reply, then the user's previous move.
+  for (int ply = 0; ply < 2; ++ply) {
+    const PlyRecord& record = ply_stack_.back();
+    board_.UnmakeMove(record.move);
+    // After UnmakeMove the board sits at this ply's pre-move position, which its
+    // own Play() had recorded at the top; roll that increment back too.
+    DecrementPosHistory();
+    engine_.PopPosFromHistory();
+    move_history_.resize(record.move_history_len);
+    played_fide_moves_.resize(record.played_moves_len);
+    turn_num_ = record.turn_num;
+    clock_[kWhite] = record.clock_white;
+    clock_[kBlack] = record.clock_black;
+    ply_stack_.pop_back();
+  }
+
+  // The opening-book pruning in GetOpeningMove() is destructive and not worth
+  // reconstructing; stay out of book for the remainder of the game after an undo.
+  on_opening_ = false;
+  return true;
 }
 
 auto Game::SavePgn(const string& opponent_name) -> void {
@@ -430,6 +492,20 @@ auto Game::SavePgn(const string& opponent_name) -> void {
   f << "[White \"" << white << "\"]\n";
   f << "[Black \"" << black << "\"]\n";
   f << "[Result \"" << result << "\"]\n\n";
+
+  // Note which of OmegaZero's evaluation and endgame resources were in play.
+  string eval_str = g_nnue.IsLoaded() ? "NNUE" : "HCE";
+  string syzygy_str;
+  if (!g_syzygy.IsLoaded()) {
+    syzygy_str = "not loaded";
+  } else if (engine_.SyzygyUsed()) {
+    syzygy_str = "used";
+  } else {
+    syzygy_str = "loaded but not reached";
+  }
+  f << "{ OmegaZero: evaluation = " << eval_str << "; Syzygy tablebases = "
+    << syzygy_str << ". }\n\n";
+
   f << move_history_ << "\n\n";
 
   f << "{ Final position:\n";

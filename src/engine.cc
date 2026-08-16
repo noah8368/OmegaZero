@@ -175,6 +175,7 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   // searching. No-op unless tables are loaded and the position qualifies.
   Move tb_move;
   if (ProbeTbRoot(fallback_moves, tb_move, score_out)) {
+    syzygy_used_ = true;
     board_->ResetPos();
     pos_history_.resize(saved_history_size);
     return tb_move;
@@ -629,6 +630,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   if (ply > 0 && ShouldProbeTb()) {
     TbWdl wdl = g_syzygy.ProbeWdl(*board_);
     if (wdl != TbWdl::kFailed) {
+      syzygy_used_ = true;
       return TbWdlToScore(wdl, ply);
     }
   }
