@@ -28,7 +28,7 @@
 
 ## Project Summary
 
-OmegaZero is a chess engine with a built-in terminal interface. The name OmegaZero is a nod to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero). The engine began as a passion project after its author learned to play chess during the COVID-19 pandemic and became fascinated by the algorithms behind chess engines.
+OmegaZero is a chess engine with a built-in terminal interface. The name *OmegaZero* is a nod to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero). The engine began as a passion project after its author learned to play chess during the COVID-19 pandemic and became fascinated by the algorithms behind chess engines.
 
 ## Performance
 
