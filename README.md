@@ -453,4 +453,4 @@ The [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was ref
 development. 
 
 Credit goes to [Brandon Hsu](https://github.com/2brandonh) for designing the original
-logo; [Claude](https://en.wikipedia.org/wiki/Claude_(language_model)) was used to stylize the image after the [No Game No Life](https://en.wikipedia.org/wiki/No_Game_No_Life) anime.
+logo; AI was used to stylize the image after the [No Game No Life](https://en.wikipedia.org/wiki/No_Game_No_Life) anime.
