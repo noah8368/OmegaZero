@@ -162,7 +162,9 @@ auto Engine::FirstLegalFallbackMove(const vector<Move>& moves) -> Move {
 auto Engine::GetBestMove(int& score_out) -> Move {
   assert(!pos_history_.empty());
   board_->ClearPawnTable();
-  for (auto& km : killer_moves_) km = {};
+  for (auto& move : killer_moves_) {
+    move = {};
+  };
   size_t saved_history_size = pos_history_.size();
   board_->SavePos();
 
@@ -183,7 +185,6 @@ auto Engine::GetBestMove(int& score_out) -> Move {
 
   InitTimeManagement();
 
-  search_start_ = high_resolution_clock::now();
   nodes_since_time_check_ = 0;
   int prev_score = 0;
   int search_depth = 1;
@@ -194,6 +195,7 @@ auto Engine::GetBestMove(int& score_out) -> Move {
   Move move = {};
 
   const int max_depth = min(depth_limit_, kSearchLimit);
+  search_start_ = high_resolution_clock::now();
   for (; search_depth <= max_depth; ++search_depth) {
     try {
       prev_score =
@@ -274,7 +276,7 @@ constexpr S8 kHalfmoveClockLimit = 100;
 auto Engine::GetGameStatus() -> S8 {
   // Check for checks, checkmates, and draws.
   vector<Move> move_list = GenerateMoves();
-  bool no_made_moves_counter = true;
+  bool no_made_moves = true;
   for (const Move& move : move_list) {
     try {
       board_->MakeMove(move);
@@ -283,17 +285,17 @@ auto Engine::GetGameStatus() -> S8 {
       continue;
     }
     board_->UnmakeMove(move);
-    no_made_moves_counter = false;
+    no_made_moves = false;
     break;
   }
 
   if (board_->KingInCheck()) {
     string player_name = GetPlayerStr(board_->GetPlayerToMove());
-    if (no_made_moves_counter) {
+    if (no_made_moves) {
       return kPlayerCheckmated;
     }
     return kPlayerInCheck;
-  } else if (no_made_moves_counter) {
+  } else if (no_made_moves) {
     return kDraw;
   }
 
