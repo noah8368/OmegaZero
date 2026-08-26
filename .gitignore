@@ -8,6 +8,7 @@ cutechess
 /results/**/*.pgn
 /results/benchmarking/*/
 *.pgn
+*.log
 !openings.pgn
 .DS_Store
 nnue/*

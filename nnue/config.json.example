@@ -14,8 +14,9 @@
     "wd": 1e-6,
     "lmbda": 0.7,
     "val_split": 0.05,
-    "workers": -1,
-    "prefetch": 4,
+    "workers": 4,
+    "prefetch": 2,
+    "shuffle_block": 8000000,
     "checkpoint_every": 0,
     "patience": 0,
     "min_delta": 0.0
