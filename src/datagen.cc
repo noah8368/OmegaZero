@@ -641,9 +641,20 @@ auto main() -> int {
   g_email = cfg.email;
   g_name = cfg.name;
 
-  // Datagen self-play uses HCE (no NNUE is loaded), so this resolves the "hce"
-  // profile. Run from the repo root, where params.json (and nnue/config.json)
-  // live. A missing/incomplete file is fatal -- there are no in-code defaults.
+  // Always load the NNUE if it's present, so datagen labels come from the
+  // deployment eval (NNUE-quality targets for the next net generation); fall
+  // back to HCE when nnue/nnue.bin is absent. Load before the params read and
+  // before any worker builds a Board, so ProfileForEvalMode() selects the
+  // matching profile and each Board's constructor seeds its accumulators from
+  // the loaded net. (Run from the repo root, where nnue/ and params.json live.)
+  if (g_nnue.Load("nnue/nnue.bin")) {
+    std::cerr << "Datagen eval: NNUE (nnue/nnue.bin loaded)" << std::endl;
+  } else {
+    std::cerr << "Datagen eval: HCE (nnue/nnue.bin not found)" << std::endl;
+  }
+
+  // Params profile follows the eval just selected. A missing/incomplete file is
+  // fatal -- no in-code defaults.
   const SearchParams params =
       LoadParamsOrDie("params.json", ProfileForEvalMode());
 
