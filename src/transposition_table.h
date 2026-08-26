@@ -121,13 +121,16 @@ class TranspositionTable {
 
 inline auto PackMove(const Move& move) -> U64 {
   U64 word = 0;
-  std::memcpy(&word, &move, sizeof(Move));
+  // Move has default member initializers, so it is non-trivial (though still
+  // trivially copyable); cast to void* so GCC's -Wclass-memaccess accepts the
+  // byte copy. Safe: see the static_assert that Move fits in one 64-bit word.
+  std::memcpy(&word, static_cast<const void*>(&move), sizeof(Move));
   return word;
 }
 
 inline auto UnpackMove(U64 word) -> Move {
   Move move;
-  std::memcpy(&move, &word, sizeof(Move));
+  std::memcpy(static_cast<void*>(&move), &word, sizeof(Move));
   return move;
 }
 
