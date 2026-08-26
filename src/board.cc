@@ -1080,7 +1080,10 @@ static int HalfKpIdx(S8 king_sq, S8 perspective, S8 piece, S8 player, S8 sq) {
 auto Board::UpdateAccumNonCastling(const Move& move) -> void {
   S8 wk = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kWhite]);
   S8 bk = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kBlack]);
-  S8 mover = GetOtherPlayer(player_to_move_);
+  // Runs before SwitchPlayer() in MakeMove, so player_to_move_ is still the
+  // side that just moved: `mover` is that side, `other` its opponent.
+  S8 mover = player_to_move_;
+  S8 other = GetOtherPlayer(player_to_move_);
 
   if (move.moving_piece == kKing) {
     // King moved — recompute that side's accumulator entirely.
@@ -1088,11 +1091,11 @@ auto Board::UpdateAccumNonCastling(const Move& move) -> void {
         (mover == kWhite) ? wk : bk, mover,
         piece_layout_, player_layout_, accum_[mover]);
 
-    // Other side: only update if there was a capture.
-    S8 other = player_to_move_;
+    // Other side: only update if there was a capture. The captured piece
+    // belongs to `other`, so it is friendly from other's perspective.
     if (move.captured_piece != kNA && move.captured_piece != kKing) {
       S8 ok = (other == kWhite) ? wk : bk;
-      int old_idx = HalfKpIdx(ok, other, move.captured_piece, mover,
+      int old_idx = HalfKpIdx(ok, other, move.captured_piece, other,
                                move.target_sq);
       g_nnue.RemoveFeature(old_idx, accum_[other]);
     }
@@ -1131,8 +1134,10 @@ auto Board::UpdateAccumNonCastling(const Move& move) -> void {
 }
 
 auto Board::UpdateAccumCastling(const Move& move) -> void {
-  // King moved — recompute that side's accumulator.
-  S8 mover = GetOtherPlayer(player_to_move_);
+  // King moved — recompute that side's accumulator. Runs before SwitchPlayer()
+  // in MakeMove, so player_to_move_ is still the side that just moved.
+  S8 mover = player_to_move_;
+  S8 other = GetOtherPlayer(player_to_move_);
   S8 wk = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kWhite]);
   S8 bk = GetSqOfFirstPiece(pieces_[kKing] & player_pieces_[kBlack]);
 
@@ -1141,7 +1146,6 @@ auto Board::UpdateAccumCastling(const Move& move) -> void {
       piece_layout_, player_layout_, accum_[mover]);
 
   // Other side: rook moved, update incrementally.
-  S8 other = player_to_move_;
   S8 ok = (other == kWhite) ? wk : bk;
 
   S8 rook_from, rook_to;
