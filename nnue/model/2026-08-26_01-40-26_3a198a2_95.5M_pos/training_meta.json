@@ -1,0 +1,19 @@
+{
+  "run_name": "2026-08-26_01-40-26_3a198a2_95.5M_pos",
+  "timestamp": "2026-08-26 03:29:39",
+  "git_commit": "3a198a2",
+  "device": "mps",
+  "train_positions": 95505796,
+  "val_positions": 5028130,
+  "epochs": 15,
+  "batch_size": 16384,
+  "learning_rate": 0.001,
+  "weight_decay": 1e-05,
+  "lambda": 0.7,
+  "val_split": 0.05,
+  "best_epoch": 9,
+  "best_val_loss": 0.017055492823939675,
+  "final_train_loss": 0.014379325110383078,
+  "total_time_s": 6553.7,
+  "data_path": "/Users/noah/dev/OmegaZero/nnue/data/100M/training_data.bin"
+}

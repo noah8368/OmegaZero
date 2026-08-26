@@ -513,7 +513,7 @@ class NnueNetwork(nn.Module):
                 --> Linear(1)
     """
 
-    def __init__(self):
+    def __init__(self, dropout=0.0):
         super().__init__()
         # sparse=False: materialize a dense 40960x256 grad each step and update ft
         # with a plain Adam. Counterintuitively this is ~2.4x faster end-to-end than
@@ -526,6 +526,10 @@ class NnueNetwork(nn.Module):
         self.l3 = nn.Linear(L2_SIZE, L3_SIZE)
         self.output = nn.Linear(L3_SIZE, 1)
         self.clipped_relu = ClippedReLU()
+        # Train-only regularization on the two hidden dense layers. Identity at
+        # eval() and adds no parameters, so checkpoints and the C++ quantized
+        # export are unaffected. dropout=0.0 disables it (original architecture).
+        self.dropout = nn.Dropout(dropout)
 
         self._init_weights()
 
@@ -547,8 +551,8 @@ class NnueNetwork(nn.Module):
         stm_second = stm_expanded * black_accum + (1 - stm_expanded) * white_accum
         combined = torch.cat([stm_first, stm_second], dim=1)
 
-        x = self.clipped_relu(self.l2(combined))
-        x = self.clipped_relu(self.l3(x))
+        x = self.dropout(self.clipped_relu(self.l2(combined)))
+        x = self.dropout(self.clipped_relu(self.l3(x)))
         return self.output(x)
 
 
@@ -556,13 +560,23 @@ class NnueNetwork(nn.Module):
 #  Training
 # --------------------------------------------------------------------------- #
 
-def compute_target(score, result, lmbda):
-    """Blend sigmoid(score) with game result.
+def compute_target(score, result, stm, lmbda):
+    """Blend sigmoid(score) with game result, in the side-to-move frame.
 
-    target = lambda * sigmoid(score / SCORE_SCALE) + (1 - lambda) * result
+    target_white = lambda * sigmoid(score / SCORE_SCALE) + (1 - lambda) * result
+
+    The datagen stores both score and result WHITE-relative (datagen.cc flips
+    score to White's view and writes kWhiteWin=1.0/kBlackWin=0.0), but the
+    network is SIDE-TO-MOVE relative -- its forward puts the mover's accumulator
+    first, and C++ inference (ForwardFromAccumulators) does the same. So for
+    black-to-move positions the White-relative target is inverted relative to what
+    the net predicts; flip it. In win-prob space the stm-relative target is simply
+    1 - target_white (sigmoid(-x)=1-sigmoid(x) and result -> 1-result). stm==1.0
+    means white to move (no flip).
     """
     score_sigmoid = torch.sigmoid(score / SCORE_SCALE)
-    return lmbda * score_sigmoid + (1 - lmbda) * result
+    target_white = lmbda * score_sigmoid + (1 - lmbda) * result
+    return torch.where(stm.bool(), target_white, 1.0 - target_white)
 
 
 def generate_plots(train_losses, val_losses, plot_dir,
@@ -606,7 +620,11 @@ def generate_plots(train_losses, val_losses, plot_dir,
                     pred = model(wf, bf, stm).squeeze(1)
                     all_material.extend(wf.sum(dim=1).tolist())
 
-                pred_cp = pred * SCORE_SCALE
+                # pred is side-to-move relative; score/result stored below are
+                # White-relative, so flip pred to White's frame for these
+                # diagnostics (stm==1 white -> +1, stm==0 black -> -1).
+                sign = 2.0 * stm - 1.0
+                pred_cp = pred * SCORE_SCALE * sign
                 all_predicted.extend(pred_cp.cpu().tolist())
                 all_actual.extend(score.tolist())
                 all_results.extend(result.tolist())
@@ -910,18 +928,21 @@ def train(args):
         train_loader = DataLoader(train_set, shuffle=True, **loader_kwargs)
         val_loader = DataLoader(val_set, shuffle=False, **val_loader_kwargs)
 
-    model = NnueNetwork().to(device)
+    model = NnueNetwork(dropout=args.dropout).to(device)
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"Parameters: {total_params:,}")
+    print(f"Parameters: {total_params:,}"
+          + (f"  (dropout={args.dropout})" if args.dropout > 0 else ""))
 
-    # ft is dense now (see NnueNetwork), so a single Adam handles everything. Two
-    # param groups keep the previous weight-decay semantics exactly: no wd on the
-    # feature transformer (standard for NNUE FTs), wd on the dense layers. Wrapped
-    # in a one-element list so the shared step/zero_grad/scheduler loops below are
-    # unchanged.
+    # ft is dense now (see NnueNetwork), so a single AdamW handles everything. Two
+    # param groups keep the weight-decay semantics: no wd on the feature transformer
+    # (standard for NNUE FTs), wd on the dense layers. AdamW (not Adam) applies that
+    # decay decoupled from the adaptive moment scaling, so args.wd means the same
+    # effective decay across all dense params -- important now that wd is 1e-4, not
+    # a token 1e-6. Wrapped in a one-element list so the shared step/zero_grad/
+    # scheduler loops below are unchanged.
     dense_params = [p for n, p in model.named_parameters() if n != "ft.weight"]
     optimizers = [
-        torch.optim.Adam(
+        torch.optim.AdamW(
             [
                 {"params": [model.ft.weight], "weight_decay": 0.0},
                 {"params": dense_params, "weight_decay": args.wd},
@@ -929,12 +950,41 @@ def train(args):
             lr=args.lr,
         ),
     ]
-    schedulers = [
-        torch.optim.lr_scheduler.StepLR(
-            opt, step_size=max(1, args.epochs // 4), gamma=0.5
-        )
-        for opt in optimizers
-    ]
+    # LR schedule (--lr-schedule):
+    #   cosine  : smooth decay lr -> ~lr/100 over the epoch budget (default; the
+    #             standard NNUE choice, strictly better than the old StepLR that
+    #             only dropped at epoch = epochs//4).
+    #   plateau : halve lr after 2 stalled val epochs. Reactive -- untouched while
+    #             val keeps improving, kicks in exactly when overfitting starts, so
+    #             it's the better pick when early overfitting recurs. Stepped with
+    #             val_loss (see the epoch loop).
+    #   step    : the previous StepLR behavior.
+    sched_kind = args.lr_schedule
+    lr_min = args.lr * 0.01
+    if sched_kind == "cosine":
+        schedulers = [
+            torch.optim.lr_scheduler.CosineAnnealingLR(
+                opt, T_max=args.epochs, eta_min=lr_min)
+            for opt in optimizers
+        ]
+    elif sched_kind == "plateau":
+        schedulers = [
+            torch.optim.lr_scheduler.ReduceLROnPlateau(
+                opt, mode="min", factor=0.5, patience=2, min_lr=lr_min)
+            for opt in optimizers
+        ]
+    elif sched_kind == "step":
+        schedulers = [
+            torch.optim.lr_scheduler.StepLR(
+                opt, step_size=max(1, args.epochs // 4), gamma=0.5)
+            for opt in optimizers
+        ]
+    else:
+        sys.exit(f"Unknown --lr-schedule: {sched_kind!r} "
+                 "(expected cosine, plateau, or step)")
+    sched_needs_val = (sched_kind == "plateau")
+    print(f"LR schedule: {sched_kind} (base lr={args.lr}, "
+          f"weight_decay={args.wd})")
 
     def format_pos_count(n):
         if n >= 1_000_000:
@@ -1000,7 +1050,7 @@ def train(args):
                 batch_size = wf.size(0)
 
             pred_sigmoid = torch.sigmoid(pred)
-            target = compute_target(score, result, args.lmbda)
+            target = compute_target(score, result, stm, args.lmbda)
 
             loss = F.mse_loss(pred_sigmoid, target)
 
@@ -1013,8 +1063,6 @@ def train(args):
             train_loss_sum += loss.item() * batch_size
             train_count += batch_size
 
-        for sched in schedulers:
-            sched.step()
         train_loss = train_loss_sum / train_count
 
         # --- Validate ---
@@ -1046,14 +1094,21 @@ def train(args):
                     batch_size = wf.size(0)
 
                 pred_sigmoid = torch.sigmoid(pred)
-                target = compute_target(score, result, args.lmbda)
+                target = compute_target(score, result, stm, args.lmbda)
                 loss = F.mse_loss(pred_sigmoid, target)
 
                 val_loss_sum += loss.item() * batch_size
                 val_count += batch_size
 
         val_loss = val_loss_sum / val_count
+        # Read the LR that was actually used this epoch, then advance the schedule
+        # for the next one (plateau needs the epoch's val_loss to decide).
         lr = optimizers[0].param_groups[0]["lr"]
+        for sched in schedulers:
+            if sched_needs_val:
+                sched.step(val_loss)
+            else:
+                sched.step()
         epoch_time = time.time() - epoch_start
 
         train_losses.append(train_loss)
@@ -1368,8 +1423,20 @@ def main():
         help="Initial learning rate (default: 0.001)",
     )
     train_parser.add_argument(
-        "--wd", type=float, default=t.get("wd", 1e-6),
-        help="Weight decay (default: 1e-6)",
+        "--wd", type=float, default=t.get("wd", 1e-4),
+        help="Weight decay on the dense layers (default: 1e-4)",
+    )
+    train_parser.add_argument(
+        "--dropout", type=float, default=t.get("dropout", 0.0),
+        help="Dropout on the two hidden dense layers, train-only "
+             "(default: 0.0 = off)",
+    )
+    train_parser.add_argument(
+        "--lr-schedule", default=t.get("lr_schedule", "cosine"),
+        choices=["cosine", "plateau", "step"],
+        help="LR schedule: cosine decay over the epoch budget (default), "
+             "plateau (halve after 2 stalled val epochs; best against recurring "
+             "early overfitting), or step (legacy StepLR)",
     )
     train_parser.add_argument(
         "--lmbda", type=float, default=t.get("lmbda", 0.7),
