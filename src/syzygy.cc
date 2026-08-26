@@ -16,32 +16,32 @@ Syzygy g_syzygy;
 // Fathom wants per-color occupancy plus per-type bitboards (both colors), all
 // in the same a1=0 LERF layout OmegaZero uses, so no square flipping is needed.
 struct TbInputs {
-  U64 white, black, kings, queens, rooks, bishops, knights, pawns;
+  Bitboard white, black, kings, queens, rooks, bishops, knights, pawns;
 };
 
 static auto BuildInputs(const Board& board) -> TbInputs {
-  U64 wk = board.GetPiecesByType(kKing, kWhite);
-  U64 bk = board.GetPiecesByType(kKing, kBlack);
-  U64 wq = board.GetPiecesByType(kQueen, kWhite);
-  U64 bq = board.GetPiecesByType(kQueen, kBlack);
-  U64 wr = board.GetPiecesByType(kRook, kWhite);
-  U64 br = board.GetPiecesByType(kRook, kBlack);
-  U64 wb = board.GetPiecesByType(kBishop, kWhite);
-  U64 bb = board.GetPiecesByType(kBishop, kBlack);
-  U64 wn = board.GetPiecesByType(kKnight, kWhite);
-  U64 bn = board.GetPiecesByType(kKnight, kBlack);
-  U64 wp = board.GetPiecesByType(kPawn, kWhite);
-  U64 bp = board.GetPiecesByType(kPawn, kBlack);
-  TbInputs in;
-  in.kings = wk | bk;
-  in.queens = wq | bq;
-  in.rooks = wr | br;
-  in.bishops = wb | bb;
-  in.knights = wn | bn;
-  in.pawns = wp | bp;
-  in.white = wk | wq | wr | wb | wn | wp;
-  in.black = bk | bq | br | bb | bn | bp;
-  return in;
+  Bitboard wk = board.GetPiecesByType(kKing, kWhite);
+  Bitboard bk = board.GetPiecesByType(kKing, kBlack);
+  Bitboard wq = board.GetPiecesByType(kQueen, kWhite);
+  Bitboard bq = board.GetPiecesByType(kQueen, kBlack);
+  Bitboard wr = board.GetPiecesByType(kRook, kWhite);
+  Bitboard br = board.GetPiecesByType(kRook, kBlack);
+  Bitboard wb = board.GetPiecesByType(kBishop, kWhite);
+  Bitboard bb = board.GetPiecesByType(kBishop, kBlack);
+  Bitboard wn = board.GetPiecesByType(kKnight, kWhite);
+  Bitboard bn = board.GetPiecesByType(kKnight, kBlack);
+  Bitboard wp = board.GetPiecesByType(kPawn, kWhite);
+  Bitboard bp = board.GetPiecesByType(kPawn, kBlack);
+  TbInputs tb_input;
+  tb_input.kings = wk | bk;
+  tb_input.queens = wq | bq;
+  tb_input.rooks = wr | br;
+  tb_input.bishops = wb | bb;
+  tb_input.knights = wn | bn;
+  tb_input.pawns = wp | bp;
+  tb_input.white = wk | wq | wr | wb | wn | wp;
+  tb_input.black = bk | bq | br | bb | bn | bp;
+  return tb_input;
 }
 
 // Map Fathom's 5-valued WDL (TB_LOSS..TB_WIN) to our enum.
@@ -97,33 +97,35 @@ auto Syzygy::Free() -> void {
 }
 
 auto Syzygy::PieceCount(const Board& board) const -> int {
-  TbInputs in = BuildInputs(board);
-  return GetNumSetSq(in.white | in.black);
+  TbInputs tb_input = BuildInputs(board);
+  return GetNumSetSq(tb_input.white | tb_input.black);
 }
 
 auto Syzygy::ProbeWdl(const Board& board) const -> TbWdl {
-  TbInputs in = BuildInputs(board);
+  TbInputs tb_input = BuildInputs(board);
   S8 ep_sq = board.GetEpTargetSq();
   unsigned ep = (ep_sq == kNA) ? 0u : static_cast<unsigned>(ep_sq);
   // Castling is always passed as 0: the caller (ShouldProbeTb) only probes when
   // no side has castling rights, which Syzygy requires.
   unsigned result = tb_probe_wdl(
-      in.white, in.black, in.kings, in.queens, in.rooks, in.bishops, in.knights,
-      in.pawns, static_cast<unsigned>(board.GetHalfmoveClock()), 0u, ep,
+      tb_input.white, tb_input.black, tb_input.kings, tb_input.queens,
+      tb_input.rooks, tb_input.bishops, tb_input.knights, tb_input.pawns,
+      static_cast<unsigned>(board.GetHalfmoveClock()), 0u, ep,
       board.GetPlayerToMove() == kWhite);
   return MapWdl(result);
 }
 
 auto Syzygy::ProbeRoot(const Board& board, TbRootMove& out) const -> bool {
-  TbInputs in = BuildInputs(board);
+  TbInputs tb_input = BuildInputs(board);
   S8 ep_sq = board.GetEpTargetSq();
   unsigned ep = (ep_sq == kNA) ? 0u : static_cast<unsigned>(ep_sq);
   unsigned results[TB_MAX_MOVES];
   // Root DTZ probe: works at any rule50 (it accounts for the 50-move rule);
   // castling is 0 since the caller only probes with no castling rights.
   unsigned res = tb_probe_root(
-      in.white, in.black, in.kings, in.queens, in.rooks, in.bishops, in.knights,
-      in.pawns, static_cast<unsigned>(board.GetHalfmoveClock()), 0u, ep,
+      tb_input.white, tb_input.black, tb_input.kings, tb_input.queens,
+      tb_input.rooks, tb_input.bishops, tb_input.knights, tb_input.pawns,
+      static_cast<unsigned>(board.GetHalfmoveClock()), 0u, ep,
       board.GetPlayerToMove() == kWhite, results);
   if (res == TB_RESULT_FAILED) {
     return false;

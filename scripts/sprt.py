@@ -13,6 +13,8 @@ Subcommands:
     match     — Compare any two git refs (tags, commits, branches).
                 Builds both versions from git worktrees automatically.
     run       — Test the current build against a baseline (binary or commit).
+    eval      — SPRT HCE vs NNUE using one binary (the two sides differ only by
+                the --hce runtime flag, so nothing is built from git).
     gauntlet  — Run SPRT across all consecutive version tags (v1→v2→...→vN).
     plot      — Regenerate plots from sprt_history.csv.
     history   — Show SPRT test history table.
@@ -58,6 +60,12 @@ Usage:
 
     # Test against a pre-built baseline binary
     python3 scripts/sprt.py run --baseline build/OmegaZero_base
+
+    # Is the current NNUE stronger than the handcrafted eval? (same binary)
+    python3 scripts/sprt.py eval
+
+    # Same, but flip which side is the baseline / raise the Elo bar
+    python3 scripts/sprt.py eval --test-eval hce --base-eval nnue --elo1 20
 
     # Run the full version gauntlet with SPRT
     python3 scripts/sprt.py gauntlet
@@ -258,19 +266,36 @@ def find_cutechess(cutechess_arg=None):
 
 def run_match(cutechess, test_binary, test_label, base_binary, base_label,
               st, elo0, elo1, alpha, beta, max_games, concurrency,
-              openings=None, pgn_path=None, tc=None):
-    """Run a single SPRT match. Returns a result dict or None on interrupt."""
+              openings=None, pgn_path=None, tc=None, threads=1,
+              test_args=None, base_args=None):
+    """Run a single SPRT match. Returns a result dict or None on interrupt.
+
+    test_args/base_args are the engine's own CLI args (each becomes a cutechess
+    `arg=` token). Default ["--uci"]; pass e.g. ["--uci", "--hce"] to force one
+    side onto the handcrafted eval for an HCE-vs-NNUE comparison of one binary.
+    """
 
     # Real clock (tc=) when given, else fixed time per move (st=). A real clock
     # is required to exercise the engine's clock-based (dynamic) time management.
     tc_clause = f"tc={tc}" if tc else f"st={st}"
 
-    cmd = [
-        cutechess,
-        "-engine", f"name={test_label}", f"cmd={test_binary}",
-            "arg=--uci", "proto=uci",
-        "-engine", f"name={base_label}", f"cmd={base_binary}",
-            "arg=--uci", "proto=uci",
+    # Pin each engine's Threads via a per-engine UCI option; without it the
+    # engine defaults Threads to the core count and concurrent games oversubscribe.
+    threads_opt = f"option.Threads={threads}"
+
+    test_args = test_args or ["--uci"]
+    base_args = base_args or ["--uci"]
+
+    def engine_block(name, binary, engine_args):
+        block = ["-engine", f"name={name}", f"cmd={binary}"]
+        block += [f"arg={a}" for a in engine_args]
+        block += ["proto=uci", threads_opt]
+        return block
+
+    cmd = [cutechess]
+    cmd += engine_block(test_label, test_binary, test_args)
+    cmd += engine_block(base_label, base_binary, base_args)
+    cmd += [
         "-each", tc_clause, "timemargin=500",
         "-sprt", f"elo0={elo0}", f"elo1={elo1}",
             f"alpha={alpha}", f"beta={beta}",
@@ -681,6 +706,7 @@ def cmd_run(args):
         alpha=args.alpha, beta=args.beta,
         max_games=args.max_games, concurrency=args.concurrency,
         openings=args.openings, pgn_path=run_dir / "games.pgn",
+        threads=args.threads,
     )
 
     if summary is None:
@@ -785,6 +811,7 @@ def cmd_match(args):
             alpha=args.alpha, beta=args.beta,
             max_games=args.max_games, concurrency=args.concurrency,
             openings=args.openings, pgn_path=run_dir / "games.pgn",
+            threads=args.threads,
         )
     finally:
         cleanup_worktree(base_wt)
@@ -824,6 +851,136 @@ def cmd_match(args):
             print(f"  RESULT: PASSED — {test_label} is stronger than {base_label}")
         elif result_str == "H0_ACCEPTED":
             print(f"  RESULT: FAILED — {test_label} is not stronger than {base_label}")
+        elif result_str == "INTERRUPTED":
+            print(f"  RESULT: INTERRUPTED — test incomplete")
+        else:
+            print(f"  RESULT: INCONCLUSIVE — max games reached")
+        print(f"  {total} games: +{wins} ={draws} -{losses}  "
+              f"({rate:.1%})  ELO: {elo:+.1f}")
+        print(f"  Results saved to {run_dir}/")
+        print(f"{'=' * 64}")
+
+    return 0 if result_str == "H1_ACCEPTED" else 1
+
+
+# ---------------------------------------------------------------------------
+# eval subcommand (HCE vs NNUE, same binary)
+# ---------------------------------------------------------------------------
+
+EVAL_CHOICES = ("nnue", "hce")
+
+
+def eval_engine_args(eval_mode):
+    """CLI args that put one engine into the given eval mode.
+
+    NNUE is the engine default (loads nnue/nnue.bin), so it needs no flag; --hce
+    forces the handcrafted eval. Both run under --uci so cutechess drives them.
+    """
+    args = ["--uci"]
+    if eval_mode == "hce":
+        args.append("--hce")
+    return args
+
+
+def cmd_eval(args):
+    """SPRT one binary against itself with different eval modes (HCE vs NNUE).
+
+    The two "versions" are the same commit differing only by the --hce runtime
+    flag, so there is nothing to build from git -- we point both cutechess
+    engines at one binary and inject --hce on whichever side is `hce`. main.cc
+    applies the eval-appropriate params.json profile ("nnue"/"hce") per side, so
+    each eval runs with its own tuned search parameters.
+    """
+    if args.test_eval == args.base_eval:
+        sys.exit(f"--test-eval and --base-eval must differ "
+                 f"(both '{args.test_eval}')")
+
+    engine = Path(args.engine)
+    if not engine.is_absolute():
+        engine = REPO_ROOT / engine
+    engine = engine.resolve()
+    if not engine.exists():
+        sys.exit(f"Engine not found: {engine}\nRun 'make' first.")
+
+    # Guard against a silent no-op: an engine asked for NNUE but without weights
+    # falls back to HCE (main.cc), which would make this an HCE-vs-HCE match.
+    if "nnue" in (args.test_eval, args.base_eval):
+        nnue_bin = REPO_ROOT / "nnue" / "nnue.bin"
+        if not nnue_bin.exists():
+            sys.exit(f"NNUE weights not found: {nnue_bin}\n"
+                     "The NNUE side would silently fall back to HCE. Copy a "
+                     "trained net to nnue/nnue.bin (and rebuild) first.")
+
+    cutechess = find_cutechess(args.cutechess)
+    version = get_version_tag()
+    # Labels intentionally do NOT start with "v<N>" so generate_plots() leaves
+    # these rows out of the version-progression gauntlet plot; they still show
+    # up in `sprt.py history`.
+    test_label = f"{args.test_eval.upper()}-{version}"
+    base_label = f"{args.base_eval.upper()}-{version}"
+
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_dir = RESULTS_DIR / f"{ts}_{test_label}_vs_{base_label}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n{'=' * 64}")
+    print(f"  SPRT Eval Test: {test_label} vs {base_label}")
+    print(f"  Same binary: {engine}")
+    print(f"  H0: elo_diff >= {args.elo0}  (accept = no regression)")
+    print(f"  H1: elo_diff >= {args.elo1}  (accept = improvement)")
+    tc_desc = f"tc {args.tc}" if args.tc else f"{args.st}s/move"
+    print(f"  alpha={args.alpha}  beta={args.beta}  |  {tc_desc}")
+    print(f"  Max games: {args.max_games}")
+    print(f"{'=' * 64}\n")
+
+    summary, games = run_match(
+        cutechess,
+        str(engine), test_label,
+        str(engine), base_label,
+        st=args.st, tc=args.tc, elo0=args.elo0, elo1=args.elo1,
+        alpha=args.alpha, beta=args.beta,
+        max_games=args.max_games, concurrency=args.concurrency,
+        openings=args.openings, pgn_path=run_dir / "games.pgn",
+        threads=args.threads,
+        test_args=eval_engine_args(args.test_eval),
+        base_args=eval_engine_args(args.base_eval),
+    )
+
+    if summary is None:
+        result_str = "INTERRUPTED"
+    else:
+        result_str = summary["result"]
+        # Same commit on both sides; record it so `history` shows provenance.
+        head = get_commit_short("HEAD")
+        summary["test_commit"] = head
+        summary["base_commit"] = head
+
+        if games:
+            games_csv = run_dir / "games.csv"
+            with open(games_csv, "w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=list(games[0].keys()))
+                w.writeheader()
+                w.writerows(games)
+
+        summary_csv = run_dir / "summary.csv"
+        with open(summary_csv, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=HISTORY_FIELDS)
+            w.writeheader()
+            w.writerow(summary)
+
+        append_to_history(summary)
+
+        total = summary["games"]
+        wins, draws, losses = summary["wins"], summary["draws"], summary["losses"]
+        rate = summary["score_rate"]
+        elo = summary["elo_diff"]
+
+        print(f"\n{'=' * 64}")
+        if result_str == "H1_ACCEPTED":
+            print(f"  RESULT: PASSED — {test_label} is stronger than {base_label}")
+        elif result_str == "H0_ACCEPTED":
+            print(f"  RESULT: FAILED — {test_label} is not stronger "
+                  f"than {base_label}")
         elif result_str == "INTERRUPTED":
             print(f"  RESULT: INTERRUPTED — test incomplete")
         else:
@@ -885,6 +1042,7 @@ def cmd_gauntlet(args):
             alpha=args.alpha, beta=args.beta,
             max_games=args.max_games, concurrency=args.concurrency,
             openings=args.openings, pgn_path=run_dir / "games.pgn",
+            threads=args.threads,
         )
 
         cleanup_worktree(base_wt)
@@ -953,6 +1111,12 @@ def add_common_args(parser):
                         help="Maximum games before stopping (default: 1000)")
     parser.add_argument("--concurrency", type=int, default=1,
                         help="Concurrent games (default: 1)")
+    parser.add_argument("--threads", type=int, default=1,
+                        help="Threads (UCI option) per engine (default: 1). "
+                             "Keep at 1 for strength tests so concurrent games "
+                             "don't oversubscribe cores and corrupt clock-based "
+                             "TM; the engine otherwise defaults Threads to the "
+                             "core count.")
 
 
 def main():
@@ -975,6 +1139,19 @@ def main():
     match_p.add_argument("base", help="Baseline git ref (tag, commit, branch)")
     match_p.add_argument("test", help="Test git ref (tag, commit, branch)")
     add_common_args(match_p)
+
+    # --- eval ---
+    eval_p = sub.add_parser(
+        "eval",
+        help="SPRT HCE vs NNUE using one binary (no git build needed)")
+    eval_p.add_argument("--engine", default="build/OmegaZero",
+                        help="Path to the engine binary used for both sides "
+                             "(default: build/OmegaZero)")
+    eval_p.add_argument("--test-eval", choices=EVAL_CHOICES, default="nnue",
+                        help="Eval mode for the test side (default: nnue)")
+    eval_p.add_argument("--base-eval", choices=EVAL_CHOICES, default="hce",
+                        help="Eval mode for the baseline side (default: hce)")
+    add_common_args(eval_p)
 
     # --- gauntlet ---
     gauntlet_p = sub.add_parser("gauntlet",
@@ -1003,6 +1180,8 @@ def main():
         sys.exit(cmd_run(args))
     elif args.command == "match":
         sys.exit(cmd_match(args))
+    elif args.command == "eval":
+        sys.exit(cmd_eval(args))
     elif args.command == "gauntlet":
         cmd_gauntlet(args)
     elif args.command == "plot":

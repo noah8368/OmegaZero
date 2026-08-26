@@ -34,6 +34,10 @@ Parameters (train subcommand, CLI args override nnue/config.json):
     --workers     DataLoader worker processes; -1 = auto
                   (all logical cores)                         (default: -1)
     --prefetch    Batches each worker prefetches ahead        (default: 4)
+    --shuffle-block  Block-shuffle memmap data within blocks of
+                  N records instead of globally; bounds the
+                  page-cache working set for near-RAM datasets.
+                  0 = global shuffle             (default: 8000000, ~1 GB)
     --checkpoint-every  Save a per-epoch checkpoint every N
                   epochs; 0 = off (best/final always saved)   (default: 0)
     --patience    Early stop after N epochs with no val
@@ -87,7 +91,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Sampler
 from tqdm import tqdm
 
 
@@ -322,6 +326,43 @@ def _worker_init(worker_id):
     torch.set_num_threads(1)
 
 
+class BlockShuffleSampler(Sampler):
+    """Locality-preserving shuffle for memory-mapped datasets near/over RAM size.
+
+    Globally shuffling a memmap forces the OS to hold the whole file resident in
+    the page cache: when the dataset approaches physical RAM (e.g. a 12.8 GB .bin
+    on a 16 GB machine), that evicts everything else — including WindowServer —
+    into the compressor and can hang the machine into a watchdog panic.
+
+    This sampler instead sorts its assigned indices by file position, cuts them
+    into contiguous blocks of `block_size` records, shuffles the block order, and
+    shuffles within each block. Access stays local to ~one block at a time, so the
+    resident working set is a block rather than the whole file, while batches still
+    see a randomized stream. Bigger blocks mix better but grow the working set;
+    a block of a few million records (~hundreds of MB) is a good tradeoff.
+
+    The generator advances across epochs, so each epoch draws a fresh order while
+    remaining reproducible from `seed`.
+    """
+
+    def __init__(self, indices, block_size, seed=42):
+        self.indices = np.sort(np.asarray(indices, dtype=np.int64))
+        self.block_size = max(1, int(block_size))
+        self.generator = np.random.default_rng(seed)
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __iter__(self):
+        n = len(self.indices)
+        num_blocks = (n + self.block_size - 1) // self.block_size
+        for b in self.generator.permutation(num_blocks):
+            start = int(b) * self.block_size
+            block = self.indices[start:start + self.block_size].copy()
+            self.generator.shuffle(block)
+            yield from block.tolist()
+
+
 def binary_collate(batch):
     """Pack a batch of raw records into EmbeddingBag inputs, fully vectorized.
 
@@ -362,6 +403,33 @@ def load_dataset(path):
     if path.endswith(".bin"):
         return BinaryNnueDataset(path)
     return NnueDataset(path)
+
+
+def ensure_binary(path, label="data"):
+    """Resolve a .txt/.bin data path to a memory-mapped .bin, (re)preprocessing
+    from the .txt whenever the .bin is missing or older than the .txt. Returns the
+    .bin path. Both training and validation must go through this so they load as
+    the same 7-field binary record type -- otherwise a .bin train set and a .txt
+    val set produce incompatible record shapes for the shared binary_collate."""
+    if path.endswith(".bin"):
+        txt_path = path[:-4] + ".txt"
+        if Path(txt_path).exists() and \
+                Path(txt_path).stat().st_mtime > Path(path).stat().st_mtime:
+            print(f"Source .txt is newer than .bin — re-preprocessing {label}...")
+            preprocess_to_binary(txt_path, path)
+        else:
+            print(f"Using binary {label}: {path}")
+        return path
+    if path.endswith(".txt"):
+        bin_path = path[:-4] + ".bin"
+        if not Path(bin_path).exists() or \
+                Path(path).stat().st_mtime > Path(bin_path).stat().st_mtime:
+            print(f"Preprocessing {label} text data to binary format...")
+            preprocess_to_binary(path, bin_path)
+        else:
+            print(f"Using cached binary {label}: {bin_path}")
+        return bin_path
+    return path
 
 
 def preprocess_to_binary(txt_path, bin_path):
@@ -445,17 +513,23 @@ class NnueNetwork(nn.Module):
                 --> Linear(1)
     """
 
-    def __init__(self):
+    def __init__(self, dropout=0.0):
         super().__init__()
-        # sparse=True: only the ~30 active feature rows per sample get gradients
-        # instead of materializing a dense 40960x256 grad every step. Requires a
-        # SparseAdam optimizer for ft.weight (set up in train()).
-        self.ft = nn.EmbeddingBag(HALFKP_SIZE, L1_SIZE, mode="sum", sparse=True)
+        # sparse=False: materialize a dense 40960x256 grad each step and update ft
+        # with a plain Adam. Counterintuitively this is ~2.4x faster end-to-end than
+        # sparse=True + SparseAdam on CPU here (profiled 2026-08-25): SparseAdam's
+        # per-step gradient coalesce dominated at ~63% of batch time, far outweighing
+        # the cost of the dense update. Dense also runs on MPS (sparse ops don't).
+        self.ft = nn.EmbeddingBag(HALFKP_SIZE, L1_SIZE, mode="sum", sparse=False)
         self.ft_bias = nn.Parameter(torch.zeros(L1_SIZE))
         self.l2 = nn.Linear(L1_SIZE * 2, L2_SIZE)
         self.l3 = nn.Linear(L2_SIZE, L3_SIZE)
         self.output = nn.Linear(L3_SIZE, 1)
         self.clipped_relu = ClippedReLU()
+        # Train-only regularization on the two hidden dense layers. Identity at
+        # eval() and adds no parameters, so checkpoints and the C++ quantized
+        # export are unaffected. dropout=0.0 disables it (original architecture).
+        self.dropout = nn.Dropout(dropout)
 
         self._init_weights()
 
@@ -477,8 +551,8 @@ class NnueNetwork(nn.Module):
         stm_second = stm_expanded * black_accum + (1 - stm_expanded) * white_accum
         combined = torch.cat([stm_first, stm_second], dim=1)
 
-        x = self.clipped_relu(self.l2(combined))
-        x = self.clipped_relu(self.l3(x))
+        x = self.dropout(self.clipped_relu(self.l2(combined)))
+        x = self.dropout(self.clipped_relu(self.l3(x)))
         return self.output(x)
 
 
@@ -486,13 +560,23 @@ class NnueNetwork(nn.Module):
 #  Training
 # --------------------------------------------------------------------------- #
 
-def compute_target(score, result, lmbda):
-    """Blend sigmoid(score) with game result.
+def compute_target(score, result, stm, lmbda):
+    """Blend sigmoid(score) with game result, in the side-to-move frame.
 
-    target = lambda * sigmoid(score / SCORE_SCALE) + (1 - lambda) * result
+    target_white = lambda * sigmoid(score / SCORE_SCALE) + (1 - lambda) * result
+
+    The datagen stores both score and result WHITE-relative (datagen.cc flips
+    score to White's view and writes kWhiteWin=1.0/kBlackWin=0.0), but the
+    network is SIDE-TO-MOVE relative -- its forward puts the mover's accumulator
+    first, and C++ inference (ForwardFromAccumulators) does the same. So for
+    black-to-move positions the White-relative target is inverted relative to what
+    the net predicts; flip it. In win-prob space the stm-relative target is simply
+    1 - target_white (sigmoid(-x)=1-sigmoid(x) and result -> 1-result). stm==1.0
+    means white to move (no flip).
     """
     score_sigmoid = torch.sigmoid(score / SCORE_SCALE)
-    return lmbda * score_sigmoid + (1 - lmbda) * result
+    target_white = lmbda * score_sigmoid + (1 - lmbda) * result
+    return torch.where(stm.bool(), target_white, 1.0 - target_white)
 
 
 def generate_plots(train_losses, val_losses, plot_dir,
@@ -536,7 +620,11 @@ def generate_plots(train_losses, val_losses, plot_dir,
                     pred = model(wf, bf, stm).squeeze(1)
                     all_material.extend(wf.sum(dim=1).tolist())
 
-                pred_cp = pred * SCORE_SCALE
+                # pred is side-to-move relative; score/result stored below are
+                # White-relative, so flip pred to White's frame for these
+                # diagnostics (stm==1 white -> +1, stm==0 black -> -1).
+                sign = 2.0 * stm - 1.0
+                pred_cp = pred * SCORE_SCALE * sign
                 all_predicted.extend(pred_cp.cpu().tolist())
                 all_actual.extend(score.tolist())
                 all_results.extend(result.tolist())
@@ -707,14 +795,18 @@ def resolve_latest_data(base_dir):
 def train(args):
     if args.device:
         device = torch.device(args.device)
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
     else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cpu")
     print(f"Device: {device}")
 
     if device.type == "cpu":
-        # On CPU the forward/backward is the bottleneck, so give the main
-        # process every core for intra-op parallelism. Workers get pinned to a
-        # single thread each (see _worker_init) to avoid oversubscription.
+        # On CPU the backward + optimizer step dominate (~90% of batch time), so
+        # give the main process every core for intra-op parallelism. Workers get
+        # pinned to a single thread each (see _worker_init) to avoid oversubscription.
         torch.set_num_threads(os.cpu_count() or 1)
         print(f"Torch intra-op threads: {torch.get_num_threads()}")
 
@@ -723,23 +815,7 @@ def train(args):
         data_path = resolve_latest_data(data_path)
         print(f"Resolved data: {data_path}")
 
-    if data_path.endswith(".bin"):
-        txt_path = data_path[:-4] + ".txt"
-        if Path(txt_path).exists() and \
-                Path(txt_path).stat().st_mtime > Path(data_path).stat().st_mtime:
-            print(f"Source .txt is newer than .bin — re-preprocessing...")
-            preprocess_to_binary(txt_path, data_path)
-        else:
-            print(f"Using binary: {data_path}")
-    elif data_path.endswith(".txt"):
-        bin_path = data_path[:-4] + ".bin"
-        if not Path(bin_path).exists() or \
-                Path(data_path).stat().st_mtime > Path(bin_path).stat().st_mtime:
-            print("Preprocessing text data to binary format...")
-            preprocess_to_binary(data_path, bin_path)
-        else:
-            print(f"Using cached binary: {bin_path}")
-        data_path = bin_path
+    data_path = ensure_binary(data_path, label="training")
 
     val_data_path = args.val_data
     if val_data_path is None:
@@ -752,9 +828,19 @@ def train(args):
             val_data_path = str(candidate_bin)
             print(f"Auto-detected validation data: {val_data_path}")
 
+    if val_data_path:
+        # Convert val through the same binary path as train so both emit 7-field
+        # records; a .txt val set would decode to 5-tuples and break binary_collate.
+        val_data_path = ensure_binary(val_data_path, label="validation")
+
     dataset = load_dataset(data_path)
     if len(dataset) == 0:
         sys.exit("No training data found.")
+
+    use_block = (isinstance(dataset, BinaryNnueDataset)
+                 and args.shuffle_block > 0)
+    train_indices = None   # underlying memmap positions, set only when block-shuffling
+    val_indices = None
 
     if val_data_path:
         train_set = dataset
@@ -767,18 +853,29 @@ def train(args):
     else:
         val_size = max(1, int(len(dataset) * args.val_split))
         train_size = len(dataset) - val_size
-        train_set, val_set = torch.utils.data.random_split(
-            dataset, [train_size, val_size],
-            generator=torch.Generator().manual_seed(42),
-        )
+        if use_block:
+            # Split by explicit indices over the single dataset so the train
+            # loader can sample the underlying memmap directly — a random_split
+            # Subset would hide file positions from the locality-aware sampler.
+            perm = np.random.default_rng(42).permutation(len(dataset))
+            val_indices = perm[:val_size]
+            train_indices = perm[val_size:]
+            train_set = dataset
+            val_set = dataset
+        else:
+            train_set, val_set = torch.utils.data.random_split(
+                dataset, [train_size, val_size],
+                generator=torch.Generator().manual_seed(42),
+            )
         print(f"Training: {train_size}  Validation: {val_size} (random split)")
 
     pin = (device.type == "cuda")
     collate = binary_collate if isinstance(dataset, BinaryNnueDataset) else None
 
-    # Data loading (not GPU compute) is the bottleneck for this tiny sparse net,
-    # so fan the per-item decode + collate across as many workers as available.
-    # workers < 0 means "auto" -> all logical cores.
+    # Profiling (2026-08-25) showed data loading is only ~3% of batch time -- the
+    # optimizer/backward dominate -- so a handful of workers saturates the pipeline.
+    # More than that just burns RAM (8+ persistent workers OOM-rebooted a 16 GB Mac
+    # against a near-RAM memmap). Keep this modest; workers < 0 means "auto".
     num_workers = args.workers if args.workers is not None and args.workers >= 0 \
         else (os.cpu_count() or 0)
     loader_kwargs = dict(
@@ -793,31 +890,101 @@ def train(args):
         loader_kwargs["persistent_workers"] = True
         loader_kwargs["prefetch_factor"] = args.prefetch
         loader_kwargs["worker_init_fn"] = _worker_init
+
+    # Validation runs a short, sequential sweep once per epoch, so it gains almost
+    # nothing from a worker pool -- but a persistent one would keep 8 extra Python
+    # processes (each with its own memmap views and prefetch buffers) resident
+    # through every training epoch. On a near-RAM dataset that private/anonymous
+    # footprint stacks on top of the training workers and drives the machine into
+    # the memory compressor. Decode val batches inline in the main process instead.
+    val_loader_kwargs = dict(
+        batch_size=args.batch, pin_memory=pin, collate_fn=collate,
+        num_workers=0,
+    )
     print(f"DataLoader workers: {num_workers}"
-          + (f" (prefetch_factor={args.prefetch})" if num_workers > 0 else ""))
+          + (f" (prefetch_factor={args.prefetch})" if num_workers > 0 else "")
+          + "; val workers: 0 (inline)")
 
-    train_loader = DataLoader(train_set, shuffle=True, **loader_kwargs)
-    val_loader = DataLoader(val_set, shuffle=False, **loader_kwargs)
+    if use_block:
+        if train_indices is None:
+            # Separate val file: train_set is the full contiguous dataset.
+            train_indices = np.arange(len(train_set))
+        train_loader = DataLoader(
+            train_set,
+            sampler=BlockShuffleSampler(train_indices, args.shuffle_block),
+            **loader_kwargs,
+        )
+        if val_indices is not None:
+            # Val shares the memmap; read its slice in sorted order so the page
+            # cache touches it roughly sequentially.
+            val_loader = DataLoader(
+                val_set, sampler=sorted(val_indices.tolist()), **val_loader_kwargs
+            )
+        else:
+            val_loader = DataLoader(val_set, shuffle=False, **val_loader_kwargs)
+        print(f"Block-shuffle: {args.shuffle_block:,} records/block "
+              f"(bounds the memmap's page-cache working set)")
+    else:
+        train_loader = DataLoader(train_set, shuffle=True, **loader_kwargs)
+        val_loader = DataLoader(val_set, shuffle=False, **val_loader_kwargs)
 
-    model = NnueNetwork().to(device)
+    model = NnueNetwork(dropout=args.dropout).to(device)
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"Parameters: {total_params:,}")
+    print(f"Parameters: {total_params:,}"
+          + (f"  (dropout={args.dropout})" if args.dropout > 0 else ""))
 
-    # ft.weight produces sparse gradients (sparse=True), so it needs SparseAdam;
-    # every other (dense) parameter uses Adam. SparseAdam has no weight_decay, so
-    # wd applies only to the dense layers — standard for NNUE feature transformers.
-    # Both optimizers are stepped together and share one LR schedule.
+    # ft is dense now (see NnueNetwork), so a single AdamW handles everything. Two
+    # param groups keep the weight-decay semantics: no wd on the feature transformer
+    # (standard for NNUE FTs), wd on the dense layers. AdamW (not Adam) applies that
+    # decay decoupled from the adaptive moment scaling, so args.wd means the same
+    # effective decay across all dense params -- important now that wd is 1e-4, not
+    # a token 1e-6. Wrapped in a one-element list so the shared step/zero_grad/
+    # scheduler loops below are unchanged.
     dense_params = [p for n, p in model.named_parameters() if n != "ft.weight"]
     optimizers = [
-        torch.optim.SparseAdam([model.ft.weight], lr=args.lr),
-        torch.optim.Adam(dense_params, lr=args.lr, weight_decay=args.wd),
+        torch.optim.AdamW(
+            [
+                {"params": [model.ft.weight], "weight_decay": 0.0},
+                {"params": dense_params, "weight_decay": args.wd},
+            ],
+            lr=args.lr,
+        ),
     ]
-    schedulers = [
-        torch.optim.lr_scheduler.StepLR(
-            opt, step_size=max(1, args.epochs // 4), gamma=0.5
-        )
-        for opt in optimizers
-    ]
+    # LR schedule (--lr-schedule):
+    #   cosine  : smooth decay lr -> ~lr/100 over the epoch budget (default; the
+    #             standard NNUE choice, strictly better than the old StepLR that
+    #             only dropped at epoch = epochs//4).
+    #   plateau : halve lr after 2 stalled val epochs. Reactive -- untouched while
+    #             val keeps improving, kicks in exactly when overfitting starts, so
+    #             it's the better pick when early overfitting recurs. Stepped with
+    #             val_loss (see the epoch loop).
+    #   step    : the previous StepLR behavior.
+    sched_kind = args.lr_schedule
+    lr_min = args.lr * 0.01
+    if sched_kind == "cosine":
+        schedulers = [
+            torch.optim.lr_scheduler.CosineAnnealingLR(
+                opt, T_max=args.epochs, eta_min=lr_min)
+            for opt in optimizers
+        ]
+    elif sched_kind == "plateau":
+        schedulers = [
+            torch.optim.lr_scheduler.ReduceLROnPlateau(
+                opt, mode="min", factor=0.5, patience=2, min_lr=lr_min)
+            for opt in optimizers
+        ]
+    elif sched_kind == "step":
+        schedulers = [
+            torch.optim.lr_scheduler.StepLR(
+                opt, step_size=max(1, args.epochs // 4), gamma=0.5)
+            for opt in optimizers
+        ]
+    else:
+        sys.exit(f"Unknown --lr-schedule: {sched_kind!r} "
+                 "(expected cosine, plateau, or step)")
+    sched_needs_val = (sched_kind == "plateau")
+    print(f"LR schedule: {sched_kind} (base lr={args.lr}, "
+          f"weight_decay={args.wd})")
 
     def format_pos_count(n):
         if n >= 1_000_000:
@@ -883,7 +1050,7 @@ def train(args):
                 batch_size = wf.size(0)
 
             pred_sigmoid = torch.sigmoid(pred)
-            target = compute_target(score, result, args.lmbda)
+            target = compute_target(score, result, stm, args.lmbda)
 
             loss = F.mse_loss(pred_sigmoid, target)
 
@@ -896,8 +1063,6 @@ def train(args):
             train_loss_sum += loss.item() * batch_size
             train_count += batch_size
 
-        for sched in schedulers:
-            sched.step()
         train_loss = train_loss_sum / train_count
 
         # --- Validate ---
@@ -929,14 +1094,21 @@ def train(args):
                     batch_size = wf.size(0)
 
                 pred_sigmoid = torch.sigmoid(pred)
-                target = compute_target(score, result, args.lmbda)
+                target = compute_target(score, result, stm, args.lmbda)
                 loss = F.mse_loss(pred_sigmoid, target)
 
                 val_loss_sum += loss.item() * batch_size
                 val_count += batch_size
 
         val_loss = val_loss_sum / val_count
+        # Read the LR that was actually used this epoch, then advance the schedule
+        # for the next one (plateau needs the epoch's val_loss to decide).
         lr = optimizers[0].param_groups[0]["lr"]
+        for sched in schedulers:
+            if sched_needs_val:
+                sched.step(val_loss)
+            else:
+                sched.step()
         epoch_time = time.time() - epoch_start
 
         train_losses.append(train_loss)
@@ -1157,8 +1329,12 @@ def replot(args):
 
     if args.device:
         device = torch.device(args.device)
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
     else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cpu")
     print(f"Device: {device}")
 
     model = NnueNetwork().to(device)
@@ -1247,8 +1423,20 @@ def main():
         help="Initial learning rate (default: 0.001)",
     )
     train_parser.add_argument(
-        "--wd", type=float, default=t.get("wd", 1e-6),
-        help="Weight decay (default: 1e-6)",
+        "--wd", type=float, default=t.get("wd", 1e-4),
+        help="Weight decay on the dense layers (default: 1e-4)",
+    )
+    train_parser.add_argument(
+        "--dropout", type=float, default=t.get("dropout", 0.0),
+        help="Dropout on the two hidden dense layers, train-only "
+             "(default: 0.0 = off)",
+    )
+    train_parser.add_argument(
+        "--lr-schedule", default=t.get("lr_schedule", "cosine"),
+        choices=["cosine", "plateau", "step"],
+        help="LR schedule: cosine decay over the epoch budget (default), "
+             "plateau (halve after 2 stalled val epochs; best against recurring "
+             "early overfitting), or step (legacy StepLR)",
     )
     train_parser.add_argument(
         "--lmbda", type=float, default=t.get("lmbda", 0.7),
@@ -1269,6 +1457,16 @@ def main():
     train_parser.add_argument(
         "--prefetch", type=int, default=t.get("prefetch", 4),
         help="Batches each worker prefetches ahead (default: 4)",
+    )
+    train_parser.add_argument(
+        "--shuffle-block", type=int, default=t.get("shuffle_block", 8_000_000),
+        help="Locality-preserving block shuffle for memmap (.bin) data: shuffle "
+             "within contiguous blocks of N records instead of globally, bounding "
+             "the page-cache working set to ~one block (~134 B/record). Defaults on "
+             "to keep near-RAM datasets from causing the system-wide memory pressure "
+             "that can hang the machine; harmless on small data (a dataset that fits "
+             "in one block is shuffled globally). 0 = force global shuffle "
+             "(default: 8000000, ~1 GB working set)",
     )
     train_parser.add_argument(
         "--checkpoint-every", type=int, default=t.get("checkpoint_every", 0),

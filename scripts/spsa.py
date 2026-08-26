@@ -50,6 +50,15 @@ Usage:
     python3 scripts/spsa.py init --out spsa_config.json
     python3 scripts/spsa.py run --config spsa_config.json --games 30000
 
+A --config file may also carry an optional top-level "run" block to make it a
+self-contained recipe (any subset of games / games_per_iter / concurrency / tc):
+    { "profile": "nnue",
+      "run": {"games": 30000, "games_per_iter": 4, "concurrency": 4,
+              "tc": "10+0.1,30+0.3,60+0.6,60+0"},
+      "params": { ... } }
+Explicit CLI flags override the "run" block, which overrides the built-in
+defaults. So `run --config spsa_nnue_config.json` needs no other flags.
+
     # Plot parameter trajectories from a run
     python3 scripts/spsa.py plot results/spsa/2026-07-21_.../history.csv
 """
@@ -305,6 +314,32 @@ def build_tc_pool(args):
     return pool
 
 
+def apply_config_run_defaults(args):
+    """Fill run settings from an optional top-level 'run' block in --config.
+
+    Only fills settings the user did NOT pass on the CLI (their argparse default
+    is the None sentinel), so an explicit flag always wins over the config, which
+    in turn wins over the hard-coded fallback. No-op when there's no --config or
+    no 'run' block. Keeps a --config file a single self-contained recipe."""
+    run_cfg = {}
+    if getattr(args, "config", None):
+        try:
+            run_cfg = json.loads(Path(args.config).read_text()).get("run", {}) or {}
+        except (OSError, ValueError):
+            run_cfg = {}
+    for attr, hard in (("games", 20000), ("games_per_iter", 2),
+                       ("concurrency", 1)):
+        if getattr(args, attr) is None:
+            setattr(args, attr, int(run_cfg.get(attr, hard)))
+    # tc/st sentinel is also None; only fill from config when the user gave
+    # neither, so the built-in default TC cycle still triggers when nothing is
+    # specified anywhere.
+    for attr in ("tc", "st"):
+        if getattr(args, attr) is None and run_cfg.get(attr):
+            setattr(args, attr, str(run_cfg[attr]))
+    return args
+
+
 def cmd_run(args):
     engine = Path(args.engine)
     if not engine.is_absolute():
@@ -517,11 +552,12 @@ def main():
                             "Ignored if --config is given.")
     run_p.add_argument("--config", default=None,
                        help="spsa_config.json from `init` (overrides --params)")
-    run_p.add_argument("--games", type=int, default=20000,
-                       help="Total game budget (default: 20000)")
-    run_p.add_argument("--games-per-iter", type=int, default=2, dest="games_per_iter",
+    run_p.add_argument("--games", type=int, default=None,
+                       help="Total game budget (default: 20000, or config 'run.games')")
+    run_p.add_argument("--games-per-iter", type=int, default=None, dest="games_per_iter",
                        help="Games per SPSA iteration; 2 = one color-balanced pair "
-                            "(default: 2)")
+                            "(default: 2, or config 'run.games_per_iter'). Also caps "
+                            "effective --concurrency.")
     run_p.add_argument("-c", "--c-end", type=float, default=None, dest="c_end",
                        help="Final perturbation magnitude for all params "
                             "(default: per-param, ~range/20)")
@@ -538,8 +574,10 @@ def main():
                             "cycle spanning bullet->5+3 plus fixed-time is used. "
                             "Dynamic TM only engages under a clock, so tuning "
                             "the Tm* params needs at least one --tc entry.")
-    run_p.add_argument("--concurrency", type=int, default=1,
-                       help="Concurrent games (default: 1)")
+    run_p.add_argument("--concurrency", type=int, default=None,
+                       help="Concurrent games (default: 1, or config 'run.concurrency'). "
+                            "Effective concurrency is min(this, games_per_iter); each "
+                            "game uses 2 cores.")
     run_p.add_argument("--openings", default=str(DEFAULT_OPENINGS),
                        help="Opening book (.pgn/.epd)")
     run_p.add_argument("--out", default=str(DEFAULT_PARAMS_JSON),
@@ -565,6 +603,7 @@ def main():
 
     args = parser.parse_args()
     if args.command == "run":
+        apply_config_run_defaults(args)
         sys.exit(cmd_run(args))
     elif args.command == "init":
         sys.exit(cmd_init(args))

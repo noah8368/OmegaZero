@@ -80,6 +80,15 @@ class Game {
   auto UpdateMoveHistory(string move_str) -> void;
   auto DisplayClock() const -> void;
 
+  // Decrement (and drop when it hits zero) the repetition count for the current
+  // board position. Reverses a single RecordBoardState() increment.
+  auto DecrementPosHistory() -> void;
+  // Take back the last full round (the engine's reply plus the user's own move)
+  // so the user can replay their previous move. Must be called from the user's
+  // move prompt in Play(), where the current position has already been recorded.
+  // Returns false (and changes nothing) if there is no complete round to undo.
+  auto UndoLastUserMove() -> bool;
+
   Board board_;
 
   bool game_active_;
@@ -114,6 +123,18 @@ class Game {
     }
   };
   unordered_map<Board, S8, BoardKeyHash> pos_history_;
+
+  // Everything needed to reverse a single ply, captured just before the move is
+  // played. Pushed once per completed ply and popped by UndoLastUserMove().
+  struct PlyRecord {
+    Move move;                 // The move played this ply (passed to UnmakeMove).
+    size_t move_history_len;   // move_history_ length before UpdateMoveHistory().
+    size_t played_moves_len;   // played_fide_moves_ size before the move.
+    int turn_num;              // turn_num_ before the move.
+    float clock_white;         // Clocks before this ply's time bookkeeping.
+    float clock_black;
+  };
+  vector<PlyRecord> ply_stack_;
 };
 
 // Implement inline non-member functions.
@@ -145,6 +166,13 @@ inline auto Game::OutputWinner() const -> void {
 }
 
 inline auto Game::RecordBoardState() -> void { ++pos_history_[board_]; }
+
+inline auto Game::DecrementPosHistory() -> void {
+  auto it = pos_history_.find(board_);
+  if (it != pos_history_.end() && --(it->second) <= 0) {
+    pos_history_.erase(it);
+  }
+}
 
 inline auto Game::RecordFinalScore() -> void {
   if (winner_ == kWhite) {

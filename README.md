@@ -28,12 +28,7 @@
 
 ## Project Summary
 
-OmegaZero is a chess engine built from scratch which allows a user to play 
-against an AI. The name "OmegaZero" is an homage to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero), a program
-developed by [DeepMind](https://deepmind.com/) that was used to create one of the world's
-best Chess engines. The [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during
-development. Credit goes to [Brandon Hsu](https://github.com/2brandonh) for designing the original
-logo; [Claude](https://en.wikipedia.org/wiki/Claude_(language_model)) was used to stylize the image after the [No Game No Life](https://en.wikipedia.org/wiki/No_Game_No_Life) anime.
+OmegaZero is a chess engine with a built-in terminal interface. The name *OmegaZero* is a nod to [AlphaZero](https://en.wikipedia.org/wiki/AlphaZero). The engine began as a passion project after its author learned to play chess during the COVID-19 pandemic and became fascinated by the algorithms behind chess engines.
 
 ## Performance
 
@@ -42,7 +37,7 @@ logo; [Claude](https://en.wikipedia.org/wiki/Claude_(language_model)) was used t
 <p align="center">
   <img src="./figs/elo.png" width="600" alt="Elo Estimation Plot">
   <br>
-  <em>Elo estimate from 2,800 games vs Stockfish (1s/move), with 95% bootstrap CI.<sup>5</sup></em>
+  <em>Elo estimate from 2,800 games of OmegaZero v4 vs Stockfish (1s/move), with 95% bootstrap CI.</em>
 </p>
 
 ### Elo Gain
@@ -64,41 +59,17 @@ logo; [Claude](https://en.wikipedia.org/wiki/Claude_(language_model)) was used t
 ### Example Games
 
 <details>
-<summary><strong>~1000 Elo Human Player (White) vs OmegaZero<sup>4</sup> (Black) — 0-1</strong> English Opening, Symmetrical Variation.</summary>
+<summary><strong>1000-Rated Player (White) vs OmegaZero v5 (Black) — 0-1</strong> King's Fianchetto Opening: Reversed Alekhine.</summary>
 
-`1.c4 c5 2.Nc3 Nc6 3.d4 cxd4 4.Nd5 e6 5.Nf4 Bb4+ 6.Bd2 Bxd2+ 7.Qxd2 Nf6 8.Nf3 Ne4 9.Qd3 Qa5+ 10.Nd2 d5 11.cxd5 exd5 12.g3 Bg4 13.Nxd5 Nxd2 14.Qxd2 Qxd5 15.Rg1 0-0-0 16.h3 Bxe2 17.Bxe2 Rhe8 18.0-0-0 Qxa2 19.Bg4+ Kb8 20.Qf4+ Ne5 21.Rxd4 Rxd4 22.Qxd4 Qa1+ 23.Kc2 Qxg1 24.Qd6+ Ka8 25.Bd1 Qxf2+ 26.Qd2 Rc8+ 27.Kb3 Qxd2 28.Ka2 Qxd1 29.g4 Qa4+ 30.Kb1 Qc2+ 31.Ka2 Nd3 32.h4 Qxb2# 0-1`
+`1.g3 d5 2.Bg2 e5 3.Nf3 e4 4.Nd4 c5 5.Nb3 c4 6.Nd4 Bc5 7.e3 Bxd4 8.exd4 Nf6 9.Nc3 Nc6 10.0-0 Nxd4 11.d3 Bg4 12.f3 Nxf3+ 13.Bxf3 Qb6+ 14.d4 Bxf3 15.Rxf3 exf3 16.Qxf3 0-0 17.Nxd5 Qxd4+ 18.Ne3 Rad8 19.c3 Qc5 20.b4 cxb3e.p. 21.axb3 Qxc3 22.Rb1 Rfe8 23.Kg2 Ne4 24.Nf5 Qc2+ 25.Kh3 Qxb1 26.Bh6 gxh6 27.Qg4+ Ng5+ 28.Kh4 Re4 29.Nxh6+ Kg7 30.Nf5+ Kg6 31.Ne7+ Kf6 32.Qf4+ Rxf4+ 33.gxf4 Qe1+ 34.Kh5 Qe2+ 35.Kh4 Qxh2+ 36.Kg4 Qh3# 0-1`
 
-Final Position
+Final Position:
 
 <p align="center">
   <img src="./figs/final_position_1000_ELO_player.png" width="480" alt="Final Position for 1000 Elo Player">
 </p>
 
-</details>
-
-<details>
-<summary><strong>1643 Elo<sup>1</sup> Human Player (White) vs OmegaZero<sup>4</sup> (Black) — 0-1</strong> Scandinavian Defense.</summary>
-
-`1.e4 d5 2.exd5 Nf6 3.Bc4 Nxd5 4.Bxd5 Qxd5 5.Nc3 Qxg2 6.Qf3 Qxf3 7.Nxf3 Na6 8.a3 Bg4 9.Ne5 Bf5 10.d3 f6 11.Nc4 e5 12.Be3 Nc5 13.b4 Ne6 14.O-O-O Bg4 15.Rd2 c5 16.b5 O-O-O 17.Ne4 Be7 18.Ng3 Nd4 19.h3 Be6 20.Nb2 Nxb5 21.a4 Nd4 22.Ne4 f5 23.Nc3 Nf3 24.Re2 e4 25.dxe4 fxe4 26.Nxe4 Bxh3 27.Rxh3 Ng1 28.Re1 Nxh3 29.Nxc5 Bxc5 30.Bxc5 b6 31.Be3 Rhf8 32.Nd3 Rxd3 33.cxd3 Nxf2 34.Kd2 Rf7 35.Re2 Ng4 36.Bd4 Kb7 37.Rg2 Rf4 38.Bxg7 Rxa4 39.Kc3 Ne3 40.Re2 Nd5+ 41.Kb3 Rb4+ 42.Ka3 Rb5 43.d4 Ra5+ 44.Kb3 Ra1 45.Kc4 Rg1 46.Be5 Rg2 47.Re4 Kc6 48.Bh8 Rc2+ 49.Kd3 Rc3+ 50.Kd2 Rh3 51.Re6+ Kb5 52.Rd6 Rh2+ 53.Kd3 Rh5 54.Rd7 Nb4+ 55.Kc3 Rh3+ 56.Kd2 Nc6 57.d5 Rh2+ 58.Kc3 Nb4 59.d6 Nc6 60.Rc7 Rh4 61.d7 Rh3+ 62.Kd2 Rh5 63.Rc8 Rd5+ 0-1`
-
-Final Position
-
-<p align="center">
-  <img src="./figs/final_position_1643_ELO_player.gif" width="480" alt="Final Position for 1643 Elo Player">
-</p>
-
-</details>
-
-<details>
-<summary><strong>~1900 Elo<sup>2</sup> Human Player vs OmegaZero<sup>4</sup> (Black) — 1-0</strong> Queen's Gambit Accepted.</summary>
-
-`1.d4 d5 2.c4 e6 3.g3 dxc4 4.Bg2 Ne7 5.Nd2 Qxd4 6.Ngf3 Qc5 7.O-O Nd5 8.Qc2 c3 9.Ne4 cxb2 10.Qxb2 Qb6 11.Qc2 Nb4 12.Qa4+ Bd7 13.Qd1 Nxa2 14.Rxa2 Qb1 15.Qc2 Qxa2 16.Qxa2 f5 17.Neg5 Nc6 18.Nxe6 Bd6 19.Nxg7+ Kd8 20.Bg5+ Kc8 21.Rb1 Nb4 22.Qc4 Bxg3 23.Qxb4 Bc6 24.hxg3 Bxf3 25.Bxf3 b6 26.Nxf5 h5 27.Bxa8 h4 28.Qe4 Rd8 29.Ne7+ Kd7 30.Bc6+ Kd6 31.Qd5# 1-0`
-
-Final Position
-
-<p align="center">
-  <img src="./figs/final_position_1900_ELO_player.png" width="480" alt="Final Position for 1900 Elo Player">
-</p>
+OmegaZero Wins.
 
 </details>
 
@@ -120,7 +91,7 @@ OmegaZero primarily evaluates positions using an [NNUE](https://www.chessprogram
 <p align="center">
   <img src="./figs/nnue_loss_and_accuracy.png" width="720" alt="NNUE Training Loss and Score Accuracy">
   <br>
-  <em>Training loss and score accuracy on a <a href="https://drive.google.com/drive/folders/11guxluj5UL4BMaGmm0CqD-n7u5INT-EE?usp=sharing">6M-position HCE-generated dataset</a>.<sup>3</sup></em>
+  <em>Training loss and score accuracy on a 100M-position self-play dataset (95.5M train / 5M validation) generated by OmegaZero</em>
 </p>
 
 If the expected NNUE weights file isn't found (`nnue/nnue.bin`), OmegaZero falls back to a handcrafted evaluation inspired by [Fruit](https://www.chessprogramming.org/Fruit), incorporating:
@@ -142,7 +113,7 @@ See [NNUE](#nnue) for training instructions.
   <img src="./figs/search_animation.gif" width="720" alt="Alpha-Beta Search Animation">
   <br>
   <em>
-    Search trace performed by OmegaZero<sup>3</sup> on a board position from
+    Search trace performed by OmegaZero v4 on a board position from
     <a href="https://www.chessprogramming.org/Kasparov_versus_Deep_Blue_1997#Game_6">
       Deep Blue v Kasparov
     </a>
@@ -196,7 +167,7 @@ To reduce the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect),
 <p align="center">
   <img src="./figs/depth_vs_time.png" width="600" alt="Search Depth vs Time">
   <br>
-  <em>Search depth vs time across four standard positions (log scale).<sup>5</sup></em>
+  <em>Search depth vs time across four standard positions (log scale) from OmegaZero v4</em>
 </p>
 
 #### Time Management
@@ -320,6 +291,12 @@ Search runs across all available CPU cores by default ([Lazy SMP](https://www.ch
 OmegaZero --threads 4 -p w --st 1
 ```
 
+To save the completed game as a PGN under `games/`, add `--pgn` with the opponent's name:
+```
+OmegaZero --pgn Noah -p w --st 1
+```
+The saved PGN includes a note recording which of OmegaZero's resources were in play — whether the NNUE or handcrafted eval was used, and whether the Syzygy tablebases were loaded and actually reached during the game.
+
 The board display defaults to dark terminal backgrounds (filled glyphs = white pieces). If using a light terminal, add `--light-theme`:
 ```
 OmegaZero --light-theme
@@ -355,15 +332,23 @@ to avoid ambiguity in a movement command. Some valid example moves are
  - Queenside castle: `0-0-0`
  - Kingside castle: `0-0`
 
-To resign, a user must enter `q` on their turn.
+On their turn, a user may also enter `u` to undo their previous move (this takes back both the engine's reply and the user's own last move, returning to the user's prior turn), or `r` to resign.
 
 ### UCI Mode
 
-OmegaZero supports the [Universal Chess Interface](https://www.chessprogramming.org/UCI) (UCI) protocol for integration with chess GUIs and tournament managers:
+OmegaZero fully supports the [Universal Chess Interface](https://www.chessprogramming.org/UCI) (UCI) protocol, allowing it to be used with compatible chess GUIs and tournament managers.
+
 ```
-OmegaZero --uci
+$ OmegaZero --uci
 ```
-The search runs on a worker thread so the main loop can keep reading input, which enables the full set of `go` limits: `wtime`/`btime`/`winc`/`binc`/`movestogo`, `movetime`, `depth`, `nodes`, and `infinite`, with `stop` aborting an in-progress search and returning the best move found so far. The number of search threads ([Lazy SMP](https://www.chessprogramming.org/Lazy_SMP)) is set with the `Threads` option, defaulting to the machine's core count.
+
+OmegaZero supports standard UCI commands including `uci`, `isready`, `ucinewgame`, `position`, `go`, `stop`, `ponderhit`, and `setoption`. Positions may be supplied from the starting position or via FEN, followed by an optional sequence of moves.
+
+Search runs on a worker thread while the main loop continues processing UCI commands. The full set of `go` limits is supported, including `wtime`/`btime`/`winc`/`binc`/`movestogo`, `movetime`, `depth`, `nodes`, `infinite`, and `ponder`. A running search can be stopped at any time with `stop`, which returns the best move found so far, while `ponderhit` converts a ponder search to its normal time budget.
+
+During search, OmegaZero emits standard UCI `info` output for completed iterations before returning `bestmove`.
+
+Multi-threaded search uses [Lazy SMP](https://www.chessprogramming.org/Lazy_SMP). The number of search threads is configurable at runtime through the `Threads` option and defaults to the machine's available core count. Additional search parameters are exposed as UCI options and can be modified using `setoption`.
 
 ### Testing
 
@@ -422,7 +407,7 @@ A pre-built [6M-position training dataset](https://drive.google.com/drive/folder
 <p align="center">
   <img src="./figs/data_score_distribution.png" width="600" alt="6M Position Dataset Score Distribution">
   <br>
-  <em>NNUE Training Dataset — Score Distribution (6.4M positions)</em>
+  <em>NNUE Training Dataset — Score Distribution (95.5M training positions from a 100M-position set)</em>
 </p>
 
 To generate your own data, train, and analyze — config lives in `nnue/config.json` (copy from `nnue/config.json.example`). See each script's `--help` or header comments for options.
@@ -462,15 +447,10 @@ python3 scripts/mine_magics.py
 
 OmegaZero is developed and maintained by a single person. As the only human working
 on the engine, I use [Claude](https://en.wikipedia.org/wiki/Claude_(language_model))
-as a debugging and engineering aid to supplement my own effort alongside a full-time
-job. Every design decision, and the direction of the project, remain my own; Claude
-serves as an assistant for debugging, code review, and working through implementation
-details.
+as a debugging and code review aid to supplement my own effort. **Every design decision, all core algorithm implementations, and the direction of the project, remain my own.**
 
----
+The [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) was referenced heavily during
+development. 
 
-<sup>1</sup> Lichess rating
-<sup>2</sup> Chess.com rating
-<sup>3</sup> Generated with [OmegaZero v3](https://github.com/noah8368/OmegaZero/releases/tag/v3)
-<sup>4</sup> All example games use [OmegaZero v1](https://github.com/noah8368/OmegaZero/releases/tag/v1)
-<sup>5</sup> Generated with [OmegaZero v4](https://github.com/noah8368/OmegaZero/releases/tag/v4)
+Credit goes to [Brandon Hsu](https://github.com/2brandonh) for designing the original
+logo; AI was used to stylize the image after the [No Game No Life](https://en.wikipedia.org/wiki/No_Game_No_Life) anime.

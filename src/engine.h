@@ -170,6 +170,12 @@ class Engine {
   auto GetGameStatus() -> S8;
   auto GetUserSide() const -> S8;
 
+  // Whether a Syzygy tablebase probe (root DTZ or in-search WDL) has actually
+  // returned a usable result since the last ResetSyzygyUsed(). Lets callers note
+  // in the PGN whether the tablebases influenced any move of the game.
+  auto SyzygyUsed() const -> bool;
+  auto ResetSyzygyUsed() -> void;
+
   // Count leaves at `depth` plies below the current board state.
   auto Perft(int depth) -> U64;
 
@@ -179,6 +185,8 @@ class Engine {
   // Record the current position for repetition detection and return how many
   // times it has been seen.
   auto AddPosToHistory() -> void;
+  // Drop the most recently recorded position (used when undoing a move).
+  auto PopPosFromHistory() -> void;
   auto ClearHistory() -> void;
   // Position history for repetition detection; used to seed Lazy-SMP helper
   // engines with the same history as the main search.
@@ -273,6 +281,17 @@ class Engine {
   auto ComputeDifficulty(int depth) const -> double;
   // Whether the next iteration is predicted to exceed the soft bound.
   auto PredictNextIterExceeds(int depth) const -> bool;
+  // Reset per-search time-management state (obvious-recapture detection and the
+  // best-move node-share EMA) before the iterative-deepening loop.
+  auto InitTimeManagement() -> void;
+  // After a completed iteration at `depth` (with `elapsed` seconds spent so
+  // far), rescale the soft bound by search difficulty and report whether the
+  // loop should stop (soft bound crossed, or next iteration unlikely to finish).
+  auto UpdateSoftBoundAndShouldStop(int depth, float elapsed) -> bool;
+  // First legal move among `moves` (honoring `go searchmoves`), or an empty
+  // Move if none is legal. Used to guarantee a non-empty best move when the
+  // search is aborted before it assigns one.
+  auto FirstLegalFallbackMove(const std::vector<Move>& moves) -> Move;
 
   // Search and scoring (int).
   // Negamax search over the move tree for the moving player's best evaluation.
@@ -403,6 +422,10 @@ class Engine {
 
   S8 user_side_;
 
+  // Set true whenever a Syzygy probe returns a usable result during search;
+  // surfaced via SyzygyUsed() and cleared by ResetSyzygyUsed().
+  bool syzygy_used_ = false;
+
   // Cache of previously evaluated positions. Not owned: injected at construction
   // and shared across all Engines in a Lazy-SMP SearchPool (single-threaded
   // callers each own their own). Must outlive the Engine.
@@ -418,8 +441,18 @@ inline auto Engine::GetBestMove() -> Move {
 
 inline auto Engine::GetUserSide() const -> S8 { return user_side_; }
 
+inline auto Engine::SyzygyUsed() const -> bool { return syzygy_used_; }
+
+inline auto Engine::ResetSyzygyUsed() -> void { syzygy_used_ = false; }
+
 inline auto Engine::AddPosToHistory() -> void {
   pos_history_.push_back(board_->GetBoardHash());
+}
+
+inline auto Engine::PopPosFromHistory() -> void {
+  if (!pos_history_.empty()) {
+    pos_history_.pop_back();
+  }
 }
 
 inline auto Engine::ClearHistory() -> void { pos_history_.clear(); }
