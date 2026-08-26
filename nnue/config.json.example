@@ -1,6 +1,7 @@
 {
   "gmail_app_password": "xxxx xxxx xxxx xxxx",
-  "games": 5000,
+  "_comment_games": "~100M positions for standard NNUE training, at ~17 sampled positions/game (matches the 95.5M-train / 5M-val run). Datagen auto-restarts via scripts/run_datagen.sh; adjust to taste.",
+  "games": 5850000,
   "st": 0.5,
   "workers": 8,
   "val_fraction": 0.1,
@@ -8,7 +9,7 @@
   "email": "you@gmail.com",
   "name": "macbook",
   "training": {
-    "epochs": 200,
+    "epochs": 20,
     "batch": 16384,
     "lr": 0.001,
     "wd": 1e-4,
