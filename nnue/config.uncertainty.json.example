@@ -1,0 +1,15 @@
+{
+  "gmail_app_password": "xxxx xxxx xxxx xxxx",
+  "_comment_mode": "Uncertainty-label datagen (NF-002). Writes fen|v|v_star|u|depth|nodes|result: at each sampled position it runs a fixed-depth (target_depth), node-capped (node_cap) v* search and keeps tactical/in-check positions (inverted from the standard filters). v = Board::Evaluate() (NNUE, STM POV); u = v - v_star. Preprocess with scripts/preprocess_uncertainty.py, then model p(u|x) with research/experiments/nf002_fit_pilot.py. No train_nnue.py 'training' block is used.",
+  "_comment_games": "~10M labeled positions (NF-002 tail-accurate / high-C target; central need is ~2-5M) at ~17 sampled positions/game. Each label costs a depth-12 v* search, so this run is compute-bound -- size down for the pilot (1e4-1e5).",
+  "mode": "uncertainty",
+  "games": 600000,
+  "st": 0.5,
+  "workers": 8,
+  "val_fraction": 0.1,
+  "output": "nnue/data",
+  "email": "you@gmail.com",
+  "name": "macbook",
+  "target_depth": 12,
+  "node_cap": 2000000
+}

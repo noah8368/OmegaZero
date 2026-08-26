@@ -13,6 +13,7 @@ cutechess
 .DS_Store
 nnue/*
 !nnue/config.json.example
+!nnue/config.uncertainty.json.example
 !nnue/nnue.bin
 !nnue/model/
 nnue/model/**/*.pt
