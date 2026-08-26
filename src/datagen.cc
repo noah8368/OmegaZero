@@ -801,9 +801,26 @@ auto main() -> int {
   g_target_depth = cfg.target_depth;
   g_node_cap = cfg.node_cap;
 
-  // Datagen self-play uses HCE (no NNUE is loaded), so this resolves the "hce"
-  // profile. Run from the repo root, where params.json (and nnue/config.json)
-  // live. A missing/incomplete file is fatal -- there are no in-code defaults.
+  // Always load the NNUE if it's present, so datagen labels come from the
+  // deployment eval: uncertainty mode needs v = NNUE eval (NF-002), and standard
+  // mode then yields NNUE-quality targets for the next net generation. Falls
+  // back to HCE when nnue/nnue.bin is absent. Load here -- before the params
+  // read and before any worker builds a Board -- so ProfileForEvalMode() selects
+  // the matching profile and each Board's constructor seeds its accumulators
+  // from the loaded net. (Run from the repo root, where nnue/, params.json, and
+  // nnue/config.json live.)
+  if (g_nnue.Load("nnue/nnue.bin")) {
+    std::cerr << "Datagen eval: NNUE (nnue/nnue.bin loaded)" << std::endl;
+  } else {
+    std::cerr << "Datagen eval: HCE (nnue/nnue.bin not found)" << std::endl;
+    if (g_uncertainty_mode) {
+      std::cerr << "  WARNING: uncertainty mode without NNUE -- v will be the "
+                   "HCE eval, not the NNUE eval that NF-002 expects." << std::endl;
+    }
+  }
+
+  // Params profile follows the eval just selected ("nnue" if the net loaded,
+  // else "hce"). A missing/incomplete file is fatal -- no in-code defaults.
   const SearchParams params =
       LoadParamsOrDie("params.json", ProfileForEvalMode());
 
