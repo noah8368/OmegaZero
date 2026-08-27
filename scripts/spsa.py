@@ -459,6 +459,21 @@ def cmd_run(args):
         print(f"    {n:<26} {int(round(start)):>6} -> {int(round(theta[n])):>6}")
     print(f"  History:     {history_csv}")
     print(f"  Checkpoints: {checkpoint_dir}/")
+
+    # Auto-emit the start->end shift plot (best-effort: never fail a completed
+    # run because plotting is unavailable). Uses the true pre-run start values.
+    if games_done > 0:
+        try:
+            start_vals = {n: float(profile_vals.get(n, opts[n][0])) for n in names}
+            end_vals = {n: float(theta[n]) for n in names}
+            subtitle = (f"{run_dir.name}   ·   profile '{args.profile}', "
+                        f"{games_done} games   ·   start → end")
+            out = render_shift_plot(names, start_vals, end_vals,
+                                    run_dir / "shift.png", "SPSA parameter shift",
+                                    subtitle)
+            print(f"  Shift plot:  {out}")
+        except SystemExit as e:  # matplotlib missing — note it, don't abort.
+            print(f"  Shift plot:  skipped ({e})")
     print(f"{'=' * 68}")
     return 0
 
@@ -500,25 +515,141 @@ def cmd_init(args):
 # plot subcommand
 # ---------------------------------------------------------------------------
 
-def cmd_plot(args):
+# Diverging shift palette (from the data-viz reference palette): blue for an
+# increase, red for a decrease, gray for the start anchor / no-change. Warm/cool
+# poles that read as opposite; neutral gray reads as "nothing moved".
+_SHIFT_UP = "#2a78d6"     # blue  — parameter increased over the run
+_SHIFT_DOWN = "#d03b3b"   # red   — parameter decreased over the run
+_SHIFT_FLAT = "#b7b6b0"   # gray  — start anchor and unchanged params
+_INK = "#0b0b0b"
+_INK_MUTED = "#52514e"
+_SURFACE = "#fcfcfb"
+
+
+def _import_pyplot():
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        return plt
     except ImportError:
-        sys.exit("matplotlib not installed — pip3 install matplotlib")
+        sys.exit("matplotlib not installed — pip3 install matplotlib "
+                 "(or run with the repo .venv)")
 
-    history = Path(args.history)
+
+def read_history(path):
+    """Load a run's history.csv. Returns (names, rows) where names is the tuned
+    parameter columns (in file order) and rows is the list of dict rows."""
+    history = Path(path)
     if not history.exists():
         sys.exit(f"History file not found: {history}")
     with open(history) as f:
         rows = list(csv.DictReader(f))
     if not rows:
         sys.exit("History is empty.")
-
     names = [c for c in rows[0] if c not in ("iter", "games", "result")]
-    iters = [int(r["iter"]) for r in rows]
+    return names, rows
 
+
+def render_shift_plot(names, start_vals, end_vals, out, title, subtitle=None):
+    """Dumbbell / election-shift plot: one row per parameter, a start dot and an
+    end dot joined by a bar, positioned on a shared percent-change axis so knobs
+    of wildly different magnitude stay comparable. Rows are sorted by percent
+    change; blue = increased, red = decreased, gray = unchanged. Absolute
+    start->end values and the signed percent are labelled directly on each row."""
+    plt = _import_pyplot()
+
+    def pct(name):
+        s, e = start_vals[name], end_vals[name]
+        # Guard a zero (or tiny) start: these are integer UCI units, so anchor
+        # the denominator at 1 to keep small-magnitude knobs from exploding.
+        return (e - s) / max(1.0, abs(s)) * 100.0
+
+    order = sorted(names, key=pct)  # most-negative at bottom, most-positive on top
+    pcts = [pct(n) for n in order]
+    ys = list(range(len(order)))
+
+    span = max((abs(p) for p in pcts), default=1.0) or 1.0
+    # Headroom on the right for the value labels, on the left symmetrically.
+    xmax = span * 1.35 + 1.0
+    xmin = -(span * 1.35 + 1.0)
+
+    fig_h = max(3.0, 0.34 * len(order) + 1.7)
+    fig, ax = plt.subplots(figsize=(11, fig_h))
+    fig.patch.set_facecolor(_SURFACE)
+    ax.set_facecolor(_SURFACE)
+
+    ax.axvline(0.0, color=_SHIFT_FLAT, linewidth=1.4, zorder=1)
+
+    for y, n, p in zip(ys, order, pcts):
+        s, e = start_vals[n], end_vals[n]
+        moved = abs(e - s) > 1e-9
+        color = _SHIFT_UP if p > 0 else _SHIFT_DOWN if p < 0 else _SHIFT_FLAT
+        # Connecting bar (start anchor at 0% -> end at the percent change).
+        if moved:
+            ax.plot([0.0, p], [y, y], color=color, linewidth=3.0,
+                    solid_capstyle="round", zorder=2, alpha=0.55)
+        # Start anchor dot at 0%, end dot at the percent change.
+        ax.scatter([0.0], [y], s=42, color=_SHIFT_FLAT, edgecolors=_SURFACE,
+                   linewidths=1.4, zorder=3)
+        ax.scatter([p], [y], s=70, color=color, edgecolors=_SURFACE,
+                   linewidths=1.4, zorder=4)
+        # Direct label: absolute start->end and the signed percent, placed on
+        # the far side of the end dot so it never sits under the bar.
+        si, ei = int(round(s)), int(round(e))
+        if moved:
+            label = f"{si} → {ei}  ({p:+.1f}%)"
+        else:
+            label = f"{si}  (—)"
+        pad = span * 0.03 + 0.4
+        if p >= 0:
+            ax.text(p + pad, y, label, va="center", ha="left",
+                    fontsize=8, color=_INK_MUTED)
+        else:
+            ax.text(p - pad, y, label, va="center", ha="right",
+                    fontsize=8, color=_INK_MUTED)
+
+    ax.set_yticks(ys)
+    ax.set_yticklabels(order, fontsize=9, color=_INK)
+    ax.set_ylim(-0.7, len(order) - 0.3)
+    ax.set_xlim(xmin, xmax)
+    ax.set_xlabel("Change from start (%)", fontsize=10, color=_INK_MUTED)
+
+    ax.set_title(title, fontsize=13, color=_INK, fontweight="bold", loc="left",
+                 pad=26 if subtitle else 10)
+    if subtitle:
+        ax.text(0.0, 1.01, subtitle, transform=ax.transAxes, fontsize=9,
+                color=_INK_MUTED, ha="left", va="bottom")
+
+    ax.grid(True, axis="x", alpha=0.18, zorder=0)
+    for spine in ("top", "right", "left"):
+        ax.spines[spine].set_visible(False)
+    ax.spines["bottom"].set_color(_SHIFT_FLAT)
+    ax.tick_params(length=0)
+
+    # Legend by direct swatches (identity is not carried by color alone: each row
+    # is also value-labelled with its signed percent).
+    from matplotlib.lines import Line2D
+    handles = [
+        Line2D([0], [0], marker="o", color="none", markerfacecolor=_SHIFT_UP,
+               markeredgecolor=_SURFACE, markersize=8, label="increased"),
+        Line2D([0], [0], marker="o", color="none", markerfacecolor=_SHIFT_DOWN,
+               markeredgecolor=_SURFACE, markersize=8, label="decreased"),
+        Line2D([0], [0], marker="o", color="none", markerfacecolor=_SHIFT_FLAT,
+               markeredgecolor=_SURFACE, markersize=8, label="start / unchanged"),
+    ]
+    ax.legend(handles=handles, loc="lower right", fontsize=8, frameon=False)
+
+    fig.tight_layout()
+    fig.savefig(out, dpi=150, facecolor=_SURFACE)
+    plt.close(fig)
+    return out
+
+
+def render_trajectories(names, rows, out):
+    """Line plot of every parameter's value across SPSA iterations."""
+    plt = _import_pyplot()
+    iters = [int(r["iter"]) for r in rows]
     fig, ax = plt.subplots(figsize=(11, 6))
     for n in names:
         ax.plot(iters, [float(r[n]) for r in rows], label=n, linewidth=1.3)
@@ -528,9 +659,36 @@ def cmd_plot(args):
     ax.grid(True, alpha=0.25)
     ax.legend(fontsize=8, ncol=2, loc="best")
     fig.tight_layout()
-    out = history.parent / "trajectories.png"
     fig.savefig(out, dpi=150)
-    print(f"Saved {out}")
+    plt.close(fig)
+    return out
+
+
+def _shift_meta(history_path, rows):
+    """Build a (title, subtitle) pair for the shift plot from the run dir name
+    and the history rows."""
+    run_name = Path(history_path).resolve().parent.name
+    total_games = sum(int(r["games"]) for r in rows)
+    iters = len(rows)
+    subtitle = (f"{run_name}   ·   {iters} iterations, {total_games} games   "
+                f"·   start (first iter) → end (last iter)")
+    return "SPSA parameter shift", subtitle
+
+
+def cmd_plot(args):
+    names, rows = read_history(args.history)
+
+    if args.kind in ("trajectories", "both"):
+        out = Path(args.history).parent / "trajectories.png"
+        render_trajectories(names, rows, out)
+        print(f"Saved {out}")
+    if args.kind in ("shift", "both"):
+        start_vals = {n: float(rows[0][n]) for n in names}
+        end_vals = {n: float(rows[-1][n]) for n in names}
+        title, subtitle = _shift_meta(args.history, rows)
+        out = Path(args.history).parent / "shift.png"
+        render_shift_plot(names, start_vals, end_vals, out, title, subtitle)
+        print(f"Saved {out}")
     return 0
 
 
@@ -598,8 +756,13 @@ def main():
     init_p.add_argument("-r", "--r-end", type=float, default=0.002, dest="r_end")
     init_p.add_argument("--out", default="spsa_config.json")
 
-    plot_p = sub.add_parser("plot", help="Plot parameter trajectories")
+    plot_p = sub.add_parser("plot", help="Plot a run's parameter changes")
     plot_p.add_argument("history", help="Path to a run's history.csv")
+    plot_p.add_argument("--kind", default="shift",
+                        choices=["shift", "trajectories", "both"],
+                        help="shift: start->end dumbbell/percent-change plot "
+                             "(default); trajectories: per-iteration line plot; "
+                             "both: emit both.")
 
     args = parser.parse_args()
     if args.command == "run":
