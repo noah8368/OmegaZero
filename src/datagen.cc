@@ -346,6 +346,14 @@ static auto PlayGameUncertainty(int target_depth, uint64_t node_cap,
     if (sample_this_ply) {
       int v = board.Evaluate();  // raw static eval, STM POV
       reached_depth = 0;
+      // Decouple v_star from search history: clear the TT so this is a clean,
+      // reproducible from-scratch fixed-depth search rather than a value served
+      // from an entry a prior ply's search left warm. The warm-TT scheme made
+      // v_star's effective backing depth heterogeneous (>= target_depth, but by
+      // an uncontrolled amount) and the label non-reproducible across runs with
+      // different eviction order. Position context (pos_history_/repetition
+      // detection) lives on the Engine, not the TT, so it is preserved.
+      tt.Clear();
       engine.SetInfiniteSearch();  // drop the time bound (resets depth/node caps)
       engine.SetDepthLimit(target_depth);
       engine.SetNodeLimit(node_cap);
@@ -594,7 +602,19 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
     return;
   }
 
-  int val_start_game = static_cast<int>(num_games * (1.0f - validation_fraction));
+  // Route whole games to train or val (leakage-free: every position from one
+  // game stays together). Interleave by game index instead of reserving the
+  // final val_fraction of games as a tail block -- the tail scheme left the val
+  // set empty whenever a run was stopped early (SIGINT / auto-restart), since
+  // workers rarely reached their last val_fraction of games. Interleaving fills
+  // val proportionally from the first game and is robust to interruption.
+  int val_every = 0;
+  if (validation_fraction > 0.0f) {
+    val_every = static_cast<int>(1.0f / validation_fraction + 0.5f);
+    if (val_every < 1) {
+      val_every = 1;
+    }
+  }
   std::unordered_set<U64> seen_hashes;
   seen_hashes.reserve(num_games * 20);
   int consecutive_crashes = 0;
@@ -602,7 +622,8 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
   for (int g = 0; g < num_games && !g_shutdown.load(); ++g) {
     try {
       size_t hashes_before = seen_hashes.size();
-      std::ofstream& out = (g >= val_start_game) ? val_out : train_out;
+      bool is_val = (val_every > 0) && (g % val_every == 0);
+      std::ofstream& out = is_val ? val_out : train_out;
       GameResult result;
       int num_positions = 0;
 
