@@ -20,9 +20,12 @@
  * path: (1) the deep v_star search is amortized -- run only at sampled positions,
  * and it also supplies the game move; (2) the tactical filters are INVERTED --
  * in-check / high-|score| positions are KEPT (they carry the fat error tail the
- * pruning margins read); only true mate-band scores are excluded. v is a pure
- * function of the position; v_star inherits the game's warm TT / correction
- * history (representative -- a real deeper search has the same warm state).
+ * pruning margins read); only true mate-band scores are excluded. Both v and
+ * v_star are pure functions of the position: the TT is cleared before each
+ * v_star search so it is a clean, reproducible from-scratch fixed-depth search,
+ * not a value served from an entry a prior ply left warm (which gave v_star an
+ * uncontrolled, heterogeneous effective depth). Repetition/50-move context is
+ * preserved -- it lives on the Engine, not the TT.
  *
  * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
  */
