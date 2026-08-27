@@ -402,7 +402,7 @@ python3 scripts/debug.py --games 1000 --search-time 0.05  # fast stress test
 
 ### NNUE
 
-A pre-built [6M-position training dataset](https://drive.google.com/drive/folders/11guxluj5UL4BMaGmm0CqD-n7u5INT-EE?usp=sharing) is available for download. Place the files in `nnue/data/` and run `train_nnue.py` to train from scratch.
+A pre-built [100M-position training dataset](https://drive.google.com/drive/folders/17ceBeRrqkpMPDzXKoXNYXI3WTelhrDIt?usp=sharing) is available for download. Place the files in `nnue/data/` and run `train_nnue.py` to train from scratch.
 
 <p align="center">
   <img src="./figs/data_score_distribution.png" width="600" alt="6M Position Dataset Score Distribution">
