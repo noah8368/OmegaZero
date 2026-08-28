@@ -20,7 +20,11 @@
  * path: (1) the deep v_star search is amortized -- run only at sampled positions,
  * and it also supplies the game move; (2) the tactical filters are INVERTED --
  * in-check / high-|score| positions are KEPT (they carry the fat error tail the
- * pruning margins read); only true mate-band scores are excluded. Both v and
+ * pruning margins read); only decisive-sentinel scores (mate + Syzygy TB, i.e.
+ * |v_star| >= kDecisiveScoreThreshold) are excluded. Sampling is a randomized
+ * 1-in-K draw, not a fixed eligible-count comb: with the filters inverted a
+ * deterministic comb lands on a single ply parity -> a single side to move, so
+ * the draw is what keeps the STM mix ~50/50 white/black. Both v and
  * v_star are pure functions of the position: the TT is cleared before each
  * v_star search so it is a clean, reproducible from-scratch fixed-depth search,
  * not a value served from an entry a prior ply left warm (which gave v_star an
@@ -67,6 +71,13 @@ constexpr int kAdjudicateThreshold = 1000;
 constexpr int kAdjudicateCount = 5;
 constexpr int kSampleInterval = 4;
 constexpr int kMaxAbsScore = 3000;
+// v_star scores at or beyond this magnitude are forced-result sentinels (mate or
+// Syzygy TB), not real evals, and are dropped from the uncertainty set. Chosen
+// far above any attainable static/search eval (empirically |v_star| <= ~6000 on
+// kept tactical positions) yet far below the mate/TB sentinel band (~31700+), so
+// the two never overlap. IsMateScore alone missed Syzygy TB scores (the band just
+// below the mate band) and TB scores reported past the kSearchLimit ply window.
+constexpr int kDecisiveScoreThreshold = 20000;
 constexpr int kMaxConsecutiveCrashes = 5;
 constexpr int kStartupEmailThreshold = 10;
 
@@ -328,7 +339,16 @@ static auto PlayGameUncertainty(int target_depth, uint64_t node_cap,
 
   int plies_played = PlayRandomOpeningMoves(board, engine, rng);
   int consecutive_high = 0;
-  int eligible_count = 0;
+  // Randomized 1-in-kSampleInterval sampling rather than a fixed eligible-count
+  // comb. The inverted filters keep EVERY past-opening ply eligible, so a
+  // deterministic "eligible_count % kSampleInterval == 0" always lands on the same
+  // ply parity -- i.e. a single side to move (empirically 100% black). A Bernoulli
+  // draw decorrelates the sample phase from ply parity, yielding a ~50/50
+  // white/black STM mix. rng is the per-worker stream (nondeterministically
+  // seeded), so no reproducibility guarantee is lost. PlayGame dodges this only
+  // incidentally: its check/tactics filters reject plies content-dependently,
+  // which breaks the comb.
+  std::uniform_int_distribution<int> sample_dist(0, kSampleInterval - 1);
 
   for (int ply = plies_played; ply < kMaxMovesPerGame; ++ply) {
     S8 status = engine.GetGameStatus();
@@ -338,11 +358,8 @@ static auto PlayGameUncertainty(int target_depth, uint64_t node_cap,
     if (status == kDraw) return kDrawResult;
 
     // Inverted filters: sample past-opening plies regardless of check/tactics.
-    bool sample_this_ply = false;
-    if (ply >= kSkipFirstNPlies) {
-      ++eligible_count;
-      sample_this_ply = (eligible_count % kSampleInterval == 0);
-    }
+    bool sample_this_ply =
+        (ply >= kSkipFirstNPlies) && (sample_dist(rng) == 0);
 
     Move best;
     int score_stm = 0;
@@ -364,9 +381,14 @@ static auto PlayGameUncertainty(int target_depth, uint64_t node_cap,
       uint64_t nodes = engine.GetTotalNodes();
       engine.SetSearchTime(search_time);  // restore timed budget for ordinary plies
 
-      // Drop only mate-band scores (their error is not the smooth quantity we
-      // model -- mirrors ProbCut's mate exclusion). v is never a mate score.
-      if (!best.IsEmpty() && !IsMateScore(score_stm)) {
+      // Drop decisive sentinels (mate + Syzygy TB scores): u = v - v_star is not
+      // the smooth eval-error we model when v_star is a forced-result sentinel
+      // (~+/-31700+) while v, a saturating static NNUE eval (~+/-1600), cannot
+      // represent it. Unlike PlayGame we deliberately KEEP high-but-finite
+      // tactical scores -- those large-|u| tails are exactly the high-uncertainty
+      // data NF-002 targets. A magnitude cut subsumes IsMateScore and also catches
+      // TB scores it missed (see kDecisiveScoreThreshold).
+      if (!best.IsEmpty() && abs(score_stm) < kDecisiveScoreThreshold) {
         U64 hash = board.GetBoardHash();
         if (seen_hashes.find(hash) == seen_hashes.end()) {
           seen_hashes.insert(hash);
