@@ -73,11 +73,14 @@ for run_dir in "$DATA_DIR"/*/; do
         continue
     fi
 
+    # Drop malformed rows (torn last-line records where a worker's final flush
+    # merged two records without a newline) by keeping only well-formed 7-field
+    # pipe-separated lines. Guards against a garbage (v, v*) target leaking in.
     for f in "$run_dir"data_worker_*.txt; do
-        [[ -f "$f" ]] && cat "$f" >> "$run_dir/training_data.txt" && rm "$f"
+        [[ -f "$f" ]] && awk -F'|' 'NF==7' "$f" >> "$run_dir/training_data.txt" && rm "$f"
     done
     for f in "$run_dir"val_worker_*.txt; do
-        [[ -f "$f" ]] && cat "$f" >> "$run_dir/validation_data.txt" && rm "$f"
+        [[ -f "$f" ]] && awk -F'|' 'NF==7' "$f" >> "$run_dir/validation_data.txt" && rm "$f"
     done
 
     train_count=0
