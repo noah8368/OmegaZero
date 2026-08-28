@@ -6,6 +6,46 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-08-28 — Real-data distributional read (unc run `6325e7d`) — mdn_t reaffirmed
+
+Fresh uncertainty datagen run (`nnue/data/unc_2026-08-28_02-46-07_6325e7d`, HEAD `6325e7d`,
+NNUE engine, **depth-12 `v*`**, 962,667 clean rows / 32 data + 32 val workers, 90/10 by-game
+split). Checked data health and re-examined whether the H2 pick (`mdn_t`, K=5 Student-t head)
+still fits the shape of real `u = v − v*`.
+
+- **Data health — clean.** STM balance 49.8b/50.2w (the 50/50 randomized-sampling fix landed),
+  90.0% train split exact, result mix 22/43/35 (loss/draw/win STM POV), depth uniformly 12,
+  zero mid-file corruption. Only ~30 torn last-line records (worker shutdown-flush merges two
+  rows) — fixed at the combine step by an `NF==7` guard (`combine_runs.sh`, commit `e1eaf1a`).
+- **Marginal shape of `u`.** mean +12.8cp, median 5, std 194; mean|u|=120, p99=761, max 4638.
+  **Excess kurtosis ≈ 10** (very heavy tails), mild positive skew (+0.23), **unimodal**,
+  Laplace-like core on log-y. `|u|` carries real conditional signal: rank-corr +0.34 vs |v|,
+  **−0.32 vs nodes** (few-node forcing positions are where static eval fails most — inverse
+  difficulty proxy), −0.32 vs #pieces (middlegame-peaked, collapses in sparse endgames).
+- **Conditional check (phase × eval-magnitude buckets, proxy for x).** All 9 buckets
+  **unimodal + heavy-tailed**: bimodality coefficient 0.05–0.15 (≪ 0.555 threshold), excess
+  kurtosis 3.8–17.6 *within* buckets (so the heavy tail is conditional, not a pooling artifact).
+  Mean offset flips by phase (opening/quiet −9cp → endgame/decisive +27cp) — real conditional
+  mean structure for the NF-003 corrector-swap to capture.
+- **Verdict: `mdn_t` holds water — strengthened.** Real data is exactly the regime where the
+  mixture-of-Student-t wins and the flow's only edge (multimodality) is absent: unimodal, heavy-
+  tailed (kurtosis 10 → vindicates Student-t over the NaN-prone Gaussian MDN, and QR-out on
+  tails), mildly skewed (mixture handles it), heteroscedastic (MDN is conditional). ν-floor 2.0
+  gives infinite-variance tail headroom over the finite observed tail — not binding. Residual
+  risk (conditional bimodality at full embedding resolution, invisible to these coarse proxies)
+  is already hedged by the M≫K result + flow-as-backstop. **Quantiles are sampling-free**: the
+  mixture CDF `Σ π_k T_cdf((y−μ_k)/σ_k; ν_k)` is closed-form-evaluable and inverted by
+  deterministic 1-D bisection/Newton (already in `nf002_fit_pilot.py`); the conditional mean
+  `Σ π_k μ_k` is fully closed-form (ν>1 always). This is a point *for* mdn_t vs the flow.
+- **Caveat:** conditioning here is on observable proxies (phase, |v|), not the NNUE embedding
+  `x` (not wired yet); full-resolution conditional shape still awaits the real-embedding re-run.
+  Also this run is ~963k (pilot/mean scale), not the 2–5M the margin result (NF-004) needs.
+
+Analysis scripts: `research/experiments/nf002_data_analysis.py`,
+`research/experiments/nf002_cond_shape.py`; figures in `research/figs/NF-002/`.
+
+---
+
 ## 2026-08-15 — NF-002 pilot data generated; fit-training harness verified end-to-end
 
 Ran the full net-independent pilot: datagen → preprocess → frozen-trunk embed → `mdn_t` fit →
