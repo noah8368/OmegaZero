@@ -163,8 +163,3 @@ echo ""
 printf "Training:   %'d → %'d (+%'d new unique)\n" "$train_before" "$train_after" $((train_after - train_before))
 printf "Validation: %'d → %'d (+%'d new unique)\n" "$val_before" "$val_after" $((val_after - val_before))
 printf "Total:      %'d positions\n" "$grand_total"
-
-if [[ $grand_total -gt 0 ]]; then
-    pct=$(awk "BEGIN { printf \"%.1f\", ($grand_total / 102000000.0) * 100 }")
-    printf "Progress:   %s%% of 102M target\n" "$pct"
-fi

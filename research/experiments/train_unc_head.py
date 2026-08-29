@@ -45,6 +45,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from scipy.stats import t as student_t
+from tqdm import tqdm
 
 # Reuse the exact record dtype the preprocessor wrote.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
@@ -131,7 +132,8 @@ def train(model, xtr, ytr, xva, yva, epochs, bs, lr, tag):
     n = len(xtr)
     best_val, best_state, bad = float("inf"), None, 0
     history = []  # per-epoch (train_nll, val_nll) for the loss-curve plot
-    for ep in range(epochs):
+    pbar = tqdm(range(epochs), desc=f"[{tag}]", unit="ep")
+    for ep in pbar:
         model.train()
         perm = torch.randperm(n)
         run_loss, nb = 0.0, 0
@@ -152,11 +154,12 @@ def train(model, xtr, ytr, xva, yva, epochs, bs, lr, tag):
             best_val, best_state, bad = vnll, {k: v.clone() for k, v in model.state_dict().items()}, 0
         else:
             bad += 1
-        if ep % 5 == 0 or ep == epochs - 1:
-            print(f"  [{tag}] epoch {ep:3d}  val NLL {vnll:.4f}  (best {best_val:.4f})")
+        pbar.set_postfix(train=f"{run_loss / max(nb, 1):.4f}",
+                         val=f"{vnll:.4f}", best=f"{best_val:.4f}")
         if bad >= 8:
-            print(f"  [{tag}] early stop at epoch {ep}")
+            pbar.write(f"  [{tag}] early stop at epoch {ep}")
             break
+    pbar.close()
     if best_state is not None:
         model.load_state_dict(best_state)
     return best_val, history
