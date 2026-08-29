@@ -21,8 +21,17 @@ the NNUE trunk exactly: the model's feature x is the frozen trunk's output, whic
 is computed from these same HalfKP indices. The MDN head (per H2) then reads x and
 regresses the conditional distribution of u.
 
+Pipeline: like the NNUE side, you normally do NOT run this by hand. The trainer
+research/experiments/train_unc_head.py imports encode_uncertainty() and auto-encodes
+.txt -> .bin (re-encoding a stale .bin) exactly as train_nnue.py does, so
+combine_runs.sh output feeds the trainer directly. scripts/plot_unc.py does the same
+for its `data` subcommand. Run this directly only to pre-encode a split outside
+training; scripts/prepare_uncertainty_data.sh is an optional one-shot that chains
+combine_runs.sh + this encoder over both splits. Full uncertainty flow:
+    datagen (mode: uncertainty)  ->  combine_runs.sh  ->  train_unc_head.py
+
 Usage:
-    python3 scripts/preprocess_uncertainty.py nnue/data/<run>/training_data.txt
+    python3 scripts/preprocess_uncertainty.py nnue/data_uncertainty/<run>/training_data.txt
     python3 scripts/preprocess_uncertainty.py <input.txt> -o custom_output.bin
 """
 
@@ -58,24 +67,14 @@ UNC_RECORD_DTYPE = np.dtype([
 NUM_FIELDS = 7
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Preprocess NF-002 uncertainty-label data to binary format"
-    )
-    parser.add_argument(
-        "input", help="Input text file (FEN | v | v_star | u | depth | nodes | result)"
-    )
-    parser.add_argument(
-        "-o", "--output",
-        help="Output binary file (default: same path with .bin extension)",
-    )
-    args = parser.parse_args()
+def encode_uncertainty(input_path, output_path):
+    """Encode a 7-field uncertainty .txt into the packed UNC_RECORD_DTYPE .bin.
 
-    input_path = Path(args.input)
-    if args.output:
-        output_path = Path(args.output)
-    else:
-        output_path = input_path.with_suffix(".bin")
+    Returns the number of records written. Importable so the trainer
+    (research/experiments/train_unc_head.py) can (re)encode on staleness in the
+    same way scripts/train_nnue.py does for the NNUE pipeline."""
+    input_path = Path(input_path)
+    output_path = Path(output_path)
 
     print(f"Counting positions in {input_path}...")
     num_lines = 0
@@ -158,6 +157,25 @@ def main():
         print(f"  WARNING: {mismatched_u:,} rows had u != v - v_star (recomputed)")
     print(f"  Output: {output_path} ({file_size / 1024 / 1024:.1f} MB)")
     print(f"  Record size: {UNC_RECORD_DTYPE.itemsize} bytes")
+    return idx
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Preprocess NF-002 uncertainty-label data to binary format"
+    )
+    parser.add_argument(
+        "input", help="Input text file (FEN | v | v_star | u | depth | nodes | result)"
+    )
+    parser.add_argument(
+        "-o", "--output",
+        help="Output binary file (default: same path with .bin extension)",
+    )
+    args = parser.parse_args()
+
+    input_path = Path(args.input)
+    output_path = Path(args.output) if args.output else input_path.with_suffix(".bin")
+    encode_uncertainty(input_path, output_path)
 
 
 if __name__ == "__main__":

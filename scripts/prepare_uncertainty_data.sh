@@ -7,10 +7,15 @@
 #      (schema-guarded to uncertainty's 7-field rows; honors the datagen
 #      train/val split via data_worker_* vs val_worker_*).
 #   2. preprocess_uncertainty.py — encode BOTH split .txt files into the packed
-#      .bin (UNC_RECORD_DTYPE) that research/experiments/nf002_fit_pilot.py reads.
+#      .bin (UNC_RECORD_DTYPE) that research/experiments/train_unc_head.py reads.
 #
 # The result is a ready --train/--val .bin pair. combine_runs.sh dedups and
 # preprocessing overwrites, so this is safe to re-run as new datagen lands.
+#
+# OPTIONAL: train_unc_head.py now auto-encodes .txt -> .bin on its own (like
+# train_nnue.py), so the minimal path is just combine_runs.sh then the trainer —
+# this wrapper is only a convenience that pre-bakes both .bin ahead of time (e.g.
+# to encode once and reuse, or to inspect the .bin before training).
 #
 # Usage:
 #   ./scripts/prepare_uncertainty_data.sh                     # nnue/data_uncertainty
@@ -63,7 +68,7 @@ encode validation
 
 echo ""
 echo "Done. Fit the uncertainty head with:"
-echo "  $PY research/experiments/nf002_fit_pilot.py \\"
+echo "  $PY research/experiments/train_unc_head.py \\"
 echo "    --trunk <path/to/net/best.bin> \\"
 echo "    --train $COMBINED/training_data.bin \\"
 echo "    --val   $COMBINED/validation_data.bin"

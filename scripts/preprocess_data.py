@@ -5,6 +5,13 @@ Preprocess NNUE training data from text to binary format for memory-efficient tr
 Converts the text format (FEN | score | result) to a compact binary format that
 can be memory-mapped during training, avoiding OOM at large dataset sizes.
 
+Pipeline: this is the NNUE-side encoder, the 3-field counterpart to
+scripts/preprocess_uncertainty.py (7-field). You normally do NOT run it by hand:
+scripts/train_nnue.py resolves its --data path to a memmapped .bin and invokes
+this encoding automatically whenever the .bin is missing or older than the .txt.
+Run it directly only to pre-encode a split outside training. Full NNUE flow:
+    scripts/run_datagen.sh  ->  scripts/combine_runs.sh  ->  scripts/train_nnue.py
+
 Usage:
     python3 scripts/preprocess_data.py nnue/data/combined/training_data.txt
     python3 scripts/preprocess_data.py nnue/data/combined/training_data.txt -o custom_output.bin

@@ -10,6 +10,19 @@
 # Usage:
 #   ./scripts/combine_runs.sh                  # default: nnue/data
 #   ./scripts/combine_runs.sh /path/to/data    # custom data directory
+#
+# Shared, schema-aware combine step for BOTH datagen pipelines — it auto-detects
+# the row schema and refuses to mix them in one combined file:
+#   * NNUE eval runs (nnue_*, 3-field: FEN | score | result)
+#   * uncertainty runs (unc_*, 7-field: FEN | v | v_star | u | depth | nodes | result)
+# Keep the two modes in SEPARATE data dirs (config.json 'output') so a dir holds
+# one schema. This step stops at deduplicated combined/*.txt; both trainers then
+# auto-encode .txt -> .bin on staleness, so combine output feeds them directly:
+#   * NNUE:        ./scripts/combine_runs.sh                then  scripts/train_nnue.py
+#   * uncertainty: ./scripts/combine_runs.sh nnue/data_uncertainty
+#                  then  research/experiments/train_unc_head.py
+# (scripts/prepare_uncertainty_data.sh is an optional one-shot that pre-bakes the
+# uncertainty .bin via scripts/preprocess_uncertainty.py, but is not required.)
 
 set -uo pipefail
 

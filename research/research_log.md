@@ -35,7 +35,7 @@ still fits the shape of real `u = v − v*`.
   risk (conditional bimodality at full embedding resolution, invisible to these coarse proxies)
   is already hedged by the M≫K result + flow-as-backstop. **Quantiles are sampling-free**: the
   mixture CDF `Σ π_k T_cdf((y−μ_k)/σ_k; ν_k)` is closed-form-evaluable and inverted by
-  deterministic 1-D bisection/Newton (already in `nf002_fit_pilot.py`); the conditional mean
+  deterministic 1-D bisection/Newton (already in `train_unc_head.py`); the conditional mean
   `Σ π_k μ_k` is fully closed-form (ν>1 always). This is a point *for* mdn_t vs the flow.
 - **Caveat:** conditioning here is on observable proxies (phase, |v|), not the NNUE embedding
   `x` (not wired yet); full-resolution conditional shape still awaits the real-embedding re-run.
@@ -64,7 +64,7 @@ and labels describe *different* evals. A coherent read needs NNUE-eval labels.
   the quantized FT block** (int16/127, clamp[0,1]) + stored HalfKP indices → 512-dim
   STM-relative accum, matching `train_nnue.py` `forward` exactly. Using the quantized weights is
   arguably *more* faithful to deployment (engine runs int16 accum) than a float `.pt` would be.
-- **Fit** (`research/experiments/nf002_fit_pilot.py`, `mdn_t` K=5 Student-t head):
+- **Fit** (`research/experiments/train_unc_head.py`, `mdn_t` K=5 Student-t head):
   conditional beats the unconditional floor — **val NLL 1.023 vs 1.102** (+0.079), pinball qMAE
   lower at all quantiles (τ=.1/.5/.9). Coverage near nominal (90/95% dead on; 50% a touch under
   at 44%), PIT KS 0.044. Overfit slightly (early stop epoch 13 — 31k is small). Sanity confirmed:
@@ -83,7 +83,7 @@ the embedding must come from the *same* net, and it must be the net we'll actual
 positions must be disjoint from that net's training set, so we can't even pick positions until
 the net + its corpus are fixed. So: finish NNUE training (see nnue-local-training-plan) →
 `nnue/nnue.bin` → rebuild → regen datagen for NNUE-coherent labels → rerun
-`nf002_fit_pilot.py` for a *real* calibration read → NF-003 corrector-swap SPRT.
+`train_unc_head.py` for a *real* calibration read → NF-003 corrector-swap SPRT.
 
 ---
 
