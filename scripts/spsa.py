@@ -59,6 +59,20 @@ self-contained recipe (any subset of games / games_per_iter / concurrency / tc):
 Explicit CLI flags override the "run" block, which overrides the built-in
 defaults. So `run --config spsa_nnue_config.json` needs no other flags.
 
+Resuming an interrupted run:
+    A run's full state is just (theta, t): theta lives in every checkpoint (a
+    drop-in params.json) and t is the checkpoint's filename index. The gain
+    schedule (c_t, a_t) is a pure function of t and the fixed total `iterations`,
+    so resuming at t+1 with an unchanged budget reconstructs it exactly — no
+    re-annealing. --resume takes a run dir (or its checkpoint/ dir), warm-starts
+    theta from the newest iter_*.json, and appends to the same history.csv and
+    checkpoints. Pass the SAME run recipe (--config/--games) the original used so
+    the total `iterations` matches; a run started after this feature landed also
+    drops a meta.json that pins the schedule automatically.
+    # Resume the run whose config was spsa_nnue_config.json
+    python3 scripts/spsa.py run --config spsa_nnue_config.json \\
+        --resume results/spsa/2026-08-26_10-34-52_nnue_5008881
+
     # Plot parameter trajectories from a run
     python3 scripts/spsa.py plot results/spsa/2026-07-21_.../history.csv
 """
@@ -340,6 +354,50 @@ def apply_config_run_defaults(args):
     return args
 
 
+def _resolve_resume(resume_path):
+    """Locate the state needed to resume a prior run.
+
+    Accepts either a run dir (holding `checkpoint/` + `history.csv`) or the
+    `checkpoint/` dir itself. Returns (run_dir, checkpoint_dir, newest_cp,
+    t_done) where t_done is the iteration index of the newest checkpoint — the
+    loop resumes at t_done + 1. SPSA carries no state across iterations beyond
+    theta and t, so those two are a complete snapshot."""
+    p = Path(resume_path)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    if not p.exists():
+        sys.exit(f"--resume path not found: {p}")
+    checkpoint_dir = p / "checkpoint" if (p / "checkpoint").is_dir() else p
+    run_dir = checkpoint_dir.parent
+    cps = sorted(checkpoint_dir.glob("iter_*.json"))
+    if not cps:
+        sys.exit(f"--resume: no iter_*.json checkpoints under {checkpoint_dir}")
+    newest = cps[-1]
+    try:
+        t_done = int(newest.stem.split("_")[1])
+    except (IndexError, ValueError):
+        sys.exit(f"--resume: cannot parse iteration from {newest.name}")
+    return run_dir, checkpoint_dir, newest, t_done
+
+
+def _first_history_start(history_csv, names):
+    """Best-effort true start values from a run's first history row (used only
+    for the summary/plot when meta.json is absent). This is the post-iter-1
+    theta, so it's off by one small step from the true pre-run start — close
+    enough for a shift plot, and the only record older runs kept."""
+    try:
+        with open(history_csv, newline="") as f:
+            r = csv.reader(f)
+            header = next(r, None)
+            first = next(r, None)
+    except OSError:
+        return None
+    if not header or not first:
+        return None
+    idx = {h: i for i, h in enumerate(header)}
+    return {n: float(first[idx[n]]) for n in names if n in idx}
+
+
 def cmd_run(args):
     engine = Path(args.engine)
     if not engine.is_absolute():
@@ -372,13 +430,72 @@ def cmd_run(args):
     a0 = {n: t["r_end"] * t["c_end"] ** 2 * (A + iterations) ** ALPHA
           for n, t in tuned.items()}
 
-    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_dir = RESULTS_DIR / f"{ts}_{args.profile}_{sprt.get_version_tag()}"
-    run_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_dir = run_dir / "checkpoint"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    history_csv = run_dir / "history.csv"
     names = list(tuned)
+
+    # ---- Resume vs fresh run -------------------------------------------------
+    # A run's entire resumable state is (theta, t): theta lives in each
+    # checkpoint (a drop-in params.json), t is the checkpoint's filename index.
+    # The gain schedule (c_t, a_t) is a pure function of t and the fixed total
+    # `iterations`, so resuming at t_done+1 with an unchanged `iterations`
+    # reconstructs it exactly — no re-annealing.
+    orig_start = None  # true pre-run start values, for the summary/shift plot
+    if args.resume:
+        run_dir, checkpoint_dir, newest_cp, t_done = _resolve_resume(args.resume)
+        history_csv = run_dir / "history.csv"
+        # Pin the schedule from meta.json when present (future runs write it);
+        # otherwise trust the CLI/config-derived `iterations` (same command).
+        meta = {}
+        meta_path = run_dir / "meta.json"
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text())
+            except (OSError, ValueError):
+                meta = {}
+        if meta.get("iterations"):
+            iterations = int(meta["iterations"])
+            A = 0.1 * iterations
+            c0 = {n: tuned[n]["c_end"] * iterations ** GAMMA for n in names}
+            a0 = {n: tuned[n]["r_end"] * tuned[n]["c_end"] ** 2
+                     * (A + iterations) ** ALPHA for n in names}
+        orig_start = meta.get("start_theta") or _first_history_start(history_csv,
+                                                                     names)
+        # Warm-start theta from the newest checkpoint.
+        cp_vals = load_params_json(newest_cp).get(args.profile, {})
+        missing = [n for n in names if n not in cp_vals]
+        if missing:
+            sys.exit(f"--resume: checkpoint {newest_cp.name} is missing params "
+                     f"({', '.join(missing)}); profile/--params mismatch?")
+        theta = {n: float(cp_vals[n]) for n in names}
+        start_iter = t_done + 1
+        if start_iter > iterations:
+            sys.exit(f"--resume: newest checkpoint is iter {t_done} but total "
+                     f"iterations is {iterations} — nothing left to run. Pass "
+                     f"the same --config/--games the original run used.")
+        hist_mode = "a"
+        write_header = not history_csv.exists()
+    else:
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        run_dir = RESULTS_DIR / f"{ts}_{args.profile}_{sprt.get_version_tag()}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_dir = run_dir / "checkpoint"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        history_csv = run_dir / "history.csv"
+        start_iter = 1
+        hist_mode = "w"
+        write_header = True
+        orig_start = dict(theta)
+        # Persist run metadata so a later --resume can pin the schedule exactly.
+        (run_dir / "meta.json").write_text(json.dumps({
+            "profile": args.profile,
+            "params": names,
+            "games": args.games,
+            "games_per_iter": args.games_per_iter,
+            "iterations": iterations,
+            "seed": args.seed,
+            "start_theta": {n: float(theta[n]) for n in names},
+            "schedule": {n: {"c_end": tuned[n]["c_end"],
+                             "r_end": tuned[n]["r_end"]} for n in names},
+        }, indent=2) + "\n")
 
     tc_pool = build_tc_pool(args)
     tc_desc = " | ".join(label for _, label in tc_pool)
@@ -395,21 +512,33 @@ def cmd_run(args):
 
     print(f"\n{'=' * 68}")
     print(f"  SPSA tuning — profile '{args.profile}'  ({len(names)} params)")
-    print(f"  {args.games} games / {args.games_per_iter} per iter "
-          f"= {iterations} iterations")
+    if args.resume:
+        print(f"  RESUMING {run_dir.name}")
+        print(f"  from checkpoint {newest_cp.name} — iter {start_iter}/{iterations}"
+              f" ({iterations - start_iter + 1} left)")
+    else:
+        print(f"  {args.games} games / {args.games_per_iter} per iter "
+              f"= {iterations} iterations")
     print(f"  Time controls (cycled): {tc_desc}")
     print(f"  Params: {', '.join(names)}")
     print(f"  Checkpoints -> {checkpoint_dir}/ (best -> best.json; {args.out} read-only)")
     print(f"{'=' * 68}\n")
 
     rng = random.Random(args.seed)
-    with open(history_csv, "w", newline="") as hf:
+    # Advance the RNG past already-completed iterations so the perturbation-flip
+    # stream continues exactly as if the run never stopped (identical when the
+    # same --seed is used; a harmless no-op otherwise).
+    for _ in range((start_iter - 1) * len(names)):
+        rng.choice((-1, 1))
+    with open(history_csv, hist_mode, newline="") as hf:
         writer = csv.writer(hf)
-        writer.writerow(["iter", "games", "result"] + names)
+        if write_header:
+            writer.writerow(["iter", "games", "result"] + names)
 
-        games_done = 0
+        # Count prior games so the running total and summary stay cumulative.
+        games_done = (start_iter - 1) * args.games_per_iter
         try:
-            for t in range(1, iterations + 1):
+            for t in range(start_iter, iterations + 1):
                 ct = {n: c0[n] / t ** GAMMA for n in names}
                 at = {n: a0[n] / (A + t) ** ALPHA for n in names}
                 flip = {n: rng.choice((-1, 1)) for n in names}
@@ -451,12 +580,16 @@ def cmd_run(args):
 
     best_json = checkpoint_dir / "best.json"
     save_profile(args.out, args.profile, theta, out_path=best_json)
+    # True pre-run start: recorded start_theta on resume, else the pre-loop
+    # params.json values for a fresh run.
+    start_vals = {n: float((orig_start or {}).get(n, profile_vals.get(n, opts[n][0])))
+                  for n in names}
     print(f"\n{'=' * 68}")
     print(f"  Done. Tuned {len(names)} params over {games_done} games.")
     print(f"  Best values written to {best_json} [{args.profile}]:")
     for n in names:
-        start = float(profile_vals.get(n, opts[n][0]))
-        print(f"    {n:<26} {int(round(start)):>6} -> {int(round(theta[n])):>6}")
+        print(f"    {n:<26} {int(round(start_vals[n])):>6} -> "
+              f"{int(round(theta[n])):>6}")
     print(f"  History:     {history_csv}")
     print(f"  Checkpoints: {checkpoint_dir}/")
 
@@ -464,7 +597,6 @@ def cmd_run(args):
     # run because plotting is unavailable). Uses the true pre-run start values.
     if games_done > 0:
         try:
-            start_vals = {n: float(profile_vals.get(n, opts[n][0])) for n in names}
             end_vals = {n: float(theta[n]) for n in names}
             subtitle = (f"{run_dir.name}   ·   profile '{args.profile}', "
                         f"{games_done} games   ·   start → end")
@@ -710,6 +842,13 @@ def main():
                             "Ignored if --config is given.")
     run_p.add_argument("--config", default=None,
                        help="spsa_config.json from `init` (overrides --params)")
+    run_p.add_argument("--resume", default=None,
+                       help="Resume a prior run: path to its run dir (or its "
+                            "checkpoint/ dir). Continues from the newest "
+                            "checkpoint at the correct iteration/gain schedule, "
+                            "appending to the same history.csv and checkpoints. "
+                            "Pass the same --config/--games as the original so "
+                            "the total iteration budget matches.")
     run_p.add_argument("--games", type=int, default=None,
                        help="Total game budget (default: 20000, or config 'run.games')")
     run_p.add_argument("--games-per-iter", type=int, default=None, dest="games_per_iter",
