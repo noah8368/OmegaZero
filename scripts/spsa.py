@@ -24,7 +24,7 @@ engine (`make` first).
 Subcommands:
     run    — Run an SPSA tuning session and update params.json.
     init   — Emit an editable spsa_config.json listing all tunable knobs.
-    plot   — Plot parameter trajectories from a run's history.csv.
+    plot   — Plot a run's start->end parameter shift from its history.csv.
 
 Algorithm (standard Spall SPSA with the OpenBench schedule):
     alpha = 0.602, gamma = 0.101, A = 0.1 * iterations
@@ -73,7 +73,7 @@ Resuming an interrupted run:
     python3 scripts/spsa.py run --config spsa_nnue_config.json \\
         --resume results/spsa/2026-08-26_10-34-52_nnue_5008881
 
-    # Plot parameter trajectories from a run
+    # Plot the start->end parameter shift from a run
     python3 scripts/spsa.py plot results/spsa/2026-07-21_.../history.csv
 """
 
@@ -778,24 +778,6 @@ def render_shift_plot(names, start_vals, end_vals, out, title, subtitle=None):
     return out
 
 
-def render_trajectories(names, rows, out):
-    """Line plot of every parameter's value across SPSA iterations."""
-    plt = _import_pyplot()
-    iters = [int(r["iter"]) for r in rows]
-    fig, ax = plt.subplots(figsize=(11, 6))
-    for n in names:
-        ax.plot(iters, [float(r[n]) for r in rows], label=n, linewidth=1.3)
-    ax.set_xlabel("SPSA iteration")
-    ax.set_ylabel("Parameter value (UCI units)")
-    ax.set_title("SPSA Parameter Trajectories")
-    ax.grid(True, alpha=0.25)
-    ax.legend(fontsize=8, ncol=2, loc="best")
-    fig.tight_layout()
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
-    return out
-
-
 def _shift_meta(history_path, rows):
     """Build a (title, subtitle) pair for the shift plot from the run dir name
     and the history rows."""
@@ -810,17 +792,12 @@ def _shift_meta(history_path, rows):
 def cmd_plot(args):
     names, rows = read_history(args.history)
 
-    if args.kind in ("trajectories", "both"):
-        out = Path(args.history).parent / "trajectories.png"
-        render_trajectories(names, rows, out)
-        print(f"Saved {out}")
-    if args.kind in ("shift", "both"):
-        start_vals = {n: float(rows[0][n]) for n in names}
-        end_vals = {n: float(rows[-1][n]) for n in names}
-        title, subtitle = _shift_meta(args.history, rows)
-        out = Path(args.history).parent / "shift.png"
-        render_shift_plot(names, start_vals, end_vals, out, title, subtitle)
-        print(f"Saved {out}")
+    start_vals = {n: float(rows[0][n]) for n in names}
+    end_vals = {n: float(rows[-1][n]) for n in names}
+    title, subtitle = _shift_meta(args.history, rows)
+    out = Path(args.history).parent / "shift.png"
+    render_shift_plot(names, start_vals, end_vals, out, title, subtitle)
+    print(f"Saved {out}")
     return 0
 
 
@@ -897,11 +874,6 @@ def main():
 
     plot_p = sub.add_parser("plot", help="Plot a run's parameter changes")
     plot_p.add_argument("history", help="Path to a run's history.csv")
-    plot_p.add_argument("--kind", default="shift",
-                        choices=["shift", "trajectories", "both"],
-                        help="shift: start->end dumbbell/percent-change plot "
-                             "(default); trajectories: per-iteration line plot; "
-                             "both: emit both.")
 
     args = parser.parse_args()
     if args.command == "run":
