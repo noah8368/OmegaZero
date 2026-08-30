@@ -55,7 +55,11 @@ Parameters (plot subcommand):
 Data preprocessing:
     .txt files are converted to a memory-mapped .bin format on first run for
     efficient random access with 100M+ positions. The .bin is automatically
-    re-generated whenever the .txt is newer (e.g. after combining new data).
+    re-generated whenever the .txt is newer (e.g. after combining new data), so
+    combined/*.txt feeds this trainer directly. To pre-bake both .bin ahead of
+    time (combine worker shards + encode both splits in one step), run
+    scripts/prepare_nnue_data.py first. Full flow:
+        run_datagen.sh  ->  prepare_nnue_data.py  ->  train_nnue.py
 
 Output (run directories named <timestamp>_<hash>_<N>_pos):
     nnue/model/<run>/best.bin              — quantized binary weights (int16/int8)
