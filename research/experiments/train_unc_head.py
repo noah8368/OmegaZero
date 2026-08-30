@@ -27,11 +27,15 @@ is enough. scripts/prepare_unc_data.py is the one-stop step that combines worker
 shards and pre-bakes both .bin ahead of time, but is now optional.
 Full flow: datagen -> prepare_unc_data.py -> this trainer.
 
-The trained head plus its metrics are always saved to a timestamped run dir under
-research/experiment_results/unc_head/ (head.pt = state_dict + k/hidden/in_dim +
-u_mean/u_std + trunk path & md5, everything needed to reload it; reload via
-load_head_model()). Training plots (loss curves, calibration/PIT, coverage,
-u-distribution) are written alongside unless --no-plots.
+Each run gets a timestamped dir under research/experiment_results/unc_head/,
+mirroring nnue/model:
+    <run>/checkpoints/epoch_N.pt   per-epoch checkpoints (gitignored, local only)
+    <run>/best.bin                the best-val conditional head (OZUH binary;
+                                  in_dim/k/hidden + u_mean/u_std + trunk md5 baked
+                                  in, all it needs to reload -- see read_head_bin)
+    <run>/metrics.json            calibration + config scalars
+    <run>/*.png, artifacts.npz    plots (unless --no-plots)
+Early stopping is off by default (runs the full --epochs); enable with --early-stop.
 
 Usage:
   python3 research/experiments/train_unc_head.py \
@@ -128,41 +132,95 @@ class MDNt(nn.Module):
         return -torch.logsumexp(log_pi + log_prob, dim=1).mean()
 
 
-def save_head_model(path, model, in_dim, k, hidden, u_mean, u_std, trunk, trunk_md5):
-    """Persist the trained MDN head with everything needed to reload and use it.
-
-    The head is meaningless without the frozen trunk that produced its input
-    embedding and the (u_mean, u_std) the target was standardized with, so those
-    are stored alongside the weights. Reload with load_head_model()."""
-    torch.save({
-        "arch": "mdn_t",
-        "state_dict": model.state_dict(),
-        "in_dim": in_dim,
-        "k": k,
-        "hidden": list(hidden),
-        "u_mean_cp": u_mean,     # de-standardize head outputs: u_cp = y * u_std + u_mean
-        "u_std_cp": u_std,
-        "trunk": str(trunk),     # NNUE .bin whose FT block embeds positions (frozen)
-        "trunk_md5": trunk_md5,  # must match the net that produced the datagen labels
-    }, path)
+# The three Linear layers of MDNt.net, in forward order (in->h1, h1->h2, h2->4k).
+_MDNT_LAYER_KEYS = (("net.0.weight", "net.0.bias"),
+                    ("net.2.weight", "net.2.bias"),
+                    ("net.4.weight", "net.4.bias"))
 
 
-def load_head_model(path):
-    """Load a head.pt saved by save_head_model(). Returns (model, meta dict).
+def write_head_bin(path, model, in_dim, k, hidden, u_mean, u_std, trunk_md5):
+    """Export the trained MDN head as a flat OZUH binary (the deliverable best.bin).
 
-    The caller must embed positions through the SAME trunk (meta['trunk'] /
-    'trunk_md5') and de-standardize predictions with meta['u_mean_cp'/'u_std_cp']."""
-    meta = torch.load(path, map_location="cpu", weights_only=False)
-    model = MDNt(in_dim=meta["in_dim"], k=meta["k"], hidden=tuple(meta["hidden"]))
-    model.load_state_dict(meta["state_dict"])
+    Mirrors train_nnue.py's OZNN export (magic + int32 dims + raw little-endian
+    arrays) but float32 and un-quantized: there is no C++ MDN inference yet to fix
+    a quantization scheme against, and quantizing the head's sigma/df params is
+    lossy in exactly the tail NF-002 cares about. The head is meaningless without
+    the frozen trunk that produced its embedding and the (u_mean, u_std) the target
+    was standardized with, so both are baked in. Reload with read_head_bin().
+
+    Layout (all little-endian):
+        4 bytes   magic "OZUH"
+        int32     version (=1)
+        int32     in_dim
+        int32     k                       (mixture components)
+        int32     n_hidden (=2)
+        int32[n_hidden] hidden sizes       (h1, h2)
+        float32   u_mean_cp                (de-standardize: u_cp = y*u_std + u_mean)
+        float32   u_std_cp
+        16 bytes  trunk_md5                (raw; the net that produced the labels)
+        per Linear layer (in->h1, h1->h2, h2->4k):
+            float32[out][in] weight (row-major), float32[out] bias
+    """
     model.eval()
+    sd = model.state_dict()
+    h = [int(x) for x in hidden]
+    with open(path, "wb") as f:
+        f.write(b"OZUH")
+        f.write(struct.pack("<4i", 1, in_dim, k, len(h)))
+        f.write(struct.pack("<%di" % len(h), *h))
+        f.write(struct.pack("<2f", float(u_mean), float(u_std)))
+        f.write(bytes.fromhex(trunk_md5))
+        for wk, bk in _MDNT_LAYER_KEYS:
+            f.write(sd[wk].cpu().numpy().astype("<f4").tobytes())
+            f.write(sd[bk].cpu().numpy().astype("<f4").tobytes())
+
+
+def read_head_bin(path):
+    """Load an OZUH best.bin written by write_head_bin(). Returns (model, meta).
+
+    The caller must embed positions through the SAME trunk (meta['trunk_md5']) and
+    de-standardize predictions with meta['u_mean_cp'/'u_std_cp']."""
+    with open(path, "rb") as f:
+        if f.read(4) != b"OZUH":
+            sys.exit(f"{path}: bad magic (expected OZUH)")
+        version, in_dim, k, n_hidden = struct.unpack("<4i", f.read(16))
+        hidden = list(struct.unpack("<%di" % n_hidden, f.read(4 * n_hidden)))
+        u_mean, u_std = struct.unpack("<2f", f.read(8))
+        trunk_md5 = f.read(16).hex()
+        model = MDNt(in_dim=in_dim, k=k, hidden=tuple(hidden))
+        dims = [(hidden[0], in_dim), (hidden[1], hidden[0]), (4 * k, hidden[1])]
+        sd = {}
+        for (out, inn), (wk, bk) in zip(dims, _MDNT_LAYER_KEYS):
+            w = np.frombuffer(f.read(4 * out * inn), dtype="<f4").reshape(out, inn).copy()
+            b = np.frombuffer(f.read(4 * out), dtype="<f4").copy()
+            sd[wk] = torch.from_numpy(w)
+            sd[bk] = torch.from_numpy(b)
+        model.load_state_dict(sd)
+    model.eval()
+    meta = {"version": version, "in_dim": in_dim, "k": k, "hidden": hidden,
+            "u_mean_cp": u_mean, "u_std_cp": u_std, "trunk_md5": trunk_md5}
     return model, meta
+
+
+def save_checkpoint(ckpt_dir, epoch, model, train_nll, val_nll):
+    """Write a per-epoch training checkpoint (state_dict + epoch/loss) to ckpt_dir.
+
+    Lightweight and training-time only (gitignored) — the committed deliverable is
+    best.bin, written once from the best-val weights at the end of training."""
+    torch.save({"epoch": epoch, "train_nll": train_nll, "val_nll": val_nll,
+                "state_dict": model.state_dict()},
+               Path(ckpt_dir) / f"epoch_{epoch}.pt")
 
 
 # --------------------------------------------------------------------------- #
 #  Training + calibration diagnostics
 # --------------------------------------------------------------------------- #
-def train(model, xtr, ytr, xva, yva, epochs, bs, lr, tag):
+def train(model, xtr, ytr, xva, yva, epochs, bs, lr, tag, ckpt_dir=None, patience=0):
+    """Fit the head; if ckpt_dir is given, write a per-epoch checkpoint each epoch.
+
+    patience > 0 enables early stopping (stop after that many epochs with no val
+    improvement); patience == 0 runs the full --epochs. Returns (best_val_nll,
+    history). The model is left holding the best-val weights."""
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     n = len(xtr)
     best_val, best_state, bad = float("inf"), None, 0
@@ -184,15 +242,18 @@ def train(model, xtr, ytr, xva, yva, epochs, bs, lr, tag):
         model.eval()
         with torch.no_grad():
             vnll = model.nll(xva, yva).item()
-        history.append((run_loss / max(nb, 1), vnll))
+        train_nll = run_loss / max(nb, 1)
+        history.append((train_nll, vnll))
+        if ckpt_dir is not None:
+            save_checkpoint(ckpt_dir, ep, model, train_nll, vnll)
         if vnll < best_val - 1e-4:
             best_val, best_state, bad = vnll, {k: v.clone() for k, v in model.state_dict().items()}, 0
         else:
             bad += 1
-        pbar.set_postfix(train=f"{run_loss / max(nb, 1):.4f}",
+        pbar.set_postfix(train=f"{train_nll:.4f}",
                          val=f"{vnll:.4f}", best=f"{best_val:.4f}")
-        if bad >= 8:
-            pbar.write(f"  [{tag}] early stop at epoch {ep}")
+        if patience and bad >= patience:
+            pbar.write(f"  [{tag}] early stop at epoch {ep} (no val gain in {patience})")
             break
     pbar.close()
     if best_state is not None:
@@ -291,10 +352,15 @@ def main():
     ap.add_argument("--cache", default="", help="dir to cache computed embeddings (.npy)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="research/experiment_results/unc_head",
-                    help="base dir for the timestamped run (head.pt + metrics + plots)")
+                    help="base dir for the timestamped run (best.bin + checkpoints + plots)")
+    ap.add_argument("--early-stop", action="store_true", dest="early_stop",
+                    help="enable early stopping (off by default: run the full --epochs)")
+    ap.add_argument("--patience", type=int, default=8,
+                    help="epochs with no val improvement before early stop (needs --early-stop)")
     ap.add_argument("--no-plots", action="store_true", dest="no_plots",
                     help="skip writing training/calibration plots")
     args = ap.parse_args()
+    patience = args.patience if args.early_stop else 0
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -331,18 +397,31 @@ def main():
     ytr_t = torch.from_numpy((utr - u_mean) / u_std)
     yva_t = torch.from_numpy((uva - u_mean) / u_std)
 
-    # Conditional model.
+    # Run dir (nnue/model-style: <run>/checkpoints/epoch_N.pt + <run>/best.bin) is
+    # created up front so the conditional head can checkpoint each epoch into it.
+    import hashlib
+    from datetime import datetime
+    trunk_md5 = hashlib.md5(Path(args.trunk).read_bytes()).hexdigest()
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_dir = Path(args.out) / f"{ts}_{Path(args.trunk).parent.name}_{len(utr)}pos"
+    ckpt_dir = run_dir / "checkpoints"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    # Conditional model (the deliverable) — checkpoints every epoch into ckpt_dir.
     print("\n=== Conditional mdn_t (frozen trunk embedding) ===")
     cond = MDNt(in_dim=2 * L1_SIZE, k=args.k)
-    cond_val, cond_hist = train(cond, xtr_t, ytr_t, xva_t, yva_t, args.epochs, args.bs, args.lr, "cond")
+    cond_val, cond_hist = train(cond, xtr_t, ytr_t, xva_t, yva_t, args.epochs, args.bs,
+                                args.lr, "cond", ckpt_dir=ckpt_dir, patience=patience)
     cond_cal = calibration(cond, xva_t, yva_t, u_mean, u_std)
 
     # Unconditional floor: same head, zeroed input -> learns the marginal p(u).
+    # Diagnostic only, so it is not checkpointed.
     print("\n=== Unconditional floor (zeroed input) ===")
     uncond = MDNt(in_dim=2 * L1_SIZE, k=args.k)
     ztr = torch.zeros_like(xtr_t)
     zva = torch.zeros_like(xva_t)
-    unc_val, unc_hist = train(uncond, ztr, ytr_t, zva, yva_t, args.epochs, args.bs, args.lr, "uncond")
+    unc_val, unc_hist = train(uncond, ztr, ytr_t, zva, yva_t, args.epochs, args.bs,
+                              args.lr, "uncond", patience=patience)
     unc_cal = calibration(uncond, zva, yva_t, u_mean, u_std)
 
     print("\n" + "=" * 62)
@@ -367,13 +446,10 @@ def main():
 
     # Persist the trained head + metrics ALWAYS (independent of plotting), then
     # emit plots best-effort (a plotting/deps issue must never sink a trained head).
-    import hashlib
     import json
-    from datetime import datetime
 
     levels = (0.50, 0.80, 0.90, 0.95)
     taus = (0.10, 0.50, 0.90)
-    trunk_md5 = hashlib.md5(Path(args.trunk).read_bytes()).hexdigest()
     scalars = {
         "cond_val_nll": cond_val, "unc_val_nll": unc_val,
         "gain": unc_val - cond_val,
@@ -386,19 +462,18 @@ def main():
         "n_train": len(utr), "n_val": len(uva),
         "u_mean_cp": u_mean, "u_std_cp": u_std,
         "epochs": args.epochs, "k": args.k, "bs": args.bs, "lr": args.lr,
+        "early_stop": bool(args.early_stop), "patience": patience,
         "trunk": str(args.trunk), "trunk_md5": trunk_md5,
     }
-    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    run_dir = Path(args.out) / f"{ts}_{Path(args.trunk).parent.name}_{len(utr)}pos"
-    run_dir.mkdir(parents=True, exist_ok=True)
 
-    # The conditional head is the deliverable; the unconditional floor is diagnostic.
-    save_head_model(run_dir / "head.pt", cond, in_dim=2 * L1_SIZE, k=args.k,
-                    hidden=(128, 128), u_mean=u_mean, u_std=u_std,
-                    trunk=args.trunk, trunk_md5=trunk_md5)
+    # best.bin = the conditional head at its best-val weights (the deliverable);
+    # the unconditional floor is diagnostic. Per-epoch checkpoints are in checkpoints/.
+    write_head_bin(run_dir / "best.bin", cond, in_dim=2 * L1_SIZE, k=args.k,
+                   hidden=(128, 128), u_mean=u_mean, u_std=u_std, trunk_md5=trunk_md5)
     (run_dir / "metrics.json").write_text(json.dumps(scalars, indent=2))
+    n_ckpt = len(list(ckpt_dir.glob("epoch_*.pt")))
     print(f"\nRun dir: {run_dir}")
-    print("  saved head.pt + metrics.json")
+    print(f"  saved best.bin + metrics.json ({n_ckpt} per-epoch checkpoints in checkpoints/)")
 
     if not args.no_plots:
         try:

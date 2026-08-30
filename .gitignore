@@ -33,8 +33,9 @@ compile_commands.json
 # ~1 GB for 3-4-5 man, larger for 6/7 man). Not committed.
 syzygy_tables/
 
-# Research: per-run experiment outputs (models, plots, summaries). Regenerated on
-# demand; commit representative results deliberately (git add -f) if worth keeping.
-research/experiment_results/
+# Research: per-run experiment outputs (models, plots, summaries) are tracked, but
+# the unc head's per-epoch checkpoints are training-time noise — kept local only
+# (best.bin is the committed deliverable for each run).
+research/experiment_results/unc_head/*/checkpoints/
 # Claude Code project guidance (local-only; not committed).
 CLAUDE.md
