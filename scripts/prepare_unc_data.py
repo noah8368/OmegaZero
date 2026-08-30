@@ -1,51 +1,64 @@
 #!/usr/bin/env python3
 """
-Preprocess NF-002 uncertainty-label data from text to binary format.
+prepare_unc_data.py — one-stop NF-002 uncertainty data prep: combine + encode.
+
+Run this once before research/experiments/train_unc_head.py. It chains the two
+steps that turn raw uncertainty datagen output into a ready --train/--val .bin
+pair:
+
+  1. scripts/combine_runs.sh <data_dir>  — merge every datagen worker shard into
+     deduplicated combined/training_data.txt + combined/validation_data.txt
+     (schema-guarded to uncertainty's 7-field rows).
+  2. encode each combined split .txt -> packed .bin (UNC_RECORD_DTYPE) that the
+     trainer reads.
 
 The uncertainty datagen mode (`mode: uncertainty` in nnue/config.json, see
-src/datagen.cc::PlayGameUncertainty) emits a 7-field row per sampled position:
+src/datagen.cc::PlayGameUncertainty) emits a 7-field row per sampled position
+(all scores are STM POV, centipawns):
 
     FEN | v | v_star | u | depth | nodes | result
 
-where (all scores are STM POV, centipawns):
-    v  = raw static eval (Board::Evaluate(), uncorrected)
+    v      = raw static eval (Board::Evaluate(), uncorrected)
     v_star = fixed-depth + node-capped deep search score (the target)
     u      = v - v_star, the signed eval error we model  p(u | x)
     depth  = deepest completed depth of the v_star search
     nodes  = nodes visited by the v_star search
     result = game outcome, White POV (0.0 / 0.5 / 1.0)
 
-This is the analogue of scripts/preprocess_data.py for the research pipeline. It
-reuses that script's HalfKP feature extraction so the conditioning input matches
-the NNUE trunk exactly: the model's feature x is the frozen trunk's output, which
-is computed from these same HalfKP indices. The MDN head (per H2) then reads x and
-regresses the conditional distribution of u.
+This is the uncertainty counterpart of scripts/prepare_nnue_data.py; both share
+the same combine+encode flow (combine_and_encode, defined there) and the same
+HalfKP feature extraction (fen_to_halfkp), so the conditioning input matches the
+NNUE trunk exactly. They differ only in the row schema. The importable encoder
+(encode_uncertainty, UNC_RECORD_DTYPE) is also what train_unc_head.py's and
+plot_unc.py's auto-encode paths use, so you do NOT strictly need to run this by
+hand: the trainer re-encodes a stale/missing .bin from the .txt on its own. Run
+this to pre-bake both .bin ahead of time or to inspect them.
 
-Pipeline: like the NNUE side, you normally do NOT run this by hand. The trainer
-research/experiments/train_unc_head.py imports encode_uncertainty() and auto-encodes
-.txt -> .bin (re-encoding a stale .bin) exactly as train_nnue.py does, so
-combine_runs.sh output feeds the trainer directly. scripts/plot_unc.py does the same
-for its `data` subcommand. Run this directly only to pre-encode a split outside
-training; scripts/prepare_uncertainty_data.sh is an optional one-shot that chains
-combine_runs.sh + this encoder over both splits. Full uncertainty flow:
-    datagen (mode: uncertainty)  ->  combine_runs.sh  ->  train_unc_head.py
+Full uncertainty flow:
+    run_datagen.sh (mode: uncertainty)  ->  prepare_unc_data.py  ->  train_unc_head.py
 
 Usage:
-    python3 scripts/preprocess_uncertainty.py nnue/data_uncertainty/<run>/training_data.txt
-    python3 scripts/preprocess_uncertainty.py <input.txt> -o custom_output.bin
+    python3 scripts/prepare_unc_data.py                          # nnue/data_uncertainty
+    python3 scripts/prepare_unc_data.py /path/to/unc_data        # custom data dir
+    python3 scripts/prepare_unc_data.py --skip-combine           # re-encode only
 """
 
 import argparse
 import os
 import sys
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 from tqdm import tqdm
 
-# Reuse the HalfKP feature extraction from the NNUE preprocessor so the
-# conditioning features are byte-for-byte identical to the training pipeline.
+# Reuse the NNUE pipeline's HalfKP feature extraction (so conditioning features
+# are byte-for-byte identical to training) and the shared combine+encode flow.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from preprocess_data import fen_to_halfkp, MAX_FEATURES  # noqa: E402
+from prepare_nnue_data import (  # noqa: E402
+    fen_to_halfkp,
+    MAX_FEATURES,
+    combine_and_encode,
+)
 
 # v / v_star / u are int32, NOT int16: NF-002's signal is the fat signed-error
 # tail from the KEPT tactical positions (the filters are inverted vs. NNUE datagen),
@@ -56,7 +69,7 @@ UNC_RECORD_DTYPE = np.dtype([
     ("num_black", np.uint8),
     ("black_indices", np.uint16, (MAX_FEATURES,)),
     ("stm", np.uint8),       # 0=black, 1=white
-    ("v", np.int32),     # raw static eval, STM POV (centipawns)
+    ("v", np.int32),         # raw static eval, STM POV (centipawns)
     ("v_star", np.int32),    # fixed-depth search target, STM POV (centipawns)
     ("u", np.int32),         # signed error v - v_star (the modeled quantity)
     ("depth", np.uint8),     # deepest completed depth of the v_star search
@@ -71,8 +84,8 @@ def encode_uncertainty(input_path, output_path):
     """Encode a 7-field uncertainty .txt into the packed UNC_RECORD_DTYPE .bin.
 
     Returns the number of records written. Importable so the trainer
-    (research/experiments/train_unc_head.py) can (re)encode on staleness in the
-    same way scripts/train_nnue.py does for the NNUE pipeline."""
+    (research/experiments/train_unc_head.py) and plot_unc.py can (re)encode on
+    staleness in the same way the NNUE pipeline does."""
     input_path = Path(input_path)
     output_path = Path(output_path)
 
@@ -162,20 +175,31 @@ def encode_uncertainty(input_path, output_path):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Preprocess NF-002 uncertainty-label data to binary format"
+        description="Combine + encode uncertainty datagen shards into a ready .bin pair.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    repo_root = Path(__file__).resolve().parents[1]
+    parser.add_argument(
+        "data_dir", nargs="?",
+        default=str(repo_root / "nnue" / "data_uncertainty"),
+        help="datagen output dir to prepare (default: nnue/data_uncertainty)",
     )
     parser.add_argument(
-        "input", help="Input text file (FEN | v | v_star | u | depth | nodes | result)"
-    )
-    parser.add_argument(
-        "-o", "--output",
-        help="Output binary file (default: same path with .bin extension)",
+        "--skip-combine", action="store_true",
+        help="skip combine_runs.sh; only (re)encode existing combined/*.txt",
     )
     args = parser.parse_args()
 
-    input_path = Path(args.input)
-    output_path = Path(args.output) if args.output else input_path.with_suffix(".bin")
-    encode_uncertainty(input_path, output_path)
+    combined = Path(args.data_dir) / "combined"
+    hint = (
+        "\nDone. Fit the uncertainty head with:\n"
+        "  python3 research/experiments/train_unc_head.py \\\n"
+        "    --trunk <path/to/net/best.bin> \\\n"
+        f"    --train {combined}/training_data.bin \\\n"
+        f"    --val   {combined}/validation_data.bin"
+    )
+    combine_and_encode(args.data_dir, encode_uncertainty, hint,
+                       skip_combine=args.skip_combine)
 
 
 if __name__ == "__main__":

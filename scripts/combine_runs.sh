@@ -17,12 +17,13 @@
 #   * uncertainty runs (unc_*, 7-field: FEN | v | v_star | u | depth | nodes | result)
 # Keep the two modes in SEPARATE data dirs (config.json 'output') so a dir holds
 # one schema. This step stops at deduplicated combined/*.txt; both trainers then
-# auto-encode .txt -> .bin on staleness, so combine output feeds them directly:
-#   * NNUE:        ./scripts/combine_runs.sh                then  scripts/train_nnue.py
-#   * uncertainty: ./scripts/combine_runs.sh nnue/data_uncertainty
-#                  then  research/experiments/train_unc_head.py
-# (scripts/prepare_uncertainty_data.sh is an optional one-shot that pre-bakes the
-# uncertainty .bin via scripts/preprocess_uncertainty.py, but is not required.)
+# auto-encode .txt -> .bin on staleness, so combine output feeds them directly.
+# It is usually invoked for you by the per-pipeline prepare scripts, which chain
+# combine + encode-both into the single step to run before training:
+#   * NNUE:        scripts/prepare_nnue_data.py   then  scripts/train_nnue.py
+#   * uncertainty: scripts/prepare_unc_data.py    then  research/experiments/train_unc_head.py
+# (Run combine_runs.sh directly only if you want the combined *.txt without
+# pre-baking the .bin; the trainers still auto-encode on staleness either way.)
 
 set -uo pipefail
 

@@ -37,7 +37,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from preprocess_uncertainty import UNC_RECORD_DTYPE, encode_uncertainty  # noqa: E402
+from prepare_unc_data import UNC_RECORD_DTYPE, encode_uncertainty  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

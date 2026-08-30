@@ -417,8 +417,8 @@ To generate your own data, train, and analyze, config lives in `nnue/config.json
 make datagen && ./scripts/run_datagen.sh     # generate data (auto-restarts on crash)
 ./scripts/shutdown_datagen.sh                # graceful shutdown
 ./scripts/sync_from_server.sh                # pull data from remote server
-./scripts/combine_runs.sh                    # merge runs with dedup → nnue/data/combined
-python3 scripts/train_nnue.py                # train (auto-encodes .txt → .bin; see --help)
+python3 scripts/prepare_nnue_data.py         # combine runs (dedup) + encode → nnue/data/combined/*.bin
+python3 scripts/train_nnue.py                # train (also auto-encodes .txt → .bin; see --help)
 cp nnue/model/<run>/best.bin nnue/nnue.bin && make
 python3 scripts/plot_training.py data        # analyze data distributions
 python3 scripts/plot_training.py model       # evaluate model accuracy
@@ -427,7 +427,7 @@ python3 scripts/plot_training.py model       # evaluate model accuracy
 **Uncertainty data (NF-002 research).** Labels are eval-error records (7-field: `FEN | v | v_star | u | depth | nodes | result`) for modeling the conditional error distribution `p(u | x)`. This data lives in a **separate** dir, `nnue/data_uncertainty` — `combine_runs.sh` refuses to mix the two schemas in one combined file. Config: copy `nnue/config.uncertainty.json.example` → `nnue/config.json` (`mode: uncertainty`), and set `"output": "nnue/data_uncertainty"`.
 ```bash
 make datagen && ./scripts/run_datagen.sh                          # generate labeled data (mode: uncertainty)
-./scripts/combine_runs.sh nnue/data_uncertainty                  # merge runs with dedup → combined/*.txt
+python3 scripts/prepare_unc_data.py                              # combine runs (dedup) + encode → combined/*.bin
 .venv/bin/python research/experiments/train_unc_head.py \
     --trunk nnue/nnue.bin \
     --train nnue/data_uncertainty/combined/training_data.txt \
@@ -435,7 +435,7 @@ make datagen && ./scripts/run_datagen.sh                          # generate lab
 python3 scripts/plot_unc.py data nnue/data_uncertainty/combined/validation_data.bin   # dataset diagnostics
 python3 scripts/plot_unc.py head results/unc_head/<run>/          # re-render a run's calibration plots
 ```
-Like `train_nnue.py`, `train_unc_head.py` auto-encodes `.txt`→`.bin`, so `combine_runs.sh` output feeds it directly; `./scripts/prepare_uncertainty_data.sh` is an optional one-shot that pre-bakes the `.bin`. Training writes calibration/loss plots to a timestamped `results/unc_head/<run>/`. The result is a valid calibration read only when `--trunk` is the **same net** whose eval produced the datagen labels (the `nnue.bin` present at datagen time).
+Both pipelines follow the same shape: `prepare_<x>_data.py` is the single step before training (combine worker shards with dedup, then encode both splits to `.bin`), and both trainers also auto-encode `.txt`→`.bin` on staleness, so you can point them straight at the combined `.txt` and skip the prepare step. Training writes calibration/loss plots to a timestamped `results/unc_head/<run>/`. The result is a valid calibration read only when `--trunk` is the **same net** whose eval produced the datagen labels (the `nnue.bin` present at datagen time).
 
 ### Generating Move Tables
 

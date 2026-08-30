@@ -22,9 +22,10 @@ where ft_w, ft_bias are dequantized from best.bin (int16 / 127).
 
 --train/--val accept either the combined .txt or a pre-encoded .bin: like
 scripts/train_nnue.py, this trainer auto-encodes .txt -> .bin (and re-encodes a
-stale .bin) via scripts/preprocess_uncertainty.py, so combine_runs.sh output is
-enough. scripts/prepare_uncertainty_data.sh still works to pre-bake the .bin but
-is now optional. Full flow: datagen -> combine_runs.sh -> this trainer.
+stale .bin) via scripts/prepare_unc_data.py's encoder, so combine_runs.sh output
+is enough. scripts/prepare_unc_data.py is the one-stop step that combines worker
+shards and pre-bakes both .bin ahead of time, but is now optional.
+Full flow: datagen -> prepare_unc_data.py -> this trainer.
 
 Training plots (loss curves, calibration/PIT, coverage, u-distribution) are
 written to a timestamped run dir under results/unc_head/ unless --no-plots.
@@ -49,7 +50,7 @@ from tqdm import tqdm
 
 # Reuse the exact record dtype the preprocessor wrote.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from preprocess_uncertainty import UNC_RECORD_DTYPE, encode_uncertainty  # noqa: E402
+from prepare_unc_data import UNC_RECORD_DTYPE, encode_uncertainty  # noqa: E402
 
 HALFKP_SIZE = 40960
 L1_SIZE = 256
@@ -219,8 +220,8 @@ def ensure_binary_unc(path, label="data"):
     """Resolve a .txt/.bin uncertainty data path to a packed .bin, (re)encoding
     from the .txt whenever the .bin is missing or older than the .txt. Mirrors
     scripts/train_nnue.py::ensure_binary so this trainer accepts raw combined
-    .txt directly -- no separate preprocess step needed (though
-    scripts/prepare_uncertainty_data.sh still works and pre-bakes the .bin)."""
+    .txt directly -- no separate prepare step needed (though
+    scripts/prepare_unc_data.py still works and pre-bakes the .bin)."""
     p = Path(path)
     if p.suffix == ".bin":
         txt = p.with_suffix(".txt")
