@@ -30,7 +30,7 @@ Training plots (loss curves, calibration/PIT, coverage, u-distribution) are
 written to a timestamped run dir under results/unc_head/ unless --no-plots.
 
 Usage:
-  .venv/bin/python research/experiments/train_unc_head.py \
+  python3 research/experiments/train_unc_head.py \
       --trunk nnue/model/2026-06-07_00-11-38_61d0444_6.0M_pos/best.bin \
       --train nnue/data_uncertainty/combined/training_data.txt \
       --val   nnue/data_uncertainty/combined/validation_data.txt
@@ -244,10 +244,10 @@ def ensure_binary_unc(path, label="data"):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--trunk", required=True)
-    ap.add_argument("--train", required=True,
+    ap.add_argument("--trunk", default="nnue/nnue.bin")
+    ap.add_argument("--train", default="nnue/data_uncertainty/combined/training_data.txt",
                     help="training split (.txt or .bin; .txt auto-encodes)")
-    ap.add_argument("--val", required=True,
+    ap.add_argument("--val", default="nnue/data_uncertainty/combined/validation_data.txt",
                     help="validation split (.txt or .bin; .txt auto-encodes)")
     ap.add_argument("--k", type=int, default=5)
     ap.add_argument("--epochs", type=int, default=60)
