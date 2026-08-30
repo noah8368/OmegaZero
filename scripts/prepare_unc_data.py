@@ -30,7 +30,7 @@ the same combine+encode flow (combine_and_encode, defined there) and the same
 HalfKP feature extraction (fen_to_halfkp), so the conditioning input matches the
 NNUE trunk exactly. They differ only in the row schema. The importable encoder
 (encode_uncertainty, UNC_RECORD_DTYPE) is also what train_unc_head.py's and
-plot_unc_head_performance.py's auto-encode paths use, so you do NOT strictly need to run this by
+generate_unc_head_plots.py's auto-encode paths use, so you do NOT strictly need to run this by
 hand: the trainer re-encodes a stale/missing .bin from the .txt on its own. Run
 this to pre-bake both .bin ahead of time or to inspect them.
 
@@ -84,7 +84,7 @@ def encode_uncertainty(input_path, output_path):
     """Encode a 7-field uncertainty .txt into the packed UNC_RECORD_DTYPE .bin.
 
     Returns the number of records written. Importable so the trainer
-    (research/experiments/train_unc_head.py) and plot_unc_head_performance.py can (re)encode on
+    (research/experiments/train_unc_head.py) and generate_unc_head_plots.py can (re)encode on
     staleness in the same way the NNUE pipeline does."""
     input_path = Path(input_path)
     output_path = Path(output_path)

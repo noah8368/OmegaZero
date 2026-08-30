@@ -38,16 +38,28 @@ mirroring nnue/model:
     <run>/figs/*.png              calibration/loss plots (unless --no-plots)
 Early stopping is off by default (runs the full --epochs); enable with --early-stop.
 
+Like scripts/train_nnue.py, this trainer owns its run figures: `train` renders them
+at the end of a run, and `plot <run>` re-renders them from that run's artifacts.npz
+without retraining. scripts/generate_unc_head_plots.py is the separate dataset-
+analysis tool (the analogue of scripts/generate_nnue_plots.py).
+
 Usage:
+  # train (a bare invocation with no subcommand defaults to `train`):
   python3 research/experiments/train_unc_head.py \
       --trunk nnue/model/2026-06-07_00-11-38_61d0444_6.0M_pos/best.bin \
       --train nnue/data_uncertainty/combined/training_data.txt \
       --val   nnue/data_uncertainty/combined/validation_data.txt
+  # re-render a past run's figures:
+  python3 research/experiments/train_unc_head.py plot research/experiment_results/unc_head/<run>/
 """
 
 import argparse
+import hashlib
+import json
 import struct
+import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -63,6 +75,11 @@ from prepare_unc_data import UNC_RECORD_DTYPE, encode_uncertainty  # noqa: E402
 HALFKP_SIZE = 40960
 L1_SIZE = 256
 FT_SCALE = 127.0
+
+# Consistent, colorblind-friendly roles across every training/calibration figure.
+C_COND = "#1f77b4"    # conditional model (blue)
+C_FLOOR = "#ff7f0e"   # unconditional floor (orange)
+C_REF = "#9E9E9E"     # reference line / ideal
 
 
 # --------------------------------------------------------------------------- #
@@ -338,29 +355,196 @@ def ensure_binary_unc(path, label="data"):
     return str(p)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--trunk", default="nnue/nnue.bin")
-    ap.add_argument("--train", default="nnue/data_uncertainty/combined/training_data.txt",
-                    help="training split (.txt or .bin; .txt auto-encodes)")
-    ap.add_argument("--val", default="nnue/data_uncertainty/combined/validation_data.txt",
-                    help="validation split (.txt or .bin; .txt auto-encodes)")
-    ap.add_argument("--k", type=int, default=5)
-    ap.add_argument("--epochs", type=int, default=60)
-    ap.add_argument("--bs", type=int, default=512)
-    ap.add_argument("--lr", type=float, default=1e-3)
-    ap.add_argument("--cache", default="", help="dir to cache computed embeddings (.npy)")
-    ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", default="research/experiment_results/unc_head",
-                    help="base dir for the timestamped run (best.bin + checkpoints + plots)")
-    ap.add_argument("--early-stop", action="store_true", dest="early_stop",
-                    help="enable early stopping (off by default: run the full --epochs)")
-    ap.add_argument("--patience", type=int, default=8,
-                    help="epochs with no val improvement before early stop (needs --early-stop)")
-    ap.add_argument("--no-plots", action="store_true", dest="no_plots",
-                    help="skip writing training/calibration plots")
-    args = ap.parse_args()
+# --------------------------------------------------------------------------- #
+#  Training/calibration figures (owned by the trainer, like train_nnue.py's
+#  generate_plots): rendered at the end of a run and re-renderable from a run's
+#  saved artifacts via the `plot` subcommand. generate_unc_head_plots.py is the
+#  separate dataset-analysis tool, the analogue of generate_nnue_plots.py.
+# --------------------------------------------------------------------------- #
+def _git_hash():
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).resolve().parents[2],
+            stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        return "unknown"
+
+
+def _save_plot_metadata(out_dir, command, extra=None):
+    meta = {"timestamp": datetime.now().isoformat(), "git_commit": _git_hash(),
+            "command": command}
+    if extra:
+        meta.update(extra)
+    (Path(out_dir) / "plot_metadata.json").write_text(json.dumps(meta, indent=2))
+
+
+def render_head_plots(out_dir, artifacts, meta=None):
+    """Render the uncertainty-head figures into out_dir. `artifacts` holds the
+    arrays computed during training; see save_head_artifacts() for the schema.
+    Called both at the end of a training run and by the `plot` subcommand (from a
+    saved artifacts.npz). Best-effort: never raises on a plotting problem."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    levels = [0.50, 0.80, 0.90, 0.95]
+    written = []
+
+    # 1. Loss curves: val NLL per epoch, conditional vs floor (train NLL faint).
+    fig, ax = plt.subplots(figsize=(9, 6))
+    for hist, color, label in ((artifacts["cond_hist"], C_COND, "conditional"),
+                               (artifacts["unc_hist"], C_FLOOR, "unconditional floor")):
+        hist = np.asarray(hist, dtype=float)
+        if hist.size == 0:
+            continue
+        ep = np.arange(1, len(hist) + 1)
+        ax.plot(ep, hist[:, 1], color=color, label=f"{label} (val)")
+        ax.plot(ep, hist[:, 0], color=color, alpha=0.35, linestyle="--",
+                label=f"{label} (train)")
+        best = int(np.argmin(hist[:, 1]))
+        ax.scatter([best + 1], [hist[best, 1]], color=color, zorder=5, s=40)
+    ax.set_xlabel("epoch")
+    ax.set_ylabel("NLL (nats, standardized u)")
+    ax.set_title("Uncertainty head — training NLL (lower is better)")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    p = out_dir / "head_loss_curves.png"
+    fig.savefig(p, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    written.append(p)
+
+    # 2. PIT reliability: sorted PIT vs uniform quantiles; on-diagonal = calibrated.
+    fig, ax = plt.subplots(figsize=(6.5, 6.5))
+    ax.plot([0, 1], [0, 1], color=C_REF, linestyle="--", label="ideal (uniform)")
+    for key, color, label, ks in (
+            ("cond_pit", C_COND, "conditional", meta and meta.get("cond_ks")),
+            ("unc_pit", C_FLOOR, "unconditional floor", meta and meta.get("unc_ks"))):
+        pit = np.sort(np.asarray(artifacts[key], dtype=float))
+        if pit.size == 0:
+            continue
+        u = np.arange(1, len(pit) + 1) / len(pit)
+        lab = label if ks is None else f"{label} (KS={ks:.3f})"
+        ax.plot(pit, u, color=color, label=lab)
+    ax.set_xlabel("PIT value")
+    ax.set_ylabel("empirical CDF")
+    ax.set_title("PIT reliability — deviation from diagonal = miscalibration")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    p = out_dir / "head_pit_reliability.png"
+    fig.savefig(p, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    written.append(p)
+
+    # 3. Coverage calibration: nominal vs empirical central-interval coverage.
+    fig, ax = plt.subplots(figsize=(6.5, 6.5))
+    ax.plot([0, 1], [0, 1], color=C_REF, linestyle="--", label="ideal")
+    for key, color, label in (("cond_coverage", C_COND, "conditional"),
+                              ("unc_coverage", C_FLOOR, "unconditional floor")):
+        cov = artifacts.get(key)
+        if cov is None:
+            continue
+        emp = np.asarray(cov, dtype=float)  # aligned to `levels`
+        ax.plot(levels, emp, "o-", color=color, label=label)
+    ax.set_xlabel("nominal central-interval coverage")
+    ax.set_ylabel("empirical coverage")
+    ax.set_title("Coverage calibration")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    p = out_dir / "head_coverage.png"
+    fig.savefig(p, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    written.append(p)
+
+    # 4. Predicted-uncertainty distribution: per-position 80% interval width (cp).
+    #    A spread here = heteroscedasticity (the head assigns position-dependent
+    #    uncertainty); the floor is a single constant width for reference.
+    q10 = np.asarray(artifacts["cond_q10_cp"], dtype=float)
+    q90 = np.asarray(artifacts["cond_q90_cp"], dtype=float)
+    if q10.size and q90.size:
+        width = np.clip(q90 - q10, 0, np.percentile(q90 - q10, 99.5))
+        fig, ax = plt.subplots(figsize=(9, 6))
+        ax.hist(width, bins=80, color=C_COND, alpha=0.8, edgecolor="none")
+        ax.axvline(float(np.median(width)), color="black", linestyle="--",
+                   label=f"median {np.median(width):.0f}cp")
+        fw = artifacts.get("unc_width80_cp")
+        if fw is not None:
+            ax.axvline(float(fw), color=C_FLOOR, linestyle="-",
+                       label=f"floor (constant) {float(fw):.0f}cp")
+        ax.set_xlabel("predicted central-80% interval width (cp)")
+        ax.set_ylabel("positions")
+        ax.set_title("Predicted uncertainty per position (heteroscedasticity)")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        p = out_dir / "head_uncertainty_distribution.png"
+        fig.savefig(p, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        written.append(p)
+
+    return written
+
+
+def save_head_artifacts(out_dir, cond_hist, unc_hist, cond_cal, unc_cal, scalars):
+    """Persist everything the head plots need so `train_unc_head.py plot <run>` can
+    regenerate them without retraining. Writes artifacts.npz + metrics.json (to the
+    run dir; plots render into <run>/figs/)."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    levels = [0.50, 0.80, 0.90, 0.95]
+    np.savez(
+        out_dir / "artifacts.npz",
+        cond_hist=np.asarray(cond_hist, dtype=float),
+        unc_hist=np.asarray(unc_hist, dtype=float),
+        cond_pit=cond_cal["pit"], unc_pit=unc_cal["pit"],
+        cond_coverage=np.array([cond_cal["coverage"][l] for l in levels]),
+        unc_coverage=np.array([unc_cal["coverage"][l] for l in levels]),
+        cond_q10_cp=cond_cal["q_cp"][0.10], cond_q90_cp=cond_cal["q_cp"][0.90],
+        unc_width80_cp=np.array(
+            float(np.median(unc_cal["q_cp"][0.90] - unc_cal["q_cp"][0.10]))),
+    )
+    (out_dir / "metrics.json").write_text(json.dumps(scalars, indent=2))
+
+
+def _emit_head_plots(run_dir, cond_cal, unc_cal):
+    """Render <run>/figs/ from the run's just-saved artifacts.npz + metrics.json,
+    so the training-end figures are byte-identical to `train_unc_head.py plot`."""
+    data = np.load(run_dir / "artifacts.npz")
+    artifacts = {k: data[k] for k in data.files}
+    artifacts["unc_width80_cp"] = float(artifacts["unc_width80_cp"])
+    figs = run_dir / "figs"
+    written = render_head_plots(figs, artifacts,
+                                {"cond_ks": cond_cal["ks"], "unc_ks": unc_cal["ks"]})
+    _save_plot_metadata(figs, "train", {"plots": [p.name for p in written]})
+    return written
+
+
+def cmd_plot(args):
+    """Re-render a past run's calibration/loss figures from its saved artifacts,
+    no retraining. The analogue of `train_nnue.py plot --run <run>`."""
+    run_dir = Path(args.run)
+    npz = run_dir / "artifacts.npz"
+    if not npz.exists():
+        sys.exit(f"No artifacts.npz in {run_dir} (was the run trained with plots?)")
+    data = np.load(npz)
+    artifacts = {k: data[k] for k in data.files}
+    if "unc_width80_cp" in artifacts:
+        artifacts["unc_width80_cp"] = float(artifacts["unc_width80_cp"])
+    meta = {}
+    mpath = run_dir / "metrics.json"
+    if mpath.exists():
+        m = json.loads(mpath.read_text())
+        meta = {"cond_ks": m.get("cond_ks"), "unc_ks": m.get("unc_ks")}
+    figs = run_dir / "figs"
+    written = render_head_plots(figs, artifacts, meta)
+    _save_plot_metadata(figs, "plot", {"plots": [p.name for p in written]})
+    print(f"Wrote {len(written)} head plots to {figs}/")
+    for p in written:
+        print(f"  {p.name}")
+
+
+def cmd_train(args):
     patience = args.patience if args.early_stop else 0
 
     torch.manual_seed(args.seed)
@@ -400,8 +584,6 @@ def main():
 
     # Run dir (nnue/model-style: <run>/checkpoints/epoch_N.pt + <run>/best.bin) is
     # created up front so the conditional head can checkpoint each epoch into it.
-    import hashlib
-    from datetime import datetime
     trunk_md5 = hashlib.md5(Path(args.trunk).read_bytes()).hexdigest()
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_dir = Path(args.out) / f"{ts}_{Path(args.trunk).parent.name}_{len(utr)}pos"
@@ -447,8 +629,6 @@ def main():
 
     # Persist the trained head + metrics ALWAYS (independent of plotting), then
     # emit plots best-effort (a plotting/deps issue must never sink a trained head).
-    import json
-
     levels = (0.50, 0.80, 0.90, 0.95)
     taus = (0.10, 0.50, 0.90)
     scalars = {
@@ -478,21 +658,55 @@ def main():
 
     if not args.no_plots:
         try:
-            from plot_unc_head_performance import render_head_plots, save_head_artifacts
-
             save_head_artifacts(run_dir, cond_hist, unc_hist, cond_cal, unc_cal,
                                 scalars)
-            # Render into <run>/figs/ from the just-saved artifacts so the inline
-            # plots == `plot_unc_head_performance.py head <run>`.
-            data = np.load(run_dir / "artifacts.npz")
-            artifacts = {k: data[k] for k in data.files}
-            artifacts["unc_width80_cp"] = float(artifacts["unc_width80_cp"])
-            written = render_head_plots(run_dir / "figs", artifacts,
-                                        {"cond_ks": cond_cal["ks"],
-                                         "unc_ks": unc_cal["ks"]})
+            # Render <run>/figs/ from the just-saved artifacts so the training-end
+            # figures == `train_unc_head.py plot <run>`.
+            written = _emit_head_plots(run_dir, cond_cal, unc_cal)
             print(f"  {len(written)} plots (figs/) + artifacts.npz")
         except Exception as e:  # plotting/deps issue must not sink the run
             print(f"  (plots skipped: {e})")
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="command")
+
+    # train subcommand (the default when no subcommand is given).
+    t = sub.add_parser("train", help="fit the uncertainty head (writes a run dir + plots)")
+    t.add_argument("--trunk", default="nnue/nnue.bin")
+    t.add_argument("--train", default="nnue/data_uncertainty/combined/training_data.txt",
+                   help="training split (.txt or .bin; .txt auto-encodes)")
+    t.add_argument("--val", default="nnue/data_uncertainty/combined/validation_data.txt",
+                   help="validation split (.txt or .bin; .txt auto-encodes)")
+    t.add_argument("--k", type=int, default=5)
+    t.add_argument("--epochs", type=int, default=60)
+    t.add_argument("--bs", type=int, default=512)
+    t.add_argument("--lr", type=float, default=1e-3)
+    t.add_argument("--cache", default="", help="dir to cache computed embeddings (.npy)")
+    t.add_argument("--seed", type=int, default=0)
+    t.add_argument("--out", default="research/experiment_results/unc_head",
+                   help="base dir for the timestamped run (best.bin + checkpoints + plots)")
+    t.add_argument("--early-stop", action="store_true", dest="early_stop",
+                   help="enable early stopping (off by default: run the full --epochs)")
+    t.add_argument("--patience", type=int, default=8,
+                   help="epochs with no val improvement before early stop (needs --early-stop)")
+    t.add_argument("--no-plots", action="store_true", dest="no_plots",
+                   help="skip writing training/calibration plots")
+    t.set_defaults(func=cmd_train)
+
+    # plot subcommand: re-render a past run's figures (mirrors train_nnue.py plot).
+    p = sub.add_parser("plot", help="re-render a run's calibration/loss figures from its artifacts")
+    p.add_argument("run", help="research/experiment_results/unc_head/<run>/ (has artifacts.npz)")
+    p.set_defaults(func=cmd_plot)
+
+    # Backward-compatible default: bare `train_unc_head.py --trunk ...` runs `train`.
+    argv = sys.argv[1:]
+    if not argv or (argv[0] not in ("train", "plot") and argv[0] not in ("-h", "--help")):
+        argv = ["train"] + argv
+    args = ap.parse_args(argv)
+    args.func(args)
 
 
 if __name__ == "__main__":

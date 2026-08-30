@@ -18,15 +18,16 @@ Parameters (model subcommand):
     --val-data     Validation data file                  (default: auto-detect)
 
 Output:
-    results/nnue_data_analysis/     — data subcommand plots
-    results/nnue_model_analysis/    — model subcommand plots
-    Each directory includes a plot_metadata.json with timestamp and git commit.
+    results/train_dataset_plots/    — data subcommand plots
+    results/model_plots/            — model subcommand plots
+    (both overridable with --output; each includes a plot_metadata.json with
+    timestamp and git commit.)
 
 Usage:
-    python3 scripts/plot_training.py data
-    python3 scripts/plot_training.py data --input nnue/data/<run>/training_data.txt
-    python3 scripts/plot_training.py model
-    python3 scripts/plot_training.py model --checkpoint nnue/model/<run>/best.pt \\
+    python3 scripts/generate_nnue_plots.py data
+    python3 scripts/generate_nnue_plots.py data --input nnue/data/<run>/training_data.txt
+    python3 scripts/generate_nnue_plots.py model
+    python3 scripts/generate_nnue_plots.py model --checkpoint nnue/model/<run>/best.pt \\
                                            --val-data nnue/data/<run>/validation_data.txt
 """
 
