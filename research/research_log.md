@@ -6,6 +6,34 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-08-30 — Data-prep tooling: one `prepare_<x>_data.py` per pipeline
+
+Consolidated the datagen→train data prep so both pipelines follow the same shape:
+a single script to run before training that combines worker shards (dedup) and
+encodes both splits to `.bin`.
+
+- **New:** `scripts/prepare_nnue_data.py` (NNUE, 3-field) and
+  `scripts/prepare_unc_data.py` (uncertainty, 7-field). Each owns its encoder
+  (`encode_nnue` / `encode_uncertainty` + record dtype) and runs
+  `combine_runs.sh` → encode-both via a shared `combine_and_encode()` helper that
+  lives in `prepare_nnue_data.py`; the unc script imports it plus `fen_to_halfkp`
+  from there, so conditioning features stay byte-identical to the NNUE trunk.
+- **Removed (folded in):** `preprocess_data.py`, `preprocess_uncertainty.py`,
+  `prepare_uncertainty_data.sh` — the old encoder/wrapper split that made
+  "prepare vs preprocess" ambiguous. Importers updated: `train_unc_head.py` and
+  `plot_unc.py` now import `UNC_RECORD_DTYPE` / `encode_uncertainty` from
+  `prepare_unc_data`.
+- **Unchanged:** `combine_runs.sh` stays the shared, schema-aware merge step both
+  prepare scripts call; trainers still auto-encode `.txt`→`.bin` on staleness, so
+  the prepare step remains optional (it just pre-bakes the `.bin`).
+- **Branches:** NNUE change on `main`, unc change on `research`, then merged
+  `main`→`research`. Verified end to end (combine+encode round-trip, `u = v − v*`
+  preserved). Earlier notes below that reference `preprocess_data.py` /
+  `preprocess_uncertainty.py` now map to `prepare_nnue_data.py` /
+  `prepare_unc_data.py`.
+
+---
+
 ## 2026-08-28 — Real-data distributional read (unc run `6325e7d`) — mdn_t reaffirmed
 
 Fresh uncertainty datagen run (`nnue/data/unc_2026-08-28_02-46-07_6325e7d`, HEAD `6325e7d`,
