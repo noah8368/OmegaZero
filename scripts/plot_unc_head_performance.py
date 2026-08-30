@@ -14,11 +14,10 @@ The `head` figures are also emitted automatically at the end of a training run;
 this script lets you regenerate or tweak them from saved artifacts, and analyze
 raw datasets without training. render_head_plots() is imported by the trainer.
 
-Output:
-    <run_dir>/figs/                                — head subcommand plots (reads the
-                                                     run's artifacts.npz alongside)
-    research/experiment_results/unc_data_analysis/ — data subcommand plots
-    Each dir includes a plot_metadata.json with timestamp and git commit.
+Output (both under research/experiment_results/unc_head/<run>/figs/, like the trainer):
+    head  — writes into the passed run dir's figs/ (reads its artifacts.npz alongside).
+    data  — writes into a fresh unc_head/<datetime>/figs/ (each run its own timestamp).
+    Each figs/ includes a plot_metadata.json with timestamp and git commit.
 
 Usage:
     python3 scripts/plot_unc_head_performance.py head research/experiment_results/unc_head/<run>/
@@ -237,7 +236,10 @@ def cmd_data(args):
     if len(recs) == 0:
         sys.exit(f"No records in {path}")
 
-    out_dir = REPO_ROOT / "research" / "experiment_results" / "unc_data_analysis"
+    # Dataset diagnostics share the unc_head/<datetime>/figs/ convention with the
+    # trainer and the head subcommand (each invocation is its own timestamped run).
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    out_dir = REPO_ROOT / "research" / "experiment_results" / "unc_head" / ts / "figs"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     u = recs["u"].astype(np.float64)

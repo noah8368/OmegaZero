@@ -424,7 +424,7 @@ python3 scripts/plot_training.py data        # analyze data distributions
 python3 scripts/plot_training.py model       # evaluate model accuracy
 ```
 
-**Uncertainty data (NF-002 research).** Labels are eval-error records (7-field: `FEN | v | v_star | u | depth | nodes | result`) for modeling the conditional error distribution `p(u | x)`. This data lives in a **separate** dir, `nnue/data_uncertainty` — `combine_runs.sh` refuses to mix the two schemas in one combined file. Config: copy `nnue/config.uncertainty.json.example` → `nnue/config.json` (`mode: uncertainty`), and set `"output": "nnue/data_uncertainty"`.
+**Uncertainty Research.** Labels are eval-error records (7-field: `FEN | v | v_star | u | depth | nodes | result`) for modeling the conditional error distribution `p(u | x)`. This data lives in a **separate** dir, `nnue/data_uncertainty` — `combine_runs.sh` refuses to mix the two schemas in one combined file. Config: copy `nnue/config.uncertainty.json.example` → `nnue/config.json` (`mode: uncertainty`), and set `"output": "nnue/data_uncertainty"`.
 ```bash
 make datagen && ./scripts/run_datagen.sh                          # generate labeled data (mode: uncertainty)
 python3 scripts/prepare_unc_data.py                              # combine runs (dedup) + encode → combined/*.bin
