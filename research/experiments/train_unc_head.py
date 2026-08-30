@@ -34,7 +34,8 @@ mirroring nnue/model:
                                   in_dim/k/hidden + u_mean/u_std + trunk md5 baked
                                   in, all it needs to reload -- see read_head_bin)
     <run>/metrics.json            calibration + config scalars
-    <run>/*.png, artifacts.npz    plots (unless --no-plots)
+    <run>/artifacts.npz           arrays to re-render plots without retraining
+    <run>/figs/*.png              calibration/loss plots (unless --no-plots)
 Early stopping is off by default (runs the full --epochs); enable with --early-stop.
 
 Usage:
@@ -477,18 +478,19 @@ def main():
 
     if not args.no_plots:
         try:
-            from plot_unc import render_head_plots, save_head_artifacts
+            from plot_unc_head_performance import render_head_plots, save_head_artifacts
 
             save_head_artifacts(run_dir, cond_hist, unc_hist, cond_cal, unc_cal,
                                 scalars)
-            # Render from the just-saved artifacts so inline == `plot_unc.py head`.
+            # Render into <run>/figs/ from the just-saved artifacts so the inline
+            # plots == `plot_unc_head_performance.py head <run>`.
             data = np.load(run_dir / "artifacts.npz")
             artifacts = {k: data[k] for k in data.files}
             artifacts["unc_width80_cp"] = float(artifacts["unc_width80_cp"])
-            written = render_head_plots(run_dir, artifacts,
+            written = render_head_plots(run_dir / "figs", artifacts,
                                         {"cond_ks": cond_cal["ks"],
                                          "unc_ks": unc_cal["ks"]})
-            print(f"  {len(written)} plots + artifacts.npz")
+            print(f"  {len(written)} plots (figs/) + artifacts.npz")
         except Exception as e:  # plotting/deps issue must not sink the run
             print(f"  (plots skipped: {e})")
 

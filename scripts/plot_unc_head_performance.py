@@ -15,13 +15,14 @@ this script lets you regenerate or tweak them from saved artifacts, and analyze
 raw datasets without training. render_head_plots() is imported by the trainer.
 
 Output:
-    <run_dir>/                                    — head subcommand writes alongside the run
+    <run_dir>/figs/                                — head subcommand plots (reads the
+                                                     run's artifacts.npz alongside)
     research/experiment_results/unc_data_analysis/ — data subcommand plots
     Each dir includes a plot_metadata.json with timestamp and git commit.
 
 Usage:
-    python3 scripts/plot_unc.py head research/experiment_results/unc_head/<run>/
-    python3 scripts/plot_unc.py data nnue/data_uncertainty/combined/validation_data.bin
+    python3 scripts/plot_unc_head_performance.py head research/experiment_results/unc_head/<run>/
+    python3 scripts/plot_unc_head_performance.py data nnue/data_uncertainty/combined/validation_data.bin
 """
 
 import argparse
@@ -176,8 +177,9 @@ def render_head_plots(out_dir, artifacts, meta=None):
 
 def save_head_artifacts(out_dir, cond_hist, unc_hist, cond_cal, unc_cal,
                         scalars):
-    """Persist everything the head plots need so plot_unc.py can regenerate them
-    without retraining. Writes artifacts.npz (arrays) + metrics.json (scalars)."""
+    """Persist everything the head plots need so plot_unc_head_performance.py can
+    regenerate them without retraining. Writes artifacts.npz + metrics.json (to the
+    run dir; plots render into <run>/figs/)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     levels = [0.50, 0.80, 0.90, 0.95]
@@ -210,9 +212,10 @@ def cmd_head(args):
     if mpath.exists():
         m = json.loads(mpath.read_text())
         meta = {"cond_ks": m.get("cond_ks"), "unc_ks": m.get("unc_ks")}
-    written = render_head_plots(run_dir, artifacts, meta)
-    _save_metadata(run_dir, "head", {"plots": [p.name for p in written]})
-    print(f"Wrote {len(written)} head plots to {run_dir}/")
+    figs = run_dir / "figs"
+    written = render_head_plots(figs, artifacts, meta)
+    _save_metadata(figs, "head", {"plots": [p.name for p in written]})
+    print(f"Wrote {len(written)} head plots to {figs}/")
     for p in written:
         print(f"  {p.name}")
 
