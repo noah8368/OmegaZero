@@ -415,8 +415,8 @@ To generate your own data, train, and analyze — config lives in `nnue/config.j
 make datagen && ./scripts/run_datagen.sh     # generate data (auto-restarts on crash)
 ./scripts/shutdown_datagen.sh                # graceful shutdown
 ./scripts/sync_from_server.sh                # pull data from remote server
-./scripts/combine_runs.sh                    # merge runs with dedup
-python3 scripts/train_nnue.py                # train (see --help for all params)
+python3 scripts/prepare_nnue_data.py         # combine runs (dedup) + encode → nnue/data/combined/*.bin
+python3 scripts/train_nnue.py                # train (also auto-encodes .txt → .bin; see --help)
 cp nnue/model/<run>/best.bin nnue/nnue.bin && make
 python3 scripts/plot_training.py data        # analyze data distributions
 python3 scripts/plot_training.py model       # evaluate model accuracy
