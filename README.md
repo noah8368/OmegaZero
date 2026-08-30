@@ -433,9 +433,9 @@ python3 scripts/prepare_unc_data.py                              # combine runs 
     --train nnue/data_uncertainty/combined/training_data.txt \
     --val   nnue/data_uncertainty/combined/validation_data.txt   # auto-encodes .txt→.bin; fits p(u|x); writes plots
 python3 scripts/plot_unc.py data nnue/data_uncertainty/combined/validation_data.bin   # dataset diagnostics
-python3 scripts/plot_unc.py head results/unc_head/<run>/          # re-render a run's calibration plots
+python3 scripts/plot_unc.py head research/experiment_results/unc_head/<run>/   # re-render a run's calibration plots
 ```
-Both pipelines follow the same shape: `prepare_<x>_data.py` is the single step before training (combine worker shards with dedup, then encode both splits to `.bin`), and both trainers also auto-encode `.txt`→`.bin` on staleness, so you can point them straight at the combined `.txt` and skip the prepare step. Training writes calibration/loss plots to a timestamped `results/unc_head/<run>/`. The result is a valid calibration read only when `--trunk` is the **same net** whose eval produced the datagen labels (the `nnue.bin` present at datagen time).
+Both pipelines follow the same shape: `prepare_<x>_data.py` is the single step before training (combine worker shards with dedup, then encode both splits to `.bin`), and both trainers also auto-encode `.txt`→`.bin` on staleness, so you can point them straight at the combined `.txt` and skip the prepare step. Training saves the trained head (`head.pt`), metrics, and calibration/loss plots to a timestamped `research/experiment_results/unc_head/<run>/`. The result is a valid calibration read only when `--trunk` is the **same net** whose eval produced the datagen labels (the `nnue.bin` present at datagen time).
 
 ### Generating Move Tables
 

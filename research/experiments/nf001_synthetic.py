@@ -13,7 +13,7 @@ Usage:
         --generator hetero_gaussian lognormal bimodal skewnormal \
         --model flow qr mdn unconditional \
         --n 20000 --epochs 150 --seed 0 \
-        --outdir research/figs/NF-001
+        --outdir research/experiment_results/NF-001
 
 Each (generator, model) pair reports held-out NLL, a PIT KS statistic, coverage at
 several quantile levels, and quantile MAE vs the generator's true quantiles. PIT
@@ -556,7 +556,7 @@ def main():
     p.add_argument("--batch", type=int, default=1024)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--outdir", default="research/figs/NF-001")
+    p.add_argument("--outdir", default="research/experiment_results/NF-001")
     run(p.parse_args())
 
 

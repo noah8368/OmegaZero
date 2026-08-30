@@ -27,8 +27,11 @@ is enough. scripts/prepare_unc_data.py is the one-stop step that combines worker
 shards and pre-bakes both .bin ahead of time, but is now optional.
 Full flow: datagen -> prepare_unc_data.py -> this trainer.
 
-Training plots (loss curves, calibration/PIT, coverage, u-distribution) are
-written to a timestamped run dir under results/unc_head/ unless --no-plots.
+The trained head plus its metrics are always saved to a timestamped run dir under
+research/experiment_results/unc_head/ (head.pt = state_dict + k/hidden/in_dim +
+u_mean/u_std + trunk path & md5, everything needed to reload it; reload via
+load_head_model()). Training plots (loss curves, calibration/PIT, coverage,
+u-distribution) are written alongside unless --no-plots.
 
 Usage:
   python3 research/experiments/train_unc_head.py \
@@ -123,6 +126,37 @@ class MDNt(nn.Module):
         comp = torch.distributions.StudentT(df, loc=mu, scale=sigma)
         log_prob = comp.log_prob(y.unsqueeze(1))  # [B, K]
         return -torch.logsumexp(log_pi + log_prob, dim=1).mean()
+
+
+def save_head_model(path, model, in_dim, k, hidden, u_mean, u_std, trunk, trunk_md5):
+    """Persist the trained MDN head with everything needed to reload and use it.
+
+    The head is meaningless without the frozen trunk that produced its input
+    embedding and the (u_mean, u_std) the target was standardized with, so those
+    are stored alongside the weights. Reload with load_head_model()."""
+    torch.save({
+        "arch": "mdn_t",
+        "state_dict": model.state_dict(),
+        "in_dim": in_dim,
+        "k": k,
+        "hidden": list(hidden),
+        "u_mean_cp": u_mean,     # de-standardize head outputs: u_cp = y * u_std + u_mean
+        "u_std_cp": u_std,
+        "trunk": str(trunk),     # NNUE .bin whose FT block embeds positions (frozen)
+        "trunk_md5": trunk_md5,  # must match the net that produced the datagen labels
+    }, path)
+
+
+def load_head_model(path):
+    """Load a head.pt saved by save_head_model(). Returns (model, meta dict).
+
+    The caller must embed positions through the SAME trunk (meta['trunk'] /
+    'trunk_md5') and de-standardize predictions with meta['u_mean_cp'/'u_std_cp']."""
+    meta = torch.load(path, map_location="cpu", weights_only=False)
+    model = MDNt(in_dim=meta["in_dim"], k=meta["k"], hidden=tuple(meta["hidden"]))
+    model.load_state_dict(meta["state_dict"])
+    model.eval()
+    return model, meta
 
 
 # --------------------------------------------------------------------------- #
@@ -256,8 +290,8 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--cache", default="", help="dir to cache computed embeddings (.npy)")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", default="results/unc_head",
-                    help="base dir for the timestamped run (plots + artifacts)")
+    ap.add_argument("--out", default="research/experiment_results/unc_head",
+                    help="base dir for the timestamped run (head.pt + metrics + plots)")
     ap.add_argument("--no-plots", action="store_true", dest="no_plots",
                     help="skip writing training/calibration plots")
     args = ap.parse_args()
@@ -331,32 +365,45 @@ def main():
     print("calibration read only if --trunk matches the net used for the datagen")
     print("labels (same nnue.bin); otherwise it only confirms the pipeline runs.")
 
-    # Persist artifacts + emit plots (best-effort: never fail a run on plotting).
+    # Persist the trained head + metrics ALWAYS (independent of plotting), then
+    # emit plots best-effort (a plotting/deps issue must never sink a trained head).
+    import hashlib
+    import json
+    from datetime import datetime
+
+    levels = (0.50, 0.80, 0.90, 0.95)
+    taus = (0.10, 0.50, 0.90)
+    trunk_md5 = hashlib.md5(Path(args.trunk).read_bytes()).hexdigest()
+    scalars = {
+        "cond_val_nll": cond_val, "unc_val_nll": unc_val,
+        "gain": unc_val - cond_val,
+        "cond_ks": cond_cal["ks"], "unc_ks": unc_cal["ks"],
+        "coverage_nominal": list(levels),
+        "cond_coverage": [cond_cal["coverage"][l] for l in levels],
+        "unc_coverage": [unc_cal["coverage"][l] for l in levels],
+        "pinball_cp_cond": {str(t): cond_cal["pinball_cp"][t] for t in taus},
+        "pinball_cp_uncond": {str(t): unc_cal["pinball_cp"][t] for t in taus},
+        "n_train": len(utr), "n_val": len(uva),
+        "u_mean_cp": u_mean, "u_std_cp": u_std,
+        "epochs": args.epochs, "k": args.k, "bs": args.bs, "lr": args.lr,
+        "trunk": str(args.trunk), "trunk_md5": trunk_md5,
+    }
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_dir = Path(args.out) / f"{ts}_{Path(args.trunk).parent.name}_{len(utr)}pos"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    # The conditional head is the deliverable; the unconditional floor is diagnostic.
+    save_head_model(run_dir / "head.pt", cond, in_dim=2 * L1_SIZE, k=args.k,
+                    hidden=(128, 128), u_mean=u_mean, u_std=u_std,
+                    trunk=args.trunk, trunk_md5=trunk_md5)
+    (run_dir / "metrics.json").write_text(json.dumps(scalars, indent=2))
+    print(f"\nRun dir: {run_dir}")
+    print("  saved head.pt + metrics.json")
+
     if not args.no_plots:
         try:
-            import hashlib
-            from datetime import datetime
             from plot_unc import render_head_plots, save_head_artifacts
 
-            levels = (0.50, 0.80, 0.90, 0.95)
-            taus = (0.10, 0.50, 0.90)
-            trunk_md5 = hashlib.md5(Path(args.trunk).read_bytes()).hexdigest()
-            scalars = {
-                "cond_val_nll": cond_val, "unc_val_nll": unc_val,
-                "gain": unc_val - cond_val,
-                "cond_ks": cond_cal["ks"], "unc_ks": unc_cal["ks"],
-                "coverage_nominal": list(levels),
-                "cond_coverage": [cond_cal["coverage"][l] for l in levels],
-                "unc_coverage": [unc_cal["coverage"][l] for l in levels],
-                "pinball_cp_cond": {str(t): cond_cal["pinball_cp"][t] for t in taus},
-                "pinball_cp_uncond": {str(t): unc_cal["pinball_cp"][t] for t in taus},
-                "n_train": len(utr), "n_val": len(uva),
-                "u_mean_cp": u_mean, "u_std_cp": u_std,
-                "epochs": args.epochs, "k": args.k, "bs": args.bs, "lr": args.lr,
-                "trunk": str(args.trunk), "trunk_md5": trunk_md5,
-            }
-            ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            run_dir = Path(args.out) / f"{ts}_{Path(args.trunk).parent.name}_{len(utr)}pos"
             save_head_artifacts(run_dir, cond_hist, unc_hist, cond_cal, unc_cal,
                                 scalars)
             # Render from the just-saved artifacts so inline == `plot_unc.py head`.
@@ -366,10 +413,9 @@ def main():
             written = render_head_plots(run_dir, artifacts,
                                         {"cond_ks": cond_cal["ks"],
                                          "unc_ks": unc_cal["ks"]})
-            print(f"\nRun dir: {run_dir}")
-            print(f"  {len(written)} plots + artifacts.npz + metrics.json")
+            print(f"  {len(written)} plots + artifacts.npz")
         except Exception as e:  # plotting/deps issue must not sink the run
-            print(f"\n(plots skipped: {e})")
+            print(f"  (plots skipped: {e})")
 
 
 if __name__ == "__main__":

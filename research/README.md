@@ -72,7 +72,7 @@ One sentence: what does this experiment decide?
 Data, model, metrics, command to reproduce, seed.
 
 ## Results
-Numbers, plots (link into figs/ or research/figs/), what actually happened.
+Numbers, plots (link into figs/ or research/experiment_results/), what actually happened.
 
 ## Interpretation
 What we now believe, and what it does to the linked hypotheses.

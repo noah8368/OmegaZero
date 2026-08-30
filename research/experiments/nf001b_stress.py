@@ -26,7 +26,7 @@ See research/experiments/NF-001b.md for the design and research/hypotheses.md (H
 Usage:
     # Phase 1 (fair comparison), full rigor:
     python research/experiments/nf001b_stress.py --phase 1 --seeds 10 --capacity med \
-        --outdir research/figs/NF-001b
+        --outdir research/experiment_results/NF-001b
     # Capacity frontier instead of a single preset:
     python research/experiments/nf001b_stress.py --phase 1 --capacity sweep
     # Phase 2 (crossover sweep) — only if Phase 1 is close:
@@ -809,7 +809,7 @@ def main():
                    dest="nu_grid", help="Phase 2 tail-heaviness sweep (df; smaller=heavier)")
     p.add_argument("--modes-grid", nargs="+", type=int, default=[2, 3, 4, 5, 6],
                    dest="modes_grid", help="Phase 2 mode-count sweep")
-    p.add_argument("--outdir", default="research/figs/NF-001b")
+    p.add_argument("--outdir", default="research/experiment_results/NF-001b")
     args = p.parse_args()
 
     if args.phase in ("1", "both"):

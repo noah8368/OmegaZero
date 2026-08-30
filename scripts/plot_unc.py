@@ -15,12 +15,12 @@ this script lets you regenerate or tweak them from saved artifacts, and analyze
 raw datasets without training. render_head_plots() is imported by the trainer.
 
 Output:
-    <run_dir>/                       — head subcommand writes alongside the run
-    results/unc_data_analysis/       — data subcommand plots
+    <run_dir>/                                    — head subcommand writes alongside the run
+    research/experiment_results/unc_data_analysis/ — data subcommand plots
     Each dir includes a plot_metadata.json with timestamp and git commit.
 
 Usage:
-    python3 scripts/plot_unc.py head results/unc_head/<run>/
+    python3 scripts/plot_unc.py head research/experiment_results/unc_head/<run>/
     python3 scripts/plot_unc.py data nnue/data_uncertainty/combined/validation_data.bin
 """
 
@@ -234,7 +234,7 @@ def cmd_data(args):
     if len(recs) == 0:
         sys.exit(f"No records in {path}")
 
-    out_dir = REPO_ROOT / "results" / "unc_data_analysis"
+    out_dir = REPO_ROOT / "research" / "experiment_results" / "unc_data_analysis"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     u = recs["u"].astype(np.float64)
@@ -315,7 +315,7 @@ def main():
     sub = ap.add_subparsers(dest="command", required=True)
 
     h = sub.add_parser("head", help="re-render a trainer run's figures")
-    h.add_argument("run_dir", help="results/unc_head/<run>/ (has artifacts.npz)")
+    h.add_argument("run_dir", help="research/experiment_results/unc_head/<run>/ (has artifacts.npz)")
     h.set_defaults(func=cmd_head)
 
     d = sub.add_parser("data", help="analyze a preprocessed uncertainty dataset")

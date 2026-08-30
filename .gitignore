@@ -33,8 +33,8 @@ compile_commands.json
 # ~1 GB for 3-4-5 man, larger for 6/7 man). Not committed.
 syzygy_tables/
 
-# Research: per-run experiment outputs (plots, summaries). Regenerated on demand;
-# commit representative figures deliberately if a result is worth keeping.
-research/figs/
+# Research: per-run experiment outputs (models, plots, summaries). Regenerated on
+# demand; commit representative results deliberately (git add -f) if worth keeping.
+research/experiment_results/
 # Claude Code project guidance (local-only; not committed).
 CLAUDE.md

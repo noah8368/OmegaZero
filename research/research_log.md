@@ -70,7 +70,7 @@ still fits the shape of real `u = v − v*`.
   Also this run is ~963k (pilot/mean scale), not the 2–5M the margin result (NF-004) needs.
 
 Analysis scripts: `research/experiments/nf002_data_analysis.py`,
-`research/experiments/nf002_cond_shape.py`; figures in `research/figs/NF-002/`.
+`research/experiments/nf002_cond_shape.py`; figures in `research/experiment_results/NF-002/`.
 
 ---
 
