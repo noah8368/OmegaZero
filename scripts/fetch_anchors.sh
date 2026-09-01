@@ -40,10 +40,15 @@ ENGINES_DIR="${REPO_ROOT}/engines"
 SRC_DIR="${ENGINES_DIR}/.src"
 BLUNDER_DIR="${ENGINES_DIR}/blunder"
 ORDO_DIR="${ENGINES_DIR}/ordo"
+FRUIT_DIR="${ENGINES_DIR}/fruit"
 MANIFEST="${ENGINES_DIR}/manifest.txt"
 
 BLUNDER_REPO="https://github.com/deanmchris/blunder.git"
 ORDO_REPO="https://github.com/michiguel/Ordo.git"
+# Independent cross-check anchor: Fruit 2.1 (~2450 CCRL), a different eval family
+# from the Blunder ladder. This mirror ships the original source as src.rar.
+FRUIT_REPO="https://github.com/MoonstoneLight/Fruit-Chess.git"
+FRUIT_RATING=2450
 
 # rung version : CCRL-measured rating (reference only; the authoritative ratings
 # for the fit live in the anchor registry consumed by elo.py).
@@ -83,9 +88,11 @@ Usage:
   scripts/fetch_anchors.sh --force        # rebuild even if binaries exist
   scripts/fetch_anchors.sh --only blunder # just the Blunder ladder
   scripts/fetch_anchors.sh --only ordo    # just Ordo
+  scripts/fetch_anchors.sh --only fruit   # just the Fruit 2.1 anchor
   scripts/fetch_anchors.sh --help
 
-Requires: git, go (Blunder), make + a C compiler (Ordo).
+Requires: git; go (Blunder); make + a C compiler (Ordo);
+          unar + a C++ compiler (Fruit).
 EOF
   exit 0
 }
@@ -103,8 +110,9 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-if [ -n "${ONLY}" ] && [ "${ONLY}" != "blunder" ] && [ "${ONLY}" != "ordo" ]; then
-  die "--only takes 'blunder' or 'ordo', got '${ONLY}'"
+if [ -n "${ONLY}" ] && [ "${ONLY}" != "blunder" ] && [ "${ONLY}" != "ordo" ] \
+   && [ "${ONLY}" != "fruit" ]; then
+  die "--only takes 'blunder', 'ordo', or 'fruit', got '${ONLY}'"
 fi
 
 want() { [ -z "${ONLY}" ] || [ "${ONLY}" = "$1" ]; }
@@ -146,10 +154,9 @@ write_manifest() {
       out="${BLUNDER_DIR}/blunder-${ver}"
       [ -x "${out}" ] && printf 'blunder-%s %s %s\n' "${ver}" "${rating}" "${out}"
     done
+    [ -x "${FRUIT_DIR}/fruit" ] && \
+      printf 'fruit-2.1 %s %s\n' "${FRUIT_RATING}" "${FRUIT_DIR}/fruit"
     [ -x "${ORDO_DIR}/ordo" ] && printf 'ordo - %s\n' "${ORDO_DIR}/ordo"
-    # Independent cross-check anchor (Fruit 2.1), once dropped under engines/fruit/.
-    [ -x "${ENGINES_DIR}/fruit/fruit" ] && \
-      printf 'fruit-2.1 2450 %s\n' "${ENGINES_DIR}/fruit/fruit"
   } >"${MANIFEST}"
 }
 
@@ -246,6 +253,53 @@ build_ordo() {
 }
 
 # ---------------------------------------------------------------------------
+# Fruit 2.1 (independent cross-check anchor, built from source)
+# ---------------------------------------------------------------------------
+build_fruit() {
+  need_cmd git "git not found."
+  need_cmd unar "unar not found — needed to extract Fruit's src.rar. Install: brew install unar"
+  need_cmd make "make not found."
+  need_cmd c++  "no C++ compiler (c++) found."
+
+  local out="${FRUIT_DIR}/fruit"
+  if [ -x "${out}" ] && [ "${FORCE}" -eq 0 ]; then
+    ok "fruit present (skip; --force to rebuild)"
+    return 0
+  fi
+
+  mkdir -p "${FRUIT_DIR}"
+  local clone="${SRC_DIR}/Fruit-Chess"
+  if [ ! -d "${clone}/.git" ]; then
+    info "cloning Fruit mirror -> ${clone}"
+    git clone --quiet "${FRUIT_REPO}" "${clone}"
+  fi
+
+  info "building Fruit 2.1 (CCRL ~${FRUIT_RATING})"
+  local work="${clone}/build"
+  rm -rf "${work}"
+  mkdir -p "${work}"
+  # Extract the original 2005 source and build it. It compiles clean on modern
+  # clang; only override the toolchain and drop the GNU-ld `-s` strip flag
+  # (macOS ld rejects it) from LDFLAGS.
+  if unar -q -f -o "${work}" "${clone}/src.rar" >/dev/null 2>&1 \
+     && [ -f "${work}/src/Makefile" ] \
+     && ( cd "${work}/src" && make CXX=c++ LDFLAGS='-lm' ) >/dev/null 2>&1 \
+     && [ -x "${work}/src/fruit" ]; then
+    cp "${work}/src/fruit" "${out}"
+    if boot_check "${out}"; then
+      ok "fruit built + boots"
+    else
+      warn "fruit: built but failed UCI boot check"
+      return 1
+    fi
+  else
+    warn "Fruit build failed. Inspect the extracted source under:"
+    warn "    ${work}/src   (make CXX=c++ LDFLAGS='-lm')"
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 mkdir -p "${ENGINES_DIR}" "${SRC_DIR}"
@@ -258,6 +312,9 @@ fi
 if want ordo; then
   build_ordo
 fi
+if want fruit; then
+  build_fruit || warn "continuing without Fruit anchor"
+fi
 
 write_manifest
 printf '\n'
@@ -265,15 +322,16 @@ info "manifest written to ${MANIFEST}:"
 sed 's/^/    /' "${MANIFEST}"
 
 printf '\n'
-info "NEXT — add the independent cross-check anchor (Fruit 2.1) and the registry:"
+info "NEXT — verify ratings and run the calibration:"
 cat <<'EOF'
-    The Blunder rungs share one eval family, so their absolute scale can drift as
-    a group. Fruit 2.1 (~2450 CCRL, a different eval lineage with a very stable
-    published rating) ties the ladder to true CCRL scale in the round-robin.
-    Build it under engines/fruit/fruit; write_manifest picks it up automatically.
-    Then register every anchor (name, cmd, proto, CCRL Elo) for `elo.py calibrate`.
+    The Blunder rungs share one eval family; Fruit 2.1 (a different eval lineage)
+    is the independent cross-check that ties the ladder to true CCRL scale in the
+    round-robin.
 
-    Verify EVERY rating against the live list before calibrating:
+    Verify EVERY rating in the manifest against the live list before calibrating
+    (published ratings drift, and Blunder/Stash numbering is confusable):
       https://computerchess.org.uk/ccrl/404/
+
+    Then run the round-robin + Ordo fit via `elo.py calibrate`.
 EOF
 ok "done"
