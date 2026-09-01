@@ -430,7 +430,11 @@ def run_match(cutechess, test_binary, test_label, base_binary, base_label,
         "elo1": elo1,
         "alpha": alpha,
         "beta": beta,
-        "st": st,
+        # Record which clock actually ran: a real clock (tc=) blanks st so the
+        # history can't be misread as a fixed-movetime run (which silently
+        # disables dynamic TM, making every Tm* param dead code).
+        "st": "" if tc else st,
+        "tc": tc or "",
         "games": total,
         "wins": wins,
         "draws": draws,
@@ -450,7 +454,7 @@ def run_match(cutechess, test_binary, test_label, base_binary, base_label,
 
 HISTORY_FIELDS = [
     "timestamp", "test_label", "base_label", "test_commit", "base_commit",
-    "elo0", "elo1", "alpha", "beta", "st",
+    "elo0", "elo1", "alpha", "beta", "st", "tc",
     "games", "wins", "draws", "losses", "score_rate", "elo_diff",
     "llr", "result",
 ]
