@@ -353,13 +353,19 @@ def parse_ordo_csv(path):
     return out
 
 
-def run_ordo(ordo, pgn, out_csv, anchors_file=None, avg=None, sims=1000, cpus=None):
+class OrdoError(RuntimeError):
+    """Ordo failed or did not converge; the caller decides if it's fatal."""
+
+
+def run_ordo(ordo, pgn, out_csv, anchors_file=None, avg=None, sims=1000,
+             cpus=None, timeout=180):
     """Run one Ordo fit and return parsed ratings.
 
-    Ordo aborts if the game graph is not fully connected (which happens with too
-    few games or anchors far from OmegaZero, producing all-win/all-loss players).
-    Retry once with -G (force) and a loud warning rather than crash — a real run
-    with enough games per pairing is always well connected.
+    Ordo aborts if the game graph is not fully connected (few games or anchors
+    far from OmegaZero, producing all-win/all-loss players); retry once with -G
+    (force) and a loud warning rather than crash. An unconstrained fit (only the
+    average pinned) can also fail to converge on such degenerate data and spin
+    forever, so every call is bounded by `timeout`. Raises OrdoError on failure.
     """
     base = [str(ordo), "-Q", "-p", str(pgn), "-c", str(out_csv),
             "-s", str(sims), "-W", "-D"]
@@ -370,15 +376,22 @@ def run_ordo(ordo, pgn, out_csv, anchors_file=None, avg=None, sims=1000, cpus=No
     if cpus:
         base += ["-n", str(cpus)]
 
-    proc = subprocess.run(base, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    def _run(cmd):
+        try:
+            return subprocess.run(cmd, stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.PIPE, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise OrdoError(f"Ordo did not finish within {timeout}s "
+                            "(likely a degenerate/poorly-connected game graph).")
+
+    proc = _run(base)
     if proc.returncode != 0:
         print("  WARNING: Ordo game graph poorly connected — retrying with "
               "--force.\n  Ratings are approximate; use more --games or a closer "
               "anchor bracket.", flush=True)
-        proc = subprocess.run(base + ["-G"],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        proc = _run(base + ["-G"])
         if proc.returncode != 0:
-            sys.exit("Ordo failed:\n" + proc.stderr.decode(errors="replace"))
+            raise OrdoError("Ordo failed:\n" + proc.stderr.decode(errors="replace"))
     return parse_ordo_csv(out_csv)
 
 
@@ -489,15 +502,24 @@ def run_calibrate(args):
             f.write(f'"{a["name"]}",{a["elo"]}\n')
 
     cpus = args.concurrency
-    fixed = run_ordo(ordo, pgn_path, run_dir / "ratings.csv",
-                     anchors_file=anchors_txt, sims=args.sims, cpus=cpus)
+    try:
+        fixed = run_ordo(ordo, pgn_path, run_dir / "ratings.csv",
+                         anchors_file=anchors_txt, sims=args.sims, cpus=cpus)
+    except OrdoError as e:
+        sys.exit(f"Primary Ordo fit failed: {e}")
     if "OmegaZero" not in fixed:
         sys.exit("Ordo did not rate OmegaZero — too few connected games?")
 
     # --- Diagnostic fit (all float, pool average pinned) -> anchor residuals ----
+    # Non-fatal: an unconstrained fit can diverge on degenerate data. If it fails,
+    # report OmegaZero's rating without the residual column rather than abort.
     avg = sum(a["elo"] for a in anchors) / len(anchors)
-    floated = run_ordo(ordo, pgn_path, run_dir / "ratings_floated.csv",
-                       avg=round(avg), sims=args.sims, cpus=cpus)
+    try:
+        floated = run_ordo(ordo, pgn_path, run_dir / "ratings_floated.csv",
+                           avg=round(avg), sims=args.sims, cpus=cpus)
+    except OrdoError as e:
+        print(f"  (skipping anchor-residual diagnostic: {e})", flush=True)
+        floated = {}
 
     result = summarize_calibration(run_dir, anchors, fixed, floated, oz_vs, args)
     print_calibration(anchors, fixed, floated, oz_vs, result)
@@ -560,47 +582,112 @@ def print_calibration(anchors, fixed, floated, oz_vs, result):
 
 
 def plot_calibration(run_dir, anchors, fixed, oz_vs):
-    """Logistic curve of OmegaZero's score vs each anchor at the fitted gap."""
+    """OmegaZero's Elo curve fit on the CCRL scale.
+
+    Same style as elo.py's `run` plot (score rate vs opponent Elo, with a fitted
+    logistic + model CI band), but the x-axis is the anchors' fixed CCRL ratings
+    and the curve is centred on OmegaZero's Ordo-fitted rating (CI band from its
+    error), rather than a per-opponent logistic fit. The independent cross-check
+    anchor is drawn distinctly.
+    """
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        import numpy as np
     except ImportError:
-        print("  (matplotlib not installed; skipping calibration plot)", flush=True)
+        print("  (matplotlib/numpy not installed; skipping calibration plot)",
+              flush=True)
         return
-    oz_elo = fixed["OmegaZero"]["rating"]
-    xs, ys, labels, indep = [], [], [], []
-    for a in anchors:
-        w, d, l = oz_vs.get(a["name"], [0, 0, 0])
-        n = w + d + l
-        if n == 0:
-            continue
-        xs.append(oz_elo - a["elo"])
-        ys.append((w + 0.5 * d) / n)
-        labels.append(a["name"])
-        indep.append(bool(a.get("independent")))
 
-    fig, ax = plt.subplots(figsize=(7.5, 5))
-    grid = [min(xs + [-400]) - 50, max(xs + [400]) + 50]
-    curve_x = [grid[0] + i * (grid[1] - grid[0]) / 200 for i in range(201)]
-    curve_y = [1.0 / (1.0 + 10 ** (-x / 400.0)) for x in curve_x]
-    ax.plot(curve_x, curve_y, color="#888", lw=1.2, zorder=1,
-            label="logistic (E = 1/(1+10^(-d/400)))")
-    for x, y, name, ind in zip(xs, ys, labels, indep):
-        ax.scatter([x], [y], s=70, zorder=3,
-                   color="#D48A3B" if ind else "#7EC8A4",
-                   edgecolor="#333", linewidth=0.6)
-        ax.annotate(name, (x, y), fontsize=7, xytext=(4, 4),
-                    textcoords="offset points")
-    ax.axhline(0.5, color="#ccc", lw=0.8, ls="--", zorder=0)
-    ax.axvline(0.0, color="#ccc", lw=0.8, ls="--", zorder=0)
-    ax.set_xlabel(f"OmegaZero rating - anchor rating  (OmegaZero = {round(oz_elo)})")
-    ax.set_ylabel("OmegaZero score vs anchor")
-    ax.set_title("CCRL calibration: observed score vs fitted rating gap")
-    ax.legend(loc="lower left", fontsize=8)
-    ax.grid(True, alpha=0.2)
+    oz = fixed["OmegaZero"]
+    oz_elo = oz["rating"]
+    oz_err = oz["error"]
+
+    def expected(opp_elo, r):
+        # OmegaZero (rating r) expected score vs an opponent rated opp_elo.
+        return 1.0 / (1.0 + 10 ** ((opp_elo - r) / 400.0))
+
+    # Observed OmegaZero-vs-anchor points, split by anchor family.
+    def collect(independent):
+        xs, means, ci_lo, ci_hi, names = [], [], [], [], []
+        for a in anchors:
+            if bool(a.get("independent")) != independent:
+                continue
+            w, d, l = oz_vs.get(a["name"], [0, 0, 0])
+            n = w + d + l
+            if n == 0:
+                continue
+            mu = (w + 0.5 * d) / n
+            var = (w * (1.0 - mu) ** 2 + d * (0.5 - mu) ** 2 +
+                   l * (0.0 - mu) ** 2) / max(n - 1, 1)
+            se = math.sqrt(var / n)
+            xs.append(a["elo"])
+            means.append(mu)
+            ci_lo.append(max(0.0, mu - 1.96 * se))
+            ci_hi.append(min(1.0, mu + 1.96 * se))
+            names.append(a["name"])
+        return xs, means, ci_lo, ci_hi, names
+
+    anchor_elos = [a["elo"] for a in anchors]
+    x_curve = np.linspace(min(anchor_elos) - 100, max(anchor_elos) + 100, 300)
+    y_curve = np.array([expected(x, oz_elo) for x in x_curve])
+
+    # Project palette: dark blue #1976D2, light blue #A8D8EA, dark red #D32F2F,
+    #   grays #999999/#333333.
+    fig, ax = plt.subplots(figsize=(12, 7))
+
+    if oz_err is not None:
+        # Curve uncertainty from OmegaZero's rating error: shift the centre +-err.
+        band_hi = np.array([expected(x, oz_elo + oz_err) for x in x_curve])
+        band_lo = np.array([expected(x, oz_elo - oz_err) for x in x_curve])
+        ax.fill_between(x_curve, band_lo, band_hi,
+                        color="#A8D8EA", alpha=0.35, label="95% CI (model)")
+    ax.plot(x_curve, y_curve, color="#1976D2", linewidth=2.5,
+            label="Elo model fit")
+
+    for independent, color, lbl in (
+        (False, "#1976D2", "Blunder anchor (95% CI)"),
+        (True, "#D32F2F", "Independent anchor (95% CI)"),
+    ):
+        xs, means, ci_lo, ci_hi, names = collect(independent)
+        if not xs:
+            continue
+        means_a = np.array(means)
+        ax.errorbar(xs, means_a,
+                    yerr=[means_a - np.array(ci_lo), np.array(ci_hi) - means_a],
+                    fmt="D" if independent else "o", color=color, markersize=8,
+                    capsize=5, capthick=1.5, elinewidth=1.5, zorder=5, label=lbl)
+        for x, mu in zip(xs, means_a):
+            ax.annotate(f"{mu:.0%}", (x, mu), textcoords="offset points",
+                        xytext=(0, 14), ha="center", fontsize=10,
+                        fontweight="bold", color="#333333")
+
+    ax.axhline(0.5, color="#999999", linestyle="--", linewidth=1,
+               label="50% score rate")
+    ax.axvline(oz_elo, color="#1976D2", linestyle="--", linewidth=1.2, alpha=0.7)
+
+    if oz_err is not None:
+        elo_text = f"Estimated OmegaZero Elo\n{oz_elo:.0f} ± {round(oz_err)}"
+    else:
+        elo_text = f"Estimated OmegaZero Elo\n{oz_elo:.0f}"
+    bbox_props = dict(boxstyle="round,pad=0.5", facecolor="white",
+                      edgecolor="#1976D2", linewidth=2)
+    ax.annotate(elo_text, xy=(oz_elo, 0.5), xytext=(oz_elo, 0.22),
+                fontsize=14, fontweight="bold", color="#1976D2",
+                ha="center", va="top", bbox=bbox_props,
+                arrowprops=dict(arrowstyle="-", color="#1976D2", linewidth=1.2))
+
+    ax.set_xlabel("Anchor Elo (CCRL)", fontsize=12)
+    ax.set_ylabel("Score Rate [W + 0.5D]", fontsize=12)
+    ax.set_title("CCRL-Anchored Elo Estimation",
+                 fontsize=15, fontweight="bold", pad=15)
+    ax.set_ylim(-0.02, 1.05)
+    ax.legend(loc="upper right", fontsize=10)
+    ax.grid(True, alpha=0.3, axis="y")
+
     fig.tight_layout()
-    fig.savefig(run_dir / "calibration.png", dpi=130)
+    fig.savefig(run_dir / "calibration.png", dpi=150)
     plt.close(fig)
 
 
