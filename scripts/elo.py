@@ -161,8 +161,12 @@ def run_matches(args):
 
     cmd = [
         cutechess,
+        # Pin OmegaZero to 1 thread: it otherwise defaults Threads to the core
+        # count (Lazy SMP), which oversubscribes cores under --concurrency and
+        # corrupts clock-based timing. The opponent (Stockfish/Fruit) defaults to
+        # a single thread already.
         "-engine", "name=OmegaZero", f"cmd={engine}",
-            "arg=--uci", "proto=uci",
+            "arg=--uci", "proto=uci", f"option.Threads={args.threads}",
         *opp_clause,
         "-each", tc_clause, "timemargin=500",
         "-rounds", str(rounds), "-games", "2", "-repeat",
@@ -664,6 +668,11 @@ def main():
     run_p.add_argument(
         "--concurrency", type=int, default=8,
         help="Number of concurrent games (default: 8)",
+    )
+    run_p.add_argument(
+        "--threads", type=int, default=1,
+        help="OmegaZero Threads option (default: 1). Keep at 1 and scale games "
+             "via --concurrency; >1 oversubscribes cores and biases timing.",
     )
 
     cal_p = sub.add_parser(
