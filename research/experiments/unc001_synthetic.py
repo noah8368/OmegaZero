@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""NF-001: synthetic validation of conditional-density models + calibration diagnostics.
+"""unc-001: synthetic validation of conditional-density models + calibration diagnostics.
 
 Before touching chess data, verify that our models (conditional Neural Spline Flow,
 quantile regression, mixture density network) and our diagnostics (PIT, coverage,
 quantile error) correctly recover *known* conditional distributions p(u | x). This is
 the H0 correctness gate and an early read on H2 (which model wins).
 
-See research/experiments/NF-001.md for the design and research/hypotheses.md for H0/H2.
+See research/experiments/unc-001.md for the design and research/hypotheses.md for H0/H2.
 
 Usage:
-    python research/experiments/nf001_synthetic.py \
+    python research/experiments/unc001_synthetic.py \
         --generator hetero_gaussian lognormal bimodal skewnormal \
         --model flow qr mdn unconditional \
         --n 20000 --epochs 150 --seed 0 \
-        --outdir research/experiment_results/NF-001
+        --outdir research/experiment_results/unc-001
 
 Each (generator, model) pair reports held-out NLL, a PIT KS statistic, coverage at
 several quantile levels, and quantile MAE vs the generator's true quantiles. PIT
@@ -316,7 +316,7 @@ class QRModel(Model):
     # spikes wherever adjacent quantiles nearly coincide, which can push NLL absurdly
     # below the oracle. We estimate density on a *coarse* uniform level grid so the
     # bin widths are stable — but treat QR's NLL as indicative only; judge QR on
-    # pinball loss / coverage / quantile-MAE (see NF-001.md).
+    # pinball loss / coverage / quantile-MAE (see unc-001.md).
     _COARSE = np.linspace(0.05, 0.95, 19)
 
     def log_prob(self, u, x):
@@ -556,7 +556,7 @@ def main():
     p.add_argument("--batch", type=int, default=1024)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--outdir", default="research/experiment_results/NF-001")
+    p.add_argument("--outdir", default="research/experiment_results/unc-001")
     run(p.parse_args())
 
 

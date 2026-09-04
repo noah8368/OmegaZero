@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Analyze a preprocessed uncertainty dataset for the NF-002 eval-error pipeline.
+Analyze a preprocessed uncertainty dataset for the unc-002 eval-error pipeline.
 
 The uncertainty-pipeline analogue of scripts/generate_nnue_plots.py: a standalone
 analysis tool over the raw data, separate from the trainer. The trainer
@@ -19,7 +19,7 @@ Output:
     timestamp and git commit.
 
 Usage:
-    python3 scripts/generate_unc_head_plots.py data nnue/data_uncertainty/combined/validation_data.bin
+    python3 scripts/generate_unc_head_plots.py data nnue/data/unc_11M/validation_data.bin
 """
 
 import argparse

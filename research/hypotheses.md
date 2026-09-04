@@ -5,7 +5,7 @@ links to the experiments that test it.
 
 **Reading order = chronology.** Sections are ordered by *when each is resolved in the
 experiment sequence* — the H0 correctness gate first, the H1 payoff last — so the file
-reads as the actual arc of the work (NF-001 → NF-001b → NF-002 → NF-003 → NF-004). The
+reads as the actual arc of the work (unc-001 → unc-001b → unc-002 → unc-003 → unc-004). The
 chain is also a **dependency chain**: if an earlier link fails, the ones after it may be
 moot. The **H-numbers are stable identifiers, not positions** — they are referenced by
 number across the experiment files, notes, and log, so they stay fixed even though the
@@ -48,9 +48,9 @@ not the science, and blocks everything downstream until fixed.
 near-nominal PIT/coverage and small tail qMAE; the unconditional floor blew up exactly as
 required (ΔNLL up to +1.28, qMAE@.99 up to 1.6). One implementation caveat logged, not a
 failure: QR's finite-difference NLL is not a proper density score (dips below oracle) — QR
-is judged on PIT/coverage/quantile-MAE instead. See [NF-001](experiments/NF-001.md).
+is judged on PIT/coverage/quantile-MAE instead. See [unc-001](experiments/unc-001.md).
 
-**Status:** supported (cleared) · **Experiments:** [NF-001](experiments/NF-001.md)
+**Status:** supported (cleared) · **Experiments:** [unc-001](experiments/unc-001.md)
 
 ---
 
@@ -64,17 +64,17 @@ density network, one wins on held-out NLL and calibration (PIT / coverage) for
 function — close to what QR does directly, so the gap may be small. If the flow only ties
 QR, the cheaper-to-deploy QR head wins on practicality (H5). This is expected and fine.
 
-**Result (2026-08-14, fully closed).** **MDN ≥ flow — no asterisk.** Across benign (NF-001)
-and adversarial/budget-matched (NF-001b, 10 seeds) targets, no flow advantage on CRPS or
+**Result (2026-08-14, fully closed).** **MDN ≥ flow — no asterisk.** Across benign (unc-001)
+and adversarial/budget-matched (unc-001b, 10 seeds) targets, no flow advantage on CRPS or
 tail-qMAE — the flow is last-or-tied-last everywhere, including heavy tails. The final
 caveat is now closed: on the **M≫K** run (`many_modes8`/`10`, modes > MDN's K=5), even an
 *underfitting* MDN beats the flow — tail-qMAE Δ(alt−flow) ≈ −0.02/−0.015 (p=0.004), CRPS
 slightly MDN-favoring (p=0.006/0.020). **Decision: MDN primary (lean `mdn_t` — robust + best
 tails); flow → backstop; QR out (worst tails).** (A separate Gaussian-`mdn` NaN blowup was
 root-caused to `log(softmax)` and fixed with `log_softmax` + a raised σ floor; grad-clipping
-was shown not to fix it.) Re-tested on real eval-error once the NNUE embedding exists (NF-002).
+was shown not to fix it.) Re-tested on real eval-error once the NNUE embedding exists (unc-002).
 
-**Status:** supported — simpler model wins, flow refuted as primary (fully closed 2026-08-14) · **Experiments:** [NF-001](experiments/NF-001.md) (benign — MDN ≥ flow) → [NF-001b](experiments/NF-001b.md) (adversarial + M≫K — MDN ≥ flow, decisive)
+**Status:** supported — simpler model wins, flow refuted as primary (fully closed 2026-08-14) · **Experiments:** [unc-001](experiments/unc-001.md) (benign — MDN ≥ flow) → [unc-001b](experiments/unc-001b.md) (adversarial + M≫K — MDN ≥ flow, decisive)
 
 ---
 
@@ -86,7 +86,7 @@ with OmegaZero's own eval, so error vs OmegaZero-deep is exactly what pruning ri
 Stockfish dependency. The ground-truth-vs-external-engine calibration study is
 **deferred** (would need a Stockfish target subsample).
 
-**Status:** settled by choice · **Experiments:** NF-002
+**Status:** settled by choice · **Experiments:** unc-002
 
 ---
 
@@ -98,7 +98,7 @@ the position isn't secretly *worse*; futility bets it isn't secretly *better*. *
 as the design choice**; the prediction to verify is that one-sided coverage conditioned
 on position correlates with incorrect-cutoff rate in a way symmetric `|u|` cannot express.
 
-**Status:** open (design fixed to signed) · **Experiments:** NF-002 schema
+**Status:** open (design fixed to signed) · **Experiments:** unc-002 schema
 
 ---
 
@@ -169,7 +169,7 @@ discretization bias is absorbed into `C` (Elo preserved; calibration still repor
 separately). Seed the trunk from the trained NNUE and **freeze it** (init the head's mean ≈ 0
 so `corrected ≈ raw` at step 0; unfreeze-as-fallback carries no NPS risk — incrementality
 depends on *which* weight columns change, not their values). See
-[NF-002](experiments/NF-002.md) "Data strategy".
+[unc-002](experiments/unc-002.md) "Data strategy".
 
 **Status:** open (deployment representation decided) · **Experiments:** (integration spike, Week 3)
 
@@ -195,7 +195,7 @@ unconditional one at tuned `C`? See
 [notes/pruning_integration.md](notes/pruning_integration.md) for the derivation.
 
 **Decides:** whether this becomes a search feature or "just" a calibration study.
-**Status:** open · **Experiments:** (planned, post-integration — NF-004)
+**Status:** open · **Experiments:** (planned, post-integration — unc-004)
 
 ---
 
@@ -242,6 +242,6 @@ plausibility × low-risk. **None is on the 3-week plan; H1 must land first.**
   change the eval itself (couples eval + uncertainty, risks eval regression). Plus more
   compute + higher overfit/leakage exposure. **Test:** ablate frozen vs partial-unfreeze vs
   full-unfreeze on ΔNLL / tail-qMAE / coverage, and pair every calibration gain with its
-  *deployment* cost (NPS delta, eval-drift SPRT). Supersedes the NF-002 "freeze-first,
+  *deployment* cost (NPS delta, eval-drift SPRT). Supersedes the unc-002 "freeze-first,
   unfreeze-as-fallback" note by making the comparison an explicit study, not just a fallback
   trigger. *(open, stretch; decision hinges on gain-vs-NPS, not calibration alone.)*

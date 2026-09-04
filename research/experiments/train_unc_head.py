@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""NF-002 uncertainty head trainer: MDN (Student-t) head on a frozen NNUE trunk embedding.
+"""unc-002 uncertainty head trainer: MDN (Student-t) head on a frozen NNUE trunk embedding.
 
 Fits the conditional eval-error distribution p(u | x), where u = v - v_star is the
 NNUE static-eval error and x is the frozen trunk embedding. Reports NLL against an
 unconditional floor plus calibration (PIT KS, central-interval coverage, pinball
-qMAE). See research/experiments/NF-002.md.
+qMAE). See research/experiments/unc-002.md.
 
 COHERENCE (read this): the result is only meaningful when the labels and the
 embedding describe the SAME eval -- i.e. the net that produced the datagen labels
@@ -47,8 +47,8 @@ Usage:
   # train (a bare invocation with no subcommand defaults to `train`):
   python3 research/experiments/train_unc_head.py \
       --trunk nnue/model/2026-06-07_00-11-38_61d0444_6.0M_pos/best.bin \
-      --train nnue/data_uncertainty/combined/training_data.txt \
-      --val   nnue/data_uncertainty/combined/validation_data.txt
+      --train nnue/data/unc_11M/training_data.txt \
+      --val   nnue/data/unc_11M/validation_data.txt
   # re-render a past run's figures:
   python3 research/experiments/train_unc_head.py plot research/experiment_results/unc_head/<run>/
 """
@@ -122,7 +122,7 @@ def embed(records, ft_w, ft_b):
 
 
 # --------------------------------------------------------------------------- #
-#  mdn_t head (Student-t mixture) -- ported from nf001b_stress.py MDNP
+#  mdn_t head (Student-t mixture) -- ported from unc001b_stress.py MDNP
 # --------------------------------------------------------------------------- #
 class MDNt(nn.Module):
     def __init__(self, in_dim, k=5, hidden=(128, 128)):
@@ -162,7 +162,7 @@ def write_head_bin(path, model, in_dim, k, hidden, u_mean, u_std, trunk_md5):
     Mirrors train_nnue.py's OZNN export (magic + int32 dims + raw little-endian
     arrays) but float32 and un-quantized: there is no C++ MDN inference yet to fix
     a quantization scheme against, and quantizing the head's sigma/df params is
-    lossy in exactly the tail NF-002 cares about. The head is meaningless without
+    lossy in exactly the tail unc-002 cares about. The head is meaningless without
     the frozen trunk that produced its embedding and the (u_mean, u_std) the target
     was standardized with, so both are baked in. Reload with read_head_bin().
 
@@ -608,7 +608,7 @@ def cmd_train(args):
     unc_cal = calibration(uncond, zva, yva_t, u_mean, u_std)
 
     print("\n" + "=" * 62)
-    print("NF-002 UNCERTAINTY HEAD RESULTS")
+    print("unc-002 UNCERTAINTY HEAD RESULTS")
     print("=" * 62)
     print(f"val NLL    conditional {cond_val:.4f}   unconditional {unc_val:.4f}"
           f"   (gain {unc_val - cond_val:+.4f})")
@@ -676,9 +676,9 @@ def main():
     # train subcommand (the default when no subcommand is given).
     t = sub.add_parser("train", help="fit the uncertainty head (writes a run dir + plots)")
     t.add_argument("--trunk", default="nnue/nnue.bin")
-    t.add_argument("--train", default="nnue/data_uncertainty/combined/training_data.txt",
+    t.add_argument("--train", default="nnue/data/unc_11M/training_data.txt",
                    help="training split (.txt or .bin; .txt auto-encodes)")
-    t.add_argument("--val", default="nnue/data_uncertainty/combined/validation_data.txt",
+    t.add_argument("--val", default="nnue/data/unc_11M/validation_data.txt",
                    help="validation split (.txt or .bin; .txt auto-encodes)")
     t.add_argument("--k", type=int, default=5)
     t.add_argument("--epochs", type=int, default=60)

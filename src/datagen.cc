@@ -11,7 +11,7 @@
  *   - Zobrist hash deduplication within each worker
  *   - Separate validation set from different games
  *
- * Uncertainty-label mode (config `mode: uncertainty`, for the NF-002 research
+ * Uncertainty-label mode (config `mode: uncertainty`, for the unc-002 research
  * pipeline). Instead of (fen, score, result) it emits, per sampled position,
  *   fen | v | v_star | u | depth | nodes | result
  * where v = raw static eval (Board::Evaluate(), STM POV), v_star = a
@@ -84,7 +84,7 @@ constexpr int kStartupEmailThreshold = 10;
 static const string kStartFen =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-// Uncertainty-label mode config (NF-002), set from nnue/config.json in main().
+// Uncertainty-label mode config (unc-002), set from nnue/config.json in main().
 // Declared here (ahead of WriteMetadata) so the metadata writer can report them.
 static bool g_uncertainty_mode = false;
 static int g_target_depth = 12;
@@ -98,7 +98,7 @@ struct Config {
   float val_fraction = 0.1f;
   string email;
   string name;
-  // Uncertainty-label mode (NF-002). "nnue" (default) = legacy (fen,score,result);
+  // Uncertainty-label mode (unc-002). "nnue" (default) = legacy (fen,score,result);
   // "uncertainty" = the (fen,v,v_star,u,depth,nodes,result) pipeline.
   string mode = "nnue";
   int target_depth = 12;         // fixed depth for the v_star search
@@ -201,7 +201,7 @@ struct Position {
   int score;
 };
 
-// One uncertainty-label sample (NF-002). All evals are STM POV; u = v - v_star.
+// One uncertainty-label sample (unc-002). All evals are STM POV; u = v - v_star.
 struct UncertaintyPosition {
   string fen;
   int v;       // raw static eval (Board::Evaluate())
@@ -310,7 +310,7 @@ static auto PlayGame(float search_time, const SearchParams& params,
   return kDrawResult;
 }
 
-// Uncertainty-label self-play game (NF-002). At each sampled ply it runs one deep,
+// Uncertainty-label self-play game (unc-002). At each sampled ply it runs one deep,
 // deterministic, fixed-depth + node-capped search (which also supplies the game
 // move) and records (fen, v, v_star, depth, nodes). Tactical filters are
 // inverted vs. PlayGame -- in-check and high-|score| positions are kept; only true
@@ -386,7 +386,7 @@ static auto PlayGameUncertainty(int target_depth, uint64_t node_cap,
       // (~+/-31700+) while v, a saturating static NNUE eval (~+/-1600), cannot
       // represent it. Unlike PlayGame we deliberately KEEP high-but-finite
       // tactical scores -- those large-|u| tails are exactly the high-uncertainty
-      // data NF-002 targets. A magnitude cut subsumes IsMateScore and also catches
+      // data unc-002 targets. A magnitude cut subsumes IsMateScore and also catches
       // TB scores it missed (see kDecisiveScoreThreshold).
       if (!best.IsEmpty() && abs(score_stm) < kDecisiveScoreThreshold) {
         U64 hash = board.GetBoardHash();
@@ -848,7 +848,7 @@ auto main() -> int {
   g_node_cap = cfg.node_cap;
 
   // Always load the NNUE if it's present, so datagen labels come from the
-  // deployment eval: uncertainty mode needs v = NNUE eval (NF-002), and standard
+  // deployment eval: uncertainty mode needs v = NNUE eval (unc-002), and standard
   // mode then yields NNUE-quality targets for the next net generation. Falls
   // back to HCE when nnue/nnue.bin is absent. Load here -- before the params
   // read and before any worker builds a Board -- so ProfileForEvalMode() selects
@@ -861,7 +861,7 @@ auto main() -> int {
     std::cerr << "Datagen eval: HCE (nnue/nnue.bin not found)" << std::endl;
     if (g_uncertainty_mode) {
       std::cerr << "  WARNING: uncertainty mode without NNUE -- v will be the "
-                   "HCE eval, not the NNUE eval that NF-002 expects." << std::endl;
+                   "HCE eval, not the NNUE eval that unc-002 expects." << std::endl;
     }
   }
 
@@ -873,7 +873,7 @@ auto main() -> int {
   if (num_workers < 1) num_workers = 1;
   if (total_games < 1) total_games = 1;
 
-  // Create timestamped subdirectory, mode-prefixed so uncertainty (NF-002) and
+  // Create timestamped subdirectory, mode-prefixed so uncertainty (unc-002) and
   // nnue eval runs are distinguishable at a glance:
   // <output_dir>/<mode>_<YYYY-MM-DD_HH-MM-SS>_<githash>/
   {

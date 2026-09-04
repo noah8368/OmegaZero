@@ -31,8 +31,8 @@ research/
 ├── README.md          # this file
 ├── research_log.md    # chronological lab notebook — append-only, newest at top
 ├── hypotheses.md      # the falsifiable claims, each with a status and its evidence
-├── experiments/       # one file per experiment, IDs NF-001, NF-002, ...
-│   ├── NF-001.md      # synthetic validation of the flow + baselines
+├── experiments/       # one file per experiment, IDs unc-001, unc-002, ...
+│   ├── unc-001.md      # synthetic validation of the flow + baselines
 │   └── ...
 └── notes/
     ├── normalizing_flows.md  # method notes: flows, the 1-D collapse, Zuko, quantiles
@@ -41,7 +41,7 @@ research/
 
 ## Conventions
 
-- **Experiment IDs** are `NF-NNN`, allocated in order, never reused. Each experiment
+- **Experiment IDs** are `unc-NNN`, allocated in order, never reused. Each experiment
   gets its own file from the [template](#experiment-file-template) below and is
   registered in `research_log.md` when started and when concluded.
 - **Every hypothesis** in `hypotheses.md` carries a status
@@ -58,7 +58,7 @@ research/
 ## Experiment file template
 
 ```markdown
-# NF-NNN: <short title>
+# unc-NNN: <short title>
 
 - **Status:** planned | running | done | abandoned
 - **Hypotheses:** H<n>, ...
@@ -78,7 +78,7 @@ Numbers, plots (link into figs/ or research/experiment_results/), what actually 
 What we now believe, and what it does to the linked hypotheses.
 
 ## Follow-ups
-Concrete next experiments (allocate NF-IDs).
+Concrete next experiments (allocate unc-IDs).
 ```
 
 ## Environment

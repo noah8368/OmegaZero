@@ -6,6 +6,42 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-09-04 — Full 10.6M unc run landed + finalized as `unc_11M`; `NF-*`→`unc-*` rename
+
+Pulled the coherent uncertainty run (`6325e7d`, the "50/50 STM + drop-TB-sentinel"
+datagen build) from the Hetzner box and finalized it as the working research dataset.
+
+- **Combine bug found + fixed.** A double-`mv` had nested the run inside itself
+  (`unc_…/unc_…/`), so the freshly-pulled workers sat a level below where
+  `combine_runs.sh` searches → it silently re-emitted a stale 866k partial pull (the
+  set the committed `unc_head` had trained on). Flattened, deleted the stale
+  intermediates, re-combined → **10,634,560 train + 1,178,410 val**. All 7-field,
+  0 `u = v − v*` violations, STM 50.2/49.8, 0 TB/mate sentinels, v* depth 12.
+- **Train/val de-leaked on the model-correct key = placement+STM** (the HalfKP
+  embedding ignores move-clocks/castling/ep, so a shared placement+stm is an identical
+  input `x` → true leakage even when full FENs differ). Full-FEN found only 1,305;
+  placement+STM found **4,680 val rows / 3,723 positions (0.40% of val)**. Removed from
+  **val** (train kept full): val → **1,173,730**; post-clean cross-split leakage = 0.
+  `u` distribution unchanged and near-identical across splits (mean +13cp, |u| median
+  68, p99 ~760, |u|≥600 = 2.1%) — fat pruning-relevant tail intact.
+- **Disk cleanup:** kept only the 100M NNUE set + this unc set; deleted the old NNUE
+  `combined/` + two stale runs + raw unc workers. **Moved + renamed** the unc set to
+  **`nnue/data/unc_11M/{training,validation}_data.txt`** (was
+  `nnue/data_uncertainty/combined/`; `nnue/data_uncertainty/` removed). `.bin` not
+  regenerated — trainer auto-encodes on staleness.
+- **Rename `NF-*` → `unc-*`** across the whole research tree (the "NF" = normalizing-flow
+  label is stale since H2 refuted the flow as primary). Experiment IDs unc-001/001b/002/
+  003/004, files `experiments/unc-*.md` + `experiments/unc00*_*.py`, result dirs
+  `experiment_results/unc-*/`, and all in-text refs in hypotheses/README/notes/this log +
+  `src/datagen.cc` comments. Import in `unc001b_stress.py` and the README `unc-NNN` ID
+  convention updated too; the awk `NF==7` field guard was left untouched.
+- **Path updates:** `train_unc_head.py` default `--train`/`--val` and the
+  `generate_unc_head_plots.py` usage example now point at `nnue/data/unc_11M/`. Left the
+  datagen *staging* dir (`config.json` `output`, `prepare_unc_data.py` default =
+  `nnue/data_uncertainty`) alone — that's where a future raw campaign should land, not
+  the finalized set.
+- **Merged `main`→`research`** (CCRL-anchor Elo tooling etc.); clean, no conflicts.
+
 ## 2026-08-30 — Data-prep tooling: one `prepare_<x>_data.py` per pipeline
 
 Consolidated the datagen→train data prep so both pipelines follow the same shape:
@@ -54,7 +90,7 @@ still fits the shape of real `u = v − v*`.
   **unimodal + heavy-tailed**: bimodality coefficient 0.05–0.15 (≪ 0.555 threshold), excess
   kurtosis 3.8–17.6 *within* buckets (so the heavy tail is conditional, not a pooling artifact).
   Mean offset flips by phase (opening/quiet −9cp → endgame/decisive +27cp) — real conditional
-  mean structure for the NF-003 corrector-swap to capture.
+  mean structure for the unc-003 corrector-swap to capture.
 - **Verdict: `mdn_t` holds water — strengthened.** Real data is exactly the regime where the
   mixture-of-Student-t wins and the flow's only edge (multimodality) is absent: unimodal, heavy-
   tailed (kurtosis 10 → vindicates Student-t over the NaN-prone Gaussian MDN, and QR-out on
@@ -67,14 +103,14 @@ still fits the shape of real `u = v − v*`.
   `Σ π_k μ_k` is fully closed-form (ν>1 always). This is a point *for* mdn_t vs the flow.
 - **Caveat:** conditioning here is on observable proxies (phase, |v|), not the NNUE embedding
   `x` (not wired yet); full-resolution conditional shape still awaits the real-embedding re-run.
-  Also this run is ~963k (pilot/mean scale), not the 2–5M the margin result (NF-004) needs.
+  Also this run is ~963k (pilot/mean scale), not the 2–5M the margin result (unc-004) needs.
 
-Analysis scripts: `research/experiments/nf002_data_analysis.py`,
-`research/experiments/nf002_cond_shape.py`; figures in `research/experiment_results/NF-002/`.
+Analysis scripts: `research/experiments/unc002_data_analysis.py`,
+`research/experiments/unc002_cond_shape.py`; figures in `research/experiment_results/unc-002/`.
 
 ---
 
-## 2026-08-15 — NF-002 pilot data generated; fit-training harness verified end-to-end
+## 2026-08-15 — unc-002 pilot data generated; fit-training harness verified end-to-end
 
 Ran the full net-independent pilot: datagen → preprocess → frozen-trunk embed → `mdn_t` fit →
 calibration read. **Everything runs.** Caveat up front: this is a **harness-verification**
@@ -104,20 +140,20 @@ and labels describe *different* evals. A coherent read needs NNUE-eval labels.
 
 **Next — GATED ON A FULLY TRAINED NNUE.** With the pilot done, the *entire* remaining research
 line now depends on the deployment-quality NNUE existing. This pilot was the **only**
-net-independent piece; there is no further net-free work to do. NF-003 onward requires the real
+net-independent piece; there is no further net-free work to do. unc-003 onward requires the real
 net for two independent reasons: (1) **coherence + relevance** — labels (`v = NNUE eval`) and
 the embedding must come from the *same* net, and it must be the net we'll actually ship
 (uncertainty of a weak net ≠ uncertainty of the deployed net); (2) **leakage** — margin
 positions must be disjoint from that net's training set, so we can't even pick positions until
 the net + its corpus are fixed. So: finish NNUE training (see nnue-local-training-plan) →
 `nnue/nnue.bin` → rebuild → regen datagen for NNUE-coherent labels → rerun
-`train_unc_head.py` for a *real* calibration read → NF-003 corrector-swap SPRT.
+`train_unc_head.py` for a *real* calibration read → unc-003 corrector-swap SPRT.
 
 ---
 
-## 2026-08-14 — H2 fully closed; NF-002 datagen built; deployment design settled
+## 2026-08-14 — H2 fully closed; unc-002 datagen built; deployment design settled
 
-Closed H2's last asterisk and built the NF-002 label pipeline end (C++ side).
+Closed H2's last asterisk and built the unc-002 label pipeline end (C++ side).
 
 - **H2 fully closed — MDN ≥ flow, no asterisk.** Ran the **M≫K** stress run
   (`many_modes8`/`10`, modes 8/10 > MDN K=5 — the flow's last plausible win). Even
@@ -126,8 +162,8 @@ Closed H2's last asterisk and built the NF-002 label pipeline end (C++ side).
   MODEL. Also **fixed the Gaussian-`mdn` NaN blowup**: root cause `log(softmax)`→`log(0)`;
   grad-clipping *cannot* fix an already-NaN grad (verified byte-identical); scoped fix =
   `log_softmax` + raised σ floor (exp−6→exp−4), `mdn_t`/flow/QR byte-identical so no re-run.
-  See [NF-001b](experiments/NF-001b.md).
-- **NF-002 datagen — uncertainty-label mode implemented** (`src/datagen.cc`,
+  See [unc-001b](experiments/unc-001b.md).
+- **unc-002 datagen — uncertainty-label mode implemented** (`src/datagen.cc`,
   config `mode: uncertainty`). Per sampled position: fixed-depth + node-capped `v*` (also
   the game move), `v = Board::Evaluate()` (raw static, STM POV), row
   `fen | v | v* | u | depth | nodes | result`; **inverted tactical filters** (keep
@@ -137,7 +173,7 @@ Closed H2's last asterisk and built the NF-002 label pipeline end (C++ side).
   macOS stack overflowed (SIGBUS) — the existing nnue mode crashed too; Linux's 8 MB stacks
   masked it. Heap-allocated the Engine. *Open:* `preprocess_data.py` can't parse the 7-field
   row yet; corr-hist metadata deferred; warm-TT-vs-clear is an open tunable.
-- **NF-002 design settled** (docs in [NF-002](experiments/NF-002.md)): fresh **~10M**
+- **unc-002 design settled** (docs in [unc-002](experiments/unc-002.md)): fresh **~10M**
   leakage-free dataset (not the 87M HCE corpus — reuse would bias uncertainty low since those
   FENs trained the net); **frozen NNUE trunk + MDN head**; ProbCut-anchored sizing (~2–5M
   central, tail-limited by risk `C`; ProbCut fit on ~2,700 positions). **H5 deployment
@@ -145,12 +181,12 @@ Closed H2's last asterisk and built the NF-002 label pipeline end (C++ side).
   incremental accumulator; distribution baked onto a **fixed-point cp grain** (C51/QR-DQN
   style) for integer inference, per-heuristic SPSA-tunable `C`.
 
-**Next:** NF-002 training-side (parse the 7-field rows → MDN head), then NF-003 corrector-swap.
+**Next:** unc-002 training-side (parse the 7-field rows → MDN head), then unc-003 corrector-swap.
 
-## 2026-08-09 — NF-001b Phase 1: H2 DECIDED — MDN ≥ flow, flow → backstop
+## 2026-08-09 — unc-001b Phase 1: H2 DECIDED — MDN ≥ flow, flow → backstop
 
 Ran the adversarial, budget-matched stress test (10 seeds, `med` capacity, 4 hard
-generators × 5 models). Results + table in [NF-001b](experiments/NF-001b.md).
+generators × 5 models). Results + table in [unc-001b](experiments/unc-001b.md).
 
 - **No flow advantage anywhere.** On CRPS all conditional models are within ~0.5–1% with
   overlapping CIs; the flow is consistently last-or-tied-last. On tail-qMAE (what a margin
@@ -160,22 +196,22 @@ generators × 5 models). Results + table in [NF-001b](experiments/NF-001b.md).
   demoted to backstop, QR out (worst tails).**
 - **Convincing despite two caveats:** on `heavy_t` even the *mis-specified* Gaussian MDN tied
   the flow — so it's not "the exact parametric won," it's "a wrong-family parametric matched
-  the flow on heavy tails." NF-001's benign read holds under stress. Clean negative result for
+  the flow on heavy tails." unc-001's benign read holds under stress. Clean negative result for
   the flow, exactly the pre-approved "flow refuted is fine."
 - **Phase 2 (crossover) skipped** by its own rule (Phase 1 not close, no hint of a win).
 - **Open TODO:** `many_modes` at `med` had M=5 = MDN K=5, so true MDN underfit (modes >
   components) was never triggered — one targeted M=8–10 run remains to fully close H2.
   Also: fix a Gaussian-MDN numerical blowup on one `regime_switch` seed.
 
-**Next:** NF-002 (real label pipeline) builds on the **MDN** head once the NNUE embedding
+**Next:** unc-002 (real label pipeline) builds on the **MDN** head once the NNUE embedding
 exists; flow carried only as a backstop.
 
 ---
 
-## 2026-08-09 — NF-001 full runs: H0 CLEARED, first H2 read favors MDN
+## 2026-08-09 — unc-001 full runs: H0 CLEARED, first H2 read favors MDN
 
 Ran the full synthetic sweep (n=20k, 150 epochs, 3 seeds, 4 generators × 4 models).
-Results + table in [NF-001](experiments/NF-001.md).
+Results + table in [unc-001](experiments/unc-001.md).
 
 - **H0 gate CLEARED.** flow and MDN recover the closed-form conditionals to ΔNLL
   ≈ +0.007…+0.030 nats, PIT-KS ≈ 0.015–0.038, near-nominal coverage, small tail qMAE.
@@ -191,7 +227,7 @@ Results + table in [NF-001](experiments/NF-001.md).
 - **Caveats:** deck mildly favors MDN (two generators *are* Gaussian mixtures); targets are
   benign. Prior, not verdict — keep the flow as a backstop for real, nastier chess error.
 
-**Next:** designed **NF-001b** — a synthetic H2 *stress* test on adversarially hard
+**Next:** designed **unc-001b** — a synthetic H2 *stress* test on adversarially hard
 targets (genuinely heavy tails, sharp/asymmetric heteroscedastic multimodality) with
 matched capacity/compute budgets and quantile-MAE as the primary metric, to find the
 regime (if any) where the flow separates from MDN/QR before betting on real data.
@@ -270,15 +306,15 @@ Worked through the design forks from the proposal review, one at a time. Settled
   Reverses the earlier "corrected-eval additive layer" pick — replacing is cleaner and
   bolder, and Noah's "they do the same job" instinct was the better argument for it.
   - Real risk logged: corr-hist is *online*, the model is *frozen* → must SPRT the
-    corrector-swap **in isolation** (NF-003) before margins (NF-004). Fallback: small
+    corrector-swap **in isolation** (unc-003) before margins (unc-004). Fallback: small
     residual online corr-hist.
   - NPS consequence: the correction/quantile head must be **folded into the NNUE forward
     pass** from day one (H5), not a later distillation.
 
 Docs updated: hypotheses.md (H0–H6, reframed), notes/correction_history.md (new,
-centerpiece), NF-002.md (schema locked). Superseded the proposal's qsearch-eval target.
+centerpiece), unc-002.md (schema locked). Superseded the proposal's qsearch-eval target.
 
-**Next:** install scipy+zuko into `.venv`, scaffold `research/experiments/nf001_synthetic.py`.
+**Next:** install scipy+zuko into `.venv`, scaffold `research/experiments/unc001_synthetic.py`.
 
 ---
 
@@ -300,7 +336,7 @@ centerpiece), NF-002.md (schema locked). Superseded the proposal's qsearch-eval 
     deployment path (H5).
   - Lean toward deep-OmegaZero targets over Stockfish for the pruning goal (H4).
   - The headline experiment is the constant-margin null hypothesis (H1).
-- Allocated **NF-001** (synthetic validation of flow + baselines). Environment gap:
+- Allocated **unc-001** (synthetic validation of flow + baselines). Environment gap:
   need `scipy` and a flow lib (`zuko` preferred) in `.venv`.
 
-**Next:** confirm zuko is the right pick, install research deps, scaffold NF-001.
+**Next:** confirm zuko is the right pick, install research deps, scaffold unc-001.

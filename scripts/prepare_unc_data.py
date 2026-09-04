@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-prepare_unc_data.py — one-stop NF-002 uncertainty data prep: combine + encode.
+prepare_unc_data.py — one-stop unc-002 uncertainty data prep: combine + encode.
 
 Run this once before research/experiments/train_unc_head.py. It chains the two
 steps that turn raw uncertainty datagen output into a ready --train/--val .bin
@@ -60,7 +60,7 @@ from prepare_nnue_data import (  # noqa: E402
     combine_and_encode,
 )
 
-# v / v_star / u are int32, NOT int16: NF-002's signal is the fat signed-error
+# v / v_star / u are int32, NOT int16: unc-002's signal is the fat signed-error
 # tail from the KEPT tactical positions (the filters are inverted vs. NNUE datagen),
 # and clipping those to +/-32767 would corrupt exactly the tail the margins read.
 UNC_RECORD_DTYPE = np.dtype([

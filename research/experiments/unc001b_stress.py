@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""NF-001b: H2 stress test — does the flow separate from MDN/QR on *hard* targets?
+"""unc-001b: H2 stress test — does the flow separate from MDN/QR on *hard* targets?
 
-NF-001 found MDN >= flow, but on benign targets (two were literally Gaussian mixtures),
+unc-001 found MDN >= flow, but on benign targets (two were literally Gaussian mixtures),
 with unmatched budgets and 3 seeds. This harness fixes all three so the H2 decision is
 fair and decisive:
 
@@ -19,18 +19,18 @@ fair and decisive:
 
 Phase 1 decides yes/no on flow separation (with CIs and a pre-registered verdict).
 Phase 2 maps the crossover: how heavy a tail / how many modes before the flow overtakes
-MDN, so NF-002 can check whether real chess error lands in the flow-winning regime.
+MDN, so unc-002 can check whether real chess error lands in the flow-winning regime.
 
-See research/experiments/NF-001b.md for the design and research/hypotheses.md (H2/H3/H5).
+See research/experiments/unc-001b.md for the design and research/hypotheses.md (H2/H3/H5).
 
 Usage:
     # Phase 1 (fair comparison), full rigor:
-    python research/experiments/nf001b_stress.py --phase 1 --seeds 10 --capacity med \
-        --outdir research/experiment_results/NF-001b
+    python research/experiments/unc001b_stress.py --phase 1 --seeds 10 --capacity med \
+        --outdir research/experiment_results/unc-001b
     # Capacity frontier instead of a single preset:
-    python research/experiments/nf001b_stress.py --phase 1 --capacity sweep
+    python research/experiments/unc001b_stress.py --phase 1 --capacity sweep
     # Phase 2 (crossover sweep) — only if Phase 1 is close:
-    python research/experiments/nf001b_stress.py --phase 2 --seeds 5
+    python research/experiments/unc001b_stress.py --phase 2 --seeds 5
 """
 
 from __future__ import annotations
@@ -52,8 +52,8 @@ from scipy import stats
 
 import zuko
 
-# Reuse the shared plumbing from NF-001 so the two harnesses can't drift apart.
-from nf001_synthetic import (
+# Reuse the shared plumbing from unc-001 so the two harnesses can't drift apart.
+from unc001_synthetic import (
     CTX_DIM,
     DEVICE,
     Generator,
@@ -260,7 +260,7 @@ STRESS_GENERATORS = {
         make_regime_switch(),
         make_hetero_skew(),
         make_bounded_edge(),
-        # M>K variants close the NF-001b asterisk: at med, MDN K=5, so only these
+        # M>K variants close the unc-001b asterisk: at med, MDN K=5, so only these
         # trigger true MDN underfit (modes > components) — the one regime where the
         # flow could still separate. Run Phase 1 on them to get the full metric block
         # (tail-qMAE + paired deltas), which Phase 2's CRPS-only sweep does not report.
@@ -369,7 +369,7 @@ class QRP(Model):
         return self._predict_grid(_to_t(x)).cpu().numpy()
 
     # NLL is deliberately not implemented: QR's finite-difference density is not a proper
-    # score (see NF-001). QR is judged on CRPS / pinball / coverage / quantile-MAE only.
+    # score (see unc-001). QR is judged on CRPS / pinball / coverage / quantile-MAE only.
     def cdf(self, u, x):
         g = self._grid(x)
         u = np.asarray(u).reshape(-1)
@@ -407,7 +407,7 @@ class MDNP(Model):
         through log_softmax in log-space (see fit); callers needing probabilities
         softmax the logits themselves. The Gaussian sigma floor is raised (exp(-6) ->
         exp(-4)) so a component cannot collapse onto a ~0.0025 spike that NaNs the NLL
-        (the NF-001b regime_switch blowup). The Student-t path is left byte-identical.
+        (the unc-001b regime_switch blowup). The Student-t path is left byte-identical.
         """
         out = self.net(xt)
         if self.family == "studentt":
@@ -528,7 +528,7 @@ def pinball(model: Model, x_val, u_val, levels):
 def coverage_stratified(model: Model, x_val, u_val, levels, n_bins=N_STRATA):
     """Per-x-bin coverage; returns (worst |emp-nominal| over bins x levels, per-level dict).
 
-    Global coverage hid the unconditional model's failure in NF-001 — stratifying by x is
+    Global coverage hid the unconditional model's failure in unc-001 — stratifying by x is
     the diagnostic that exposes a model that is right on average but wrong per-position.
     """
     y = u_val.reshape(-1)
@@ -726,7 +726,7 @@ def _plot_phase1(summary, outdir):
         ax.set_xticklabels(models, rotation=45, ha="right", fontsize=8)
         ax.set_title(g, fontsize=9)
         ax.set_ylabel("CRPS (lower=better)")
-    fig.suptitle("NF-001b Phase 1 — CRPS by model (mean ± 95% CI)", fontsize=10)
+    fig.suptitle("unc-001b Phase 1 — CRPS by model (mean ± 95% CI)", fontsize=10)
     fig.tight_layout()
     path = outdir / "phase1_crps.png"
     fig.savefig(path, dpi=120)
@@ -782,7 +782,7 @@ def _plot_crossover(result, outdir):
         ax.set_xlabel(xlabel)
         ax.set_ylabel("CRPS gap (MDN* − flow); >0 ⇒ flow wins")
         ax.set_title(f"crossover — {key}")
-    fig.suptitle("NF-001b Phase 2 — where does the flow overtake MDN?", fontsize=10)
+    fig.suptitle("unc-001b Phase 2 — where does the flow overtake MDN?", fontsize=10)
     fig.tight_layout()
     path = outdir / "phase2_crossover.png"
     fig.savefig(path, dpi=120)
@@ -809,7 +809,7 @@ def main():
                    dest="nu_grid", help="Phase 2 tail-heaviness sweep (df; smaller=heavier)")
     p.add_argument("--modes-grid", nargs="+", type=int, default=[2, 3, 4, 5, 6],
                    dest="modes_grid", help="Phase 2 mode-count sweep")
-    p.add_argument("--outdir", default="research/experiment_results/NF-001b")
+    p.add_argument("--outdir", default="research/experiment_results/unc-001b")
     args = p.parse_args()
 
     if args.phase in ("1", "both"):

@@ -38,7 +38,7 @@ Consequences:
 
 The flip side: because a 1-D CNF *is* essentially "learn the conditional quantile
 function," it sits very close to **quantile regression**, which learns quantiles
-directly via the pinball loss. This is exactly why NF-001 pits them against each other
+directly via the pinball loss. This is exactly why unc-001 pits them against each other
 (H2) — the flow has to justify its extra machinery on calibration, and if it only ties
 QR, QR likely wins on deployment simplicity (H5).
 
@@ -67,11 +67,11 @@ conditional NSF with one transform, and is also a clean drop-in for the QR basel
 - Roll-our-own 1-D conditional spline — genuinely viable given the 1-D collapse, and
   removes a dependency, but defer unless zuko fights us.
 
-**Decision (pending NF-001 smoke test):** start with zuko for velocity; keep the
+**Decision (pending unc-001 smoke test):** start with zuko for velocity; keep the
 hand-rolled spline as a fallback and as the eventual thing we distill into for the
 engine.
 
-## Baselines the flow must beat (NF-001, H2)
+## Baselines the flow must beat (unc-001, H2)
 
 1. **Quantile regression** — MLP `x → {q-quantiles}` trained with pinball loss.
    Monotone-in-q via sorting or a monotone parameterization. Directly optimizes the
@@ -109,7 +109,7 @@ flow offline for the science. Measure NPS before believing any of this.
 ## Open method questions
 
 - One conditional spline vs a small stack — does depth help for a 1-D target, or just
-  overfit? (NF-001)
+  overfit? (unc-001)
 - Best conditioner input: raw NNUE accumulator vs final hidden layer vs a dedicated
   embedding. (needs the trained net; deferred)
 - Log-space modeling if we ever revert to `|u|` (nonnegative, heavy tail) vs signed

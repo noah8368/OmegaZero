@@ -1,7 +1,7 @@
 # Notes: From Error Distribution to Pruning Margin
 
 The concrete bridge from the learned conditional error distribution `p(u | x)` to the
-search heuristics. This is the design NF-004 (H1) implements and NF-003 (H6) builds
+search heuristics. This is the design unc-004 (H1) implements and unc-003 (H6) builds
 toward. Relates to [hypotheses.md](../hypotheses.md) H1, H3, H5, H6 and
 [correction_history.md](correction_history.md).
 
@@ -117,7 +117,7 @@ still win), but it means:
 - SPSA rescuing calibration for Elo is a feature, not a bug; the honest PIT/coverage
   numbers are still the science.
 
-## Open questions for NF-004
+## Open questions for unc-004
 - Per-heuristic `C` vs a shared `C` — start shared (fewer params), split if SPRT plateaus.
 - Depth interaction: existing margins scale with depth; does `C` need to, or does the
   conditional quantile already absorb the depth-dependence? (The `v*` target depth is
