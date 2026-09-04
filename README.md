@@ -12,7 +12,7 @@
   <a href="./LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License">
   </a>
-  <img src="https://img.shields.io/badge/Elo-2150-blue.svg" alt="2348 Elo">
+  <img src="https://img.shields.io/badge/Elo-2348-blue.svg" alt="2348 Elo">
   <img src="https://img.shields.io/badge/UCI-Compatible-success.svg" alt="UCI Compatible">
   <img src="https://img.shields.io/badge/NNUE-HalfKP-blue.svg" alt="NNUE HalfKP">
   <img src="https://img.shields.io/github/v/release/noah8368/OmegaZero" alt="Latest Release">
