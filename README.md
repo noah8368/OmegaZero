@@ -12,7 +12,7 @@
   <a href="./LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License">
   </a>
-  <img src="https://img.shields.io/badge/Elo-2150-blue.svg" alt="2150 Elo">
+  <img src="https://img.shields.io/badge/Elo-2150-blue.svg" alt="2348 Elo">
   <img src="https://img.shields.io/badge/UCI-Compatible-success.svg" alt="UCI Compatible">
   <img src="https://img.shields.io/badge/NNUE-HalfKP-blue.svg" alt="NNUE HalfKP">
   <img src="https://img.shields.io/github/v/release/noah8368/OmegaZero" alt="Latest Release">
@@ -34,13 +34,30 @@ OmegaZero is a chess engine with a built-in terminal interface. The name *OmegaZ
 
 ### Elo Estimate
 
+OmegaZero's strength is anchored to the [CCRL](https://computerchess.org.uk/ccrl/404/) rating
+scale rather than to a single opponent's internal Elo. A round-robin is played under
+CCRL-matched conditions (one thread, no tablebases, 10s + 0.1s per game) against a ladder of
+reference engines whose CCRL Blitz ratings straddle OmegaZero — the [Blunder](https://github.com/deanmchris/blunder)
+6.1.0–7.6.0 versions plus [Fruit 2.1](https://www.chessprogramming.org/Fruit) as an independent
+cross-check. Feeding every game into [Ordo](https://github.com/michiguel/Ordo) with the anchor
+ratings held fixed yields a maximum-likelihood rating on the CCRL scale, placing OmegaZero at
+roughly **2350 Elo**. Each anchor's score against OmegaZero (labeled below) lands close to the
+fitted logistic curve, which is the check that the scale transferred cleanly.
+
 <p align="center">
-  <img src="./figs/elo.png" width="600" alt="Elo Estimation Plot">
+  <img src="./figs/elo_calibration.png" width="640" alt="CCRL-Anchored Elo Estimation">
   <br>
-  <em>Elo estimate from 2,800 games of OmegaZero v4 vs Stockfish (1s/move), with 95% bootstrap CI.</em>
+  <em>CCRL-anchored Elo: OmegaZero at 2348 ± 33, fit by Ordo over a round-robin against the Blunder ladder and Fruit 2.1 (10+0.1, 100 games per pairing, 1,500 total).</em>
 </p>
 
 ### Elo Gain
+
+Every release is gated by a [Sequential Probability Ratio Test (SPRT)](https://www.chessprogramming.org/Match_Statistics#SPRT)
+against the previous version — a change ships only once it has demonstrated a statistically
+significant Elo gain. The chart below tracks that gain from v1 through v5; error bars are 95%
+confidence intervals. The v4→v5 bar is the largest jump: replacing the handcrafted evaluation
+with the NNUE network won 125 of 144 games outright (+441.7 Elo), its wider error bar simply
+reflecting the small sample the SPRT needed before crossing the acceptance bound.
 
 <p align="center">
   <img src="./figs/sprt_gauntlet_elo.png" width="480" alt="SPRT Elo Gain Per Version">
@@ -49,6 +66,11 @@ OmegaZero is a chess engine with a built-in terminal interface. The name *OmegaZ
 </p>
 
 ### Win / Draw / Loss Breakdown
+
+The same SPRT matches, broken down into wins, draws, and losses for the newer version in each
+pair. Wins (green) dominate every bar; the v5-vs-v4 bar is almost pure green — the NNUE-powered
+v5 lost just 2 of 144 games to v4 (125 wins, 17 draws) — mirroring the near-lossless v3→v4
+result, while the closer v2→v3 matchup rode a larger sample to significance.
 
 <p align="center">
   <img src="./figs/sprt_gauntlet_wdl.png" width="600" alt="SPRT W/D/L Breakdown">
@@ -167,7 +189,7 @@ To reduce the [Horizon Effect](https://www.chessprogramming.org/Horizon_Effect),
 <p align="center">
   <img src="./figs/depth_vs_time.png" width="600" alt="Search Depth vs Time">
   <br>
-  <em>Search depth vs time across four standard positions (log scale) from OmegaZero v4</em>
+  <em>Search depth vs time across four standard positions from OmegaZero v5</em>
 </p>
 
 #### Time Management
@@ -178,6 +200,13 @@ Under a clock, OmegaZero must decide how long to think without flagging on time.
 
 Precomputed attack tables are used for non-sliding pieces, and sliding piece attacks are generated using the [Magic Bitboard](http://pradu.us/old/Nov27_2008/Buzz/research/magic/Bitboards.pdf) technique. The engine generates [pseudo-legal moves](https://www.chessprogramming.org/Move_Generation#Pseudo-legal), with legality verified during move execution. The correctness of the move generator was confirmed using [Perft](https://www.chessprogramming.org/Perft) with
 the positions from [this page](https://www.chessprogramming.org/Perft_Results).
+
+The plot below tracks raw search throughput — nodes searched per second — across four canonical
+positions from v1 to v5. Throughput depends heavily on the position: the tactically dense
+*kiwipete* position is consistently the slowest, since its high piece count and branching factor
+maximize the move-generation and evaluation work per node. NPS is a throughput metric, not a
+strength one — a slower but more accurate evaluation can still play stronger — so these curves
+should be read alongside the [Elo results](#elo-gain) above, not in place of them.
 
 <p align="center">
   <img src="./figs/version_nps_by_position.png" width="600" alt="NPS by Position Across Versions">

@@ -1,0 +1,7 @@
+engine,role,published_elo,fitted_elo,error,floated_elo,residual,vs_oz_w_d_l
+OmegaZero,test,,2348,33,2369,,
+blunder-6.1.0,anchor,2155,2155,,2183,28,58/15/27
+blunder-7.2.0,anchor,2425,2425,,2449,24,27/18/55
+blunder-7.4.0,anchor,2532,2532,,2547,15,18/24/58
+blunder-7.6.0,anchor,2631,2631,,2638,8,17/14/69
+fruit-2.1,independent,2685,2685,,2730,45,9/9/82
