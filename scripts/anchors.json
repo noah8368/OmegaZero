@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "CCRL-scale anchor engines for `scripts/elo.py calibrate`. Ratings are on the",
+    "CCRL Blitz (2'+1\") scale. VERIFY every rating against the live list before a",
+    "calibration run -- published ratings drift, and Blunder/Stash numbering is",
+    "confusable: https://computerchess.org.uk/ccrl/404/",
+    "",
+    "Build the binaries with scripts/fetch_anchors.sh (into the git-ignored",
+    "engines/ dir). `cmd` paths are relative to the repo root. `independent` marks",
+    "an anchor from a different eval family than the Blunder ladder; it ties the",
+    "single-family ladder to true CCRL scale and is the primary cross-check.",
+    "",
+    "Ratings verified 2026-09-02: Blunder rungs match the CCRL Blitz column of the",
+    "Blunder README; Fruit 2.1 is ~2685 on CCRL Blitz (NOT the ~2450 the design",
+    "doc guessed). Re-verify against the live list before each calibration run."
+  ],
+  "anchors": [
+    { "name": "blunder-5.0.0", "cmd": "engines/blunder/blunder-5.0.0", "proto": "uci", "elo": 2080 },
+    { "name": "blunder-6.1.0", "cmd": "engines/blunder/blunder-6.1.0", "proto": "uci", "elo": 2155 },
+    { "name": "blunder-7.2.0", "cmd": "engines/blunder/blunder-7.2.0", "proto": "uci", "elo": 2425 },
+    { "name": "blunder-7.4.0", "cmd": "engines/blunder/blunder-7.4.0", "proto": "uci", "elo": 2532 },
+    { "name": "blunder-7.6.0", "cmd": "engines/blunder/blunder-7.6.0", "proto": "uci", "elo": 2631 },
+    { "name": "blunder-8.0.0", "cmd": "engines/blunder/blunder-8.0.0", "proto": "uci", "elo": 2674 },
+    { "name": "fruit-2.1", "cmd": "engines/fruit/fruit", "proto": "uci", "elo": 2685, "independent": true }
+  ]
+}

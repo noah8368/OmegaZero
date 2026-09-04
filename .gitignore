@@ -1,5 +1,7 @@
 build
 debug_build
+# Calibration anchor engines + Ordo, built by scripts/fetch_anchors.sh.
+engines/
 .venv
 __pycache__
 **/.vscode/**

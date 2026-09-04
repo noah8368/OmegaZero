@@ -284,6 +284,11 @@ def completed_versions():
     return {r["version"] for r in load_history()}
 
 
+def is_release_version(version):
+    """True for release tags like v1, v5 — not dev commit hashes."""
+    return re.fullmatch(r"v\d+", version) is not None
+
+
 # ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
@@ -302,10 +307,16 @@ def generate_plots(current_version=None):
         print("No history data for plots.")
         return
 
+    # The "by version" charts track release progression, so show only release
+    # tags (plus the current version if it is a WIP commit being benchmarked);
+    # dev-commit rows stay in the CSV as a record but are filtered out here.
     versions = []
     knps_values = []
     for row in history:
-        versions.append(row["version"])
+        v = row["version"]
+        if not is_release_version(v) and v != current_version:
+            continue
+        versions.append(v)
         knps_values.append(int(row["avg_knps"]))
 
     RESULTS_BASE.mkdir(parents=True, exist_ok=True)
@@ -349,9 +360,12 @@ def generate_plots(current_version=None):
     detail_versions = []
     seen = set()
     for r in detail:
-        if r["version"] not in seen:
-            detail_versions.append(r["version"])
-            seen.add(r["version"])
+        v = r["version"]
+        if not is_release_version(v) and v != current_version:
+            continue
+        if v not in seen:
+            detail_versions.append(v)
+            seen.add(v)
 
     positions = []
     seen_pos = set()
@@ -553,7 +567,7 @@ def main():
     elif args.command == "gauntlet":
         cmd_gauntlet(args)
     elif args.command == "plot":
-        generate_plots(current_version=get_version_tag())
+        generate_plots()
 
 
 if __name__ == "__main__":
