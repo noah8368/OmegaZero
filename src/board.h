@@ -225,6 +225,12 @@ class Board {
   // WARNING: Calling this function without first calling MakeNullMove() will
   // cause undefined behavior.
   auto UnmakeNullMove() -> void;
+  // Recomputes the live NNUE accumulators from scratch for the current
+  // position and resets the accumulator stack. Needed after unwinding plies
+  // outside a search (e.g. the terminal "undo" command), because a search
+  // clears the accumulator stack via ResetPos(), so the per-move accumulator
+  // entries UnmakeMove() would otherwise pop are not guaranteed to exist.
+  auto RefreshAccumulators() -> void;
 
  private:
   auto GetAttackersToSq(S8 sq, S8 attacked_player) const -> Bitboard;

@@ -449,6 +449,12 @@ auto Game::UndoLastUserMove() -> bool {
     ply_stack_.pop_back();
   }
 
+  // UnmakeMove() restored the position via the board's move/castling/ep history
+  // stacks, but the NNUE accumulator stack was cleared by the engine's last
+  // search (ResetPos()), so the per-ply accumulator pops above could not run.
+  // Recompute the live accumulators from scratch for the reverted position.
+  board_.RefreshAccumulators();
+
   // The opening-book pruning in GetOpeningMove() is destructive and not worth
   // reconstructing; stay out of book for the remainder of the game after an undo.
   on_opening_ = false;

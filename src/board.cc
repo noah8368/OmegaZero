@@ -1065,9 +1065,19 @@ auto Board::PushAccumulators() -> void {
 }
 
 auto Board::PopAccumulators() -> void {
+  // A search clears accum_stack_ via ResetPos(), so an UnmakeMove() issued for
+  // a real game ply outside a search (the terminal "undo") can find the stack
+  // already empty. Guard against that underflow: leave accum_ as-is (the caller
+  // is responsible for refreshing it, e.g. via RefreshAccumulators()) rather
+  // than popping a nonexistent entry, which corrupts the vector.
+  if (accum_stack_.empty()) {
+    return;
+  }
   std::memcpy(accum_, accum_stack_.back().data, sizeof(accum_));
   accum_stack_.pop_back();
 }
+
+auto Board::RefreshAccumulators() -> void { InitAccumulators(); }
 
 static int HalfKpIdx(S8 king_sq, S8 perspective, S8 piece, S8 player, S8 sq) {
   S8 mapped_king = (perspective == kBlack) ? static_cast<S8>(king_sq ^ 56)
