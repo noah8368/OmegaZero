@@ -21,7 +21,7 @@
 # It is usually invoked for you by the per-pipeline prepare scripts, which chain
 # combine + encode-both into the single step to run before training:
 #   * NNUE:        scripts/prepare_nnue_data.py   then  scripts/train_nnue.py
-#   * uncertainty: scripts/prepare_unc_data.py    then  research/experiments/train_unc_head.py
+#   * uncertainty: unc_research/scripts/prepare_unc_data.py    then  unc_research/scripts/train_unc_head.py
 # (Run combine_runs.sh directly only if you want the combined *.txt without
 # pre-baking the .bin; the trainers still auto-encode on staleness either way.)
 

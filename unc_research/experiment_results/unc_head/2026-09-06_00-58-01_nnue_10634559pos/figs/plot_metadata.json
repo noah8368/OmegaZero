@@ -1,0 +1,10 @@
+{
+  "timestamp": "2026-09-06T01:49:08.954752",
+  "git_commit": "49b062c",
+  "command": "model",
+  "run": "/Users/noah/dev/OmegaZero/unc_research/experiment_results/unc_head/2026-09-06_00-58-01_nnue_10634559pos",
+  "val": "/Users/noah/dev/OmegaZero/nnue/data/unc_11M/validation_data.bin",
+  "positions": 1173730,
+  "median_abs_err_raw": 68.0,
+  "median_abs_err_corrected": 62.24362201709144
+}

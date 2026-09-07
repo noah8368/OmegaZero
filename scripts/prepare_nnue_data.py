@@ -12,7 +12,7 @@ datagen output into a ready --train/--val .bin pair:
 
 The NNUE row schema is 3-field (STM POV):  FEN | score | result
 
-This is the NNUE counterpart of scripts/prepare_unc_data.py; both share the same
+This is the NNUE counterpart of unc_research/scripts/prepare_unc_data.py; both share the same
 combine+encode flow (combine_and_encode, defined here and imported by the unc
 script) and differ only in the row schema. The importable encoder (encode_nnue,
 RECORD_DTYPE, fen_to_halfkp, MAX_FEATURES) is also what scripts/train_nnue.py's

@@ -1,0 +1,205 @@
+# unc-001b: H2 stress test — where (if anywhere) does the flow separate?
+
+- **Status:** CONCLUDED (2026-08-14) — **H2 fully closed: MDN ≥ flow, flow → backstop, no asterisk.** Phase 1 (2026-08-09) decided it; the M≫K follow-up + Gaussian-`mdn` fix (2026-08-14) closed the last caveat. Phase 2 skipped by rule.
+- **Hypotheses:** [H2](../hypotheses.md#h2--which-conditional-model-is-best-flow-vs-qr-vs-mdn) (headline),
+  with [H3](../hypotheses.md#h3--signeddirectional-error-is-the-right-target) (signed/both-tail focus) and
+  [H5](../hypotheses.md#h5--the-margin-is-nps-viable-via-a-folded-in-head) (latency/param budget)
+- **Started / Concluded:** 2026-08-09 / —
+- **Code:** `unc_research/scripts/unc001b_stress.py` — reuses the Model plumbing from
+  `unc001_synthetic.py`; adds adversarial generators, parameterized/budget-matched models
+  (incl. a Student-t-component MDN), CRPS + both-tail pinball/qMAE + x-stratified coverage,
+  multi-seed mean±95%CI with a paired flow-vs-best test and a pre-registered verdict, and a
+  Phase-2 crossover sweep. Outputs `phase1_summary.json` / `phase2_crossover.json` + plots.
+- **Run (full rigor):** `python unc_research/scripts/unc001b_stress.py --phase 1 --seeds 10 --capacity med --outdir unc_research/experiment_results/unc-001b`
+  (add `--capacity sweep` for the frontier; `--phase 2` for the crossover map).
+
+### Smoke test (2026-08-09, n≤6k, ≤120 epochs — NOT the real run)
+
+Plumbing only. At 8 epochs QR blows up (CRPS≈8, PIT-KS≈0.9) purely from under-training on
+heavy tails; at 120 epochs it recovers cleanly (CRPS 0.34, PIT-KS 0.03), and all four
+models land in the same ballpark on `heavy_t` with MDN slightly ahead of the flow — the
+verdict logic correctly flips to "keep simpler model." Both phases write their JSON + plots.
+`heavy_t`'s df floor was set to ν=3 (finite variance) so CRPS isn't outlier-dominated.
+- **Predecessor:** [unc-001](unc-001.md) — H0 cleared; synthetic H2 read favored MDN, but on benign targets, unmatched budgets, 3 seeds.
+
+## Why unc-001 couldn't settle H2
+
+Three confounds make the "MDN ≥ flow" read a weak prior, not a verdict:
+
+1. **The targets were benign and biased toward MDN.** `hetero_gaussian` and `bimodal` *are*
+   Gaussian mixtures — MDN's exact model class. The skew-t wasn't heavy-tailed enough to
+   exercise the one place a Gaussian mixture is provably handicapped: polynomial tails.
+2. **Budgets weren't matched.** Capacity, params, train compute, and inference cost were
+   uncontrolled, so "MDN won" could just mean "MDN was better-sized for these easy targets."
+   A deployment decision (H5 cares about per-node NPS) needs the calibration-vs-cost frontier.
+3. **No statistical control.** 3 seeds, "spread looked small." A model-selection claim needs
+   paired significance across seeds on the deployment-relevant metric.
+
+## Question
+
+On targets that carry the pathologies we actually expect in eval error — **genuinely heavy
+tails, more modes than the MDN has components, sharply non-smooth conditional dependence, and
+sign-flipping skew** — does the conditional flow measurably beat the *best-tuned* MDN and QR
+on the metrics a pruning margin cares about (**tail quantile accuracy, both tails; CRPS**), at
+comparable inference cost? And if so, *how hard must the target be* before the flow wins — so
+we can later check whether measured chess error is in that regime.
+
+## Design
+
+### Generators (adversarial-but-plausible; closed-form CDF/ppf for ground truth)
+
+Each is a stand-in for a property real eval error may have. All keep the 1-D `u`, low-D `x`
+setup and an exact CDF/quantile reference (so PIT / coverage / quantile-MAE stay exact).
+
+1. **`heavy_t`** — location-scale **Student-t**, `u | x ~ t(ν(x))·σ(x) + μ(x)`, with `ν(x)`
+   sweeping into the heavy regime (**ν ∈ ~[2, 8]**, small in part of x-space). *The clean
+   MDN-killer:* a finite Gaussian mixture has exponential tails and must burn components to
+   fake a polynomial tail; the NSF's linear spline tails extrapolate. This is the strongest
+   theoretical case for the flow — if it can't win here, it likely never will.
+2. **`many_modes`** — mixture of **M(x) ∈ {2..5}** Gaussians, weights/means x-dependent, with
+   `M` exceeding a fixed MDN `K`. Tests MDN underfitting when true modes > components. (Paired
+   with a `K` sweep so we test *best* MDN, not a strawman — see Models.)
+3. **`regime_switch`** — **discontinuous** conditional: e.g. unimodal for `x₀<0`, bimodal for
+   `x₀>0`, or a variance jump at a threshold. Stresses the *conditioner network's* ability to
+   represent non-smooth `p(u|x)` — orthogonal to tail shape, a different failure axis.
+4. **`hetero_skew`** — **skew-t with sign-flipping skew** `α(x)` (left-skew ↔ right-skew across
+   x) plus scale growth. Directly exercises H3: asymmetric, direction-dependent tails, where a
+   symmetric or one-sided model should visibly miscalibrate one tail.
+5. *(optional)* **`bounded_edge`** — truncated target with a hard boundary that moves with x
+   (analogue: error compressed near mate scores). Gaussian components leak mass past the edge.
+
+### Models — a *fair* fight (fix unc-001's confound #2)
+
+- **Shared conditioner trunk.** All heads (flow / MDN / QR) sit on an identical MLP trunk
+  (same width/depth) so the comparison is about the *head*, not trunk capacity.
+- **Matched parameter budget + capacity sweep.** Report each model's best config at a matched
+  param budget **and** the full calibration-vs-{params, train-time, inference-latency} Pareto
+  frontier. The deployment answer is a frontier, not a point.
+- **MDN, not strawman:** sweep `K ∈ {3, 5, 10}`; add an optional **Student-t-component MDN**
+  variant so it has a fighting chance on `heavy_t`. Report best-of.
+- **QR done right:** finer quantile grid (≥19 levels), non-crossing enforced; **judge on
+  pinball / CRPS / quantile-MAE, drop the finite-diff NLL entirely** (unc-001's negative-ΔNLL
+  artifact). Optionally fit a monotone-spline CDF through the grid for a proper PIT.
+- **Flow:** NSF; sweep `transforms`/`bins` as its capacity axis.
+- Unconditional Gaussian stays as the floor.
+
+### Metrics — deployment-relevant, model-agnostic
+
+- **CRPS** — proper, closed-form-friendly, works for *all three* (including QR) without any
+  density hack. **Primary single scalar** for a fair cross-model comparison.
+- **Tail quantile-MAE at {0.90, 0.95, 0.99}, BOTH tails** (signed, per H3) — the number a
+  margin literally reads. **Primary decision metric.**
+- **Pinball loss** at the deployment quantiles.
+- **PIT-KS + coverage, stratified by x-bin** (global coverage hid failures in unc-001).
+- **Cost:** parameter count, train wall-clock, **per-sample inference latency** (H5 feasibility).
+
+### Statistics (fix confound #3)
+
+- **10 seeds**, same generated data per seed across all models (paired).
+- Report **mean ± 95% CI**; for flow-vs-best-alternative on the primary metric, a **paired
+  test across seeds** (Wilcoxon signed-rank or paired bootstrap). A ranking claim ships only
+  if it exceeds seed noise.
+
+## Pre-registered decision rule
+
+- **Flow becomes the primary model iff** it beats the best-tuned alternative (MDN or QR) on
+  **CRPS *and* tail-qMAE**, on at least the `heavy_t` and `many_modes` regimes, by a margin
+  **exceeding the paired 95% CI**, at inference latency **≤** the alternative (or a latency
+  gap justified by the calibration gain under H5's per-node budget).
+- **Otherwise:** MDN primary; QR for tail-specific margins; **flow retired to backstop** —
+  re-tested only if real chess error (unc-002) proves nastier than these synthetics.
+- Either way, publish the **crossover map** (Phase 2): the tail-heaviness `ν*` and mode-count
+  `M*` at which the flow overtakes MDN, so unc-002 can check whether measured chess error lands
+  in the flow-winning region.
+
+## Phases
+
+- **Phase 1 (decisive):** G1–G4, matched-budget best-of, 10 seeds, CRPS + both-tail qMAE +
+  latency. Yes/no on flow separation, with CIs.
+- **Phase 2 (ablation, only if Phase 1 is close or hints a win):** sweep `ν` on `heavy_t` and
+  `M` on `many_modes` to map the flow-win boundary — turns a yes/no into "how hard must the
+  target be for the flow to matter."
+
+## Results — Phase 1 (2026-08-09)
+
+10 seeds, matched `med` capacity, 4 core generators × 5 models. CRPS and tail-qMAE are
+mean ± 95% CI over seeds (`phase1_summary.json`; `phase1_crps.png`). Ranked by CRPS.
+
+| generator | CRPS (best → worst) | tail-qMAE winner | flow rank |
+|---|---|---|---|
+| `heavy_t` | mdn 0.3106 · mdn_t 0.3106 · qr 0.3110 · **flow 0.3111** · uncond 0.647 | mdn_t 0.058 (flow 0.080) | last |
+| `many_modes` | mdn 0.9397 · mdn_t 0.9398 · **flow 0.9415** · qr 0.9433 · uncond 1.415 | mdn 0.060 (flow 0.093) | 3rd |
+| `regime_switch` | mdn_t 0.5717 · **flow 0.5730** · qr 0.5767 · uncond 0.730 · *(mdn blew up)* | mdn_t 0.047 (flow 0.064) | 2nd (≈mdn_t) |
+| `hetero_skew` | mdn 0.2266 · mdn_t 0.2267 · **flow 0.2273** · qr 0.2291 · uncond 0.362 | mdn_t 0.043 (flow 0.056) | 3rd |
+
+Costs: flow ≈17.5k params (3× the MDNs), fast inference (~2 µs/pt); mdn_t robust + best
+tails but ~80–100 µs/pt (scipy-t bisection — a harness artifact, not a deployment cost);
+qr fast but worst tail-qMAE everywhere; unconditional floor blows up as expected.
+
+**Two caveats logged (see Interpretation), not failures:** `many_modes` at `med` has
+M=5 = MDN K=5, so MDN underfit (modes > components) was never triggered; and `heavy_t`
+is literally a Student-t, so `mdn_t` is exactly-specified there.
+
+**One code issue:** the Gaussian `mdn` blew up on one `regime_switch` seed (CRPS 8.46±10.3,
+PIT-KS NaN) — a numerical robustness bug (collapsed component / bisection-bound overflow).
+`mdn_t` was robust throughout. Fix before relying on the Gaussian variant.
+
+## Interpretation
+
+**H2 — decided: no flow advantage; simpler model wins.** On CRPS all conditional models sit
+within ~0.5–1% with heavily overlapping CIs — no separation on any generator — and the flow
+is consistently last-or-tied-last. On tail-qMAE (the metric a margin actually reads) the MDN
+family is clearly best and the flow clearly behind, **including on `heavy_t` (its strongest
+theoretical case) and `regime_switch` (the conditioner-stress case)**. The pre-registered rule
+(flow ships only if it beats the best alt on CRPS *and* tail-qMAE on `heavy_t`+`many_modes`
+beyond the CI) fails on both. **Verdict: MDN primary (lean `mdn_t` — robust + best tails);
+flow → backstop; QR out (worst tails).**
+
+The one thing that survives the caveats and makes this convincing: on `heavy_t`, the
+*mis-specified* Gaussian `mdn` tied the flow — so it isn't just "the exactly-right parametric
+won," it's "even a wrong-family parametric matched the flow on heavy tails." unc-001's benign
+read holds under adversarial stress. This is a clean negative result for the flow, exactly the
+"best tool wins / flow refuted is fine" outcome the framing pre-approved.
+
+**Phase 2 (crossover) — SKIPPED by the pre-registered rule** ("run only if Phase 1 is close or
+hints a win"). It is neither; running it would be incremental grind for no decision value.
+
+## M≫K follow-up + Gaussian-`mdn` fix — 2026-08-14 (both TODOs closed)
+
+**M≫K run — the flow's last chance, refuted.** Ran Phase 1 on `many_modes8` and
+`many_modes10` (M=8/10 > MDN K=5, the one regime where true MDN underfit could let the flow
+win), all 5 models, 10 seeds. Even underfitting (K=5 modeling 8–10 modes) the MDN stays
+ahead:
+
+| gen | model | CRPS | tail-qMAE | PIT-KS |
+|---|---|---|---|---|
+| many_modes8  | flow | 0.7504 | 0.0970 | 0.021 |
+|              | mdn  | 0.7489 | 0.0736 | 0.019 |
+|              | mdn_t| 0.7487 | 0.0758 | 0.018 |
+|              | qr   | 0.7509 | 0.2397 | 0.037 |
+| many_modes10 | flow | 0.6713 | 0.0917 | 0.019 |
+|              | mdn  | 0.6704 | 0.0769 | 0.019 |
+|              | mdn_t| 0.6702 | 0.0766 | 0.018 |
+
+Pre-registered paired verdict (flow vs best alt = `mdn_t`), both generators now decisive:
+CRPS Δ(alt−flow) = −0.0016±0.0008 (p=0.006) and −0.0012±0.0008 (p=0.020) — MDN *ahead*;
+tail-qMAE Δ = −0.0212±0.0106 and −0.0151±0.0082 (p=0.004 both) — MDN clearly ahead. QR tail
+worst (~0.24, confirms QR out); unconditional control blows up (CRPS ~1.4). **VERDICT: KEEP
+SIMPLER MODEL — the asterisk is closed; the flow does not separate even in its last plausible
+regime.** (`unc_research/experiment_results/unc-001b-MggK/`.)
+
+**Gaussian-`mdn` numerical blowup — fixed.** Reproduced exactly (CRPS 8.46±10.3, PIT-KS NaN).
+Root cause: the closure took `log(softmax(logits))`, so an underflowed component (or a σ-floor
+collapse) fed `log(0) → −inf/NaN` into the mixture NLL. **Grad-clipping does not fix it** —
+verified byte-identical, because `clip_grad_norm_` can't sanitize an already-NaN gradient.
+Fix (scoped to the Gaussian path; `mdn_t`/flow/QR byte-identical, so no full re-run): feed
+`log_softmax(logits)` straight into `logsumexp`, and raise the Gaussian σ floor exp(−6)→exp(−4).
+Post-fix: CRPS **0.575±0.007**, PIT-KS **0.025** — sits next to `mdn_t`.
+
+## Follow-ups
+
+- ✅ **DONE — `many_modes` M≫K caveat closed** (see above): flow refuted even at M≫K.
+- ✅ **DONE — Gaussian `mdn` numerical blowup fixed** (log_softmax + raised σ floor).
+- Feeds the H2 model choice for **unc-002** (real label pipeline) and **unc-004** (per-node
+  margin vs SPSA constant): unc-002 builds on the **MDN** head; the flow is carried only as a
+  backstop, re-tested if real chess error (unc-002) proves nastier than these synthetics.

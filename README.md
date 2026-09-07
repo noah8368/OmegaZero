@@ -198,7 +198,7 @@ Under a clock, OmegaZero must decide how long to think without flagging on time.
 
 ### Move Generation
 
-Precomputed attack tables are used for non-sliding pieces, and sliding piece attacks are generated using the [Magic Bitboard](http://pradu.us/old/Nov27_2008/Buzz/research/magic/Bitboards.pdf) technique. The engine generates [pseudo-legal moves](https://www.chessprogramming.org/Move_Generation#Pseudo-legal), with legality verified during move execution. The correctness of the move generator was confirmed using [Perft](https://www.chessprogramming.org/Perft) with
+Precomputed attack tables are used for non-sliding pieces, and sliding piece attacks are generated using the [Magic Bitboard](http://pradu.us/old/Nov27_2008/Buzz/unc_research/magic/Bitboards.pdf) technique. The engine generates [pseudo-legal moves](https://www.chessprogramming.org/Move_Generation#Pseudo-legal), with legality verified during move execution. The correctness of the move generator was confirmed using [Perft](https://www.chessprogramming.org/Perft) with
 the positions from [this page](https://www.chessprogramming.org/Perft_Results).
 
 The plot below tracks raw search throughput — nodes searched per second — across four canonical
@@ -456,15 +456,16 @@ python3 scripts/generate_nnue_plots.py model       # evaluate model accuracy
 **Uncertainty Research.** Labels are eval-error records (7-field: `FEN | v | v_star | u | depth | nodes | result`) for modeling the conditional error distribution `p(u | x)`. This data lives in a **separate** dir, `nnue/data_uncertainty` — `combine_runs.sh` refuses to mix the two schemas in one combined file. Config: copy `nnue/config.uncertainty.json.example` → `nnue/config.json` (`mode: uncertainty`), and set `"output": "nnue/data_uncertainty"`.
 ```bash
 make datagen && ./scripts/run_datagen.sh                          # generate labeled data (mode: uncertainty)
-python3 scripts/prepare_unc_data.py                              # combine runs (dedup) + encode → combined/*.bin
-.venv/bin/python research/experiments/train_unc_head.py \
+python3 unc_research/scripts/prepare_unc_data.py                              # combine runs (dedup) + encode → combined/*.bin
+.venv/bin/python unc_research/scripts/train_unc_head.py \
     --trunk nnue/nnue.bin \
     --train nnue/data_uncertainty/combined/training_data.txt \
     --val   nnue/data_uncertainty/combined/validation_data.txt   # auto-encodes .txt→.bin; fits p(u|x); writes plots
-python3 scripts/generate_unc_head_plots.py data nnue/data_uncertainty/combined/validation_data.bin  # dataset diagnostics
-python3 research/experiments/train_unc_head.py plot research/experiment_results/unc_head/<run>/   # re-render a run's plots into <run>/figs/
+python3 unc_research/scripts/generate_unc_plots.py data nnue/data/unc_11M/validation_data.bin              # dataset diagnostics
+python3 unc_research/scripts/generate_unc_plots.py model unc_research/experiment_results/unc_head/<run>/       # deeper trained-head diagnostics
+python3 unc_research/scripts/train_unc_head.py plot unc_research/experiment_results/unc_head/<run>/   # re-render a run's plots into <run>/figs/
 ```
-Both pipelines follow the same shape: `prepare_<x>_data.py` is the single step before training (combine worker shards with dedup, then encode both splits to `.bin`), and both trainers also auto-encode `.txt`→`.bin` on staleness, so you can point them straight at the combined `.txt` and skip the prepare step. Each trainer owns its run's figures — it plots at the end of a run and re-renders them from the saved artifacts via its `plot` subcommand — while `generate_<x>_plots.py` is the separate dataset/model analysis tool. Training saves, per run, a timestamped `research/experiment_results/unc_head/<run>/` mirroring `nnue/model`: per-epoch `checkpoints/` (local-only), the best-val head as `best.bin`, `metrics.json`, and calibration/loss plots. The result is a valid calibration read only when `--trunk` is the **same net** whose eval produced the datagen labels (the `nnue.bin` present at datagen time).
+Both pipelines follow the same shape: `prepare_<x>_data.py` is the single step before training (combine worker shards with dedup, then encode both splits to `.bin`), and both trainers also auto-encode `.txt`→`.bin` on staleness, so you can point them straight at the combined `.txt` and skip the prepare step. Each trainer owns its run's figures — it plots at the end of a run and re-renders them from the saved artifacts via its `plot` subcommand — while `generate_<x>_plots.py` is the separate dataset/model analysis tool. Training saves, per run, a timestamped `unc_research/experiment_results/unc_head/<run>/` mirroring `nnue/model`: per-epoch `checkpoints/` (local-only), the best-val head as `best.bin`, `metrics.json`, and calibration/loss plots. The result is a valid calibration read only when `--trunk` is the **same net** whose eval produced the datagen labels (the `nnue.bin` present at datagen time).
 
 ### Generating Move Tables
 
