@@ -197,6 +197,9 @@ class Board {
   auto GetPieceOnSq(S8 sq) const -> S8;
   auto GetPlayerOnSq(S8 sq) const -> S8;
   auto GetPlayerToMove() const -> S8;
+  // Eval + the uncertainty head's p(u | x) for the current position, off the
+  // maintained accumulators (requires a fused OZNU net; see unc-007).
+  auto GetUncDistribution() const -> UncDist;
   auto GetCastlingRight(S8 player, S8 side) const -> bool;
 
   auto ToFen() const -> std::string;

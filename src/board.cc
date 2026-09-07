@@ -1058,6 +1058,11 @@ auto Board::InitAccumulators() -> void {
   accum_stack_.reserve(128);
 }
 
+auto Board::GetUncDistribution() const -> UncDist {
+  return g_nnue.EvalWithDistribution(accum_[kWhite], accum_[kBlack],
+                                     player_to_move_);
+}
+
 auto Board::PushAccumulators() -> void {
   AccumEntry entry;
   std::memcpy(entry.data, accum_, sizeof(accum_));

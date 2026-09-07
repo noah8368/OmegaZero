@@ -8,6 +8,7 @@
 
 #include "nnue.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -323,6 +324,11 @@ auto NnueNetwork::LoadHeadStream(istream& f, const string& ctx,
   const int h1 = hidden[0];
   const int h2 = hidden[1];
   const int out2 = 4 * k;
+  if (h1 <= 0 || h2 <= 0 || h1 > kHeadMaxHidden || h2 > kHeadMaxHidden ||
+      k > kMaxMixture || out2 > kHeadMaxOut) {
+    cerr << "OZNU: head too large for inference buffers in " << ctx << endl;
+    return false;
+  }
   auto w0 = std::make_unique<float[]>(static_cast<size_t>(h1) * in_dim);
   auto b0 = std::make_unique<float[]>(h1);
   auto w1 = std::make_unique<float[]>(static_cast<size_t>(h2) * h1);
@@ -447,6 +453,205 @@ auto NnueNetwork::ForwardFromAccumulators(const int16_t* white_accum,
   }
 
   return static_cast<int>(static_cast<int64_t>(output) * 400 / kOutputScale);
+}
+
+// --------------------------------------------------------------------------- #
+//  Uncertainty head: forward + Student-t mixture quantiles
+// --------------------------------------------------------------------------- #
+namespace {
+
+inline auto Softplus(double x) -> double {
+  // Numerically stable log(1 + e^x); matches torch.nn.functional.softplus.
+  return (x > 0.0 ? x : 0.0) + std::log1p(std::exp(-std::fabs(x)));
+}
+
+// Regularized incomplete beta I_x(a, b) via the Numerical Recipes continued
+// fraction -- the kernel of the Student-t CDF. Accurate to ~1e-7, matching
+// scipy.stats.t.cdf closely enough for the parity gate.
+auto BetaCf(double a, double b, double x) -> double {
+  const int kMaxIt = 200;
+  const double kEps = 3.0e-12;
+  const double kFpMin = 1.0e-300;
+  double qab = a + b;
+  double qap = a + 1.0;
+  double qam = a - 1.0;
+  double c = 1.0;
+  double d = 1.0 - qab * x / qap;
+  if (std::fabs(d) < kFpMin) {
+    d = kFpMin;
+  }
+  d = 1.0 / d;
+  double h = d;
+  for (int m = 1; m <= kMaxIt; ++m) {
+    double m2 = 2.0 * m;
+    double aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+    d = 1.0 + aa * d;
+    if (std::fabs(d) < kFpMin) {
+      d = kFpMin;
+    }
+    c = 1.0 + aa / c;
+    if (std::fabs(c) < kFpMin) {
+      c = kFpMin;
+    }
+    d = 1.0 / d;
+    h *= d * c;
+    aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+    d = 1.0 + aa * d;
+    if (std::fabs(d) < kFpMin) {
+      d = kFpMin;
+    }
+    c = 1.0 + aa / c;
+    if (std::fabs(c) < kFpMin) {
+      c = kFpMin;
+    }
+    d = 1.0 / d;
+    double del = d * c;
+    h *= del;
+    if (std::fabs(del - 1.0) < kEps) {
+      break;
+    }
+  }
+  return h;
+}
+
+auto BetaI(double a, double b, double x) -> double {
+  if (x <= 0.0) {
+    return 0.0;
+  }
+  if (x >= 1.0) {
+    return 1.0;
+  }
+  double bt = std::exp(std::lgamma(a + b) - std::lgamma(a) - std::lgamma(b) +
+                       a * std::log(x) + b * std::log1p(-x));
+  if (x < (a + 1.0) / (a + b + 2.0)) {
+    return bt * BetaCf(a, b, x) / a;
+  }
+  return 1.0 - bt * BetaCf(b, a, 1.0 - x) / b;
+}
+
+// Student-t CDF with `nu` degrees of freedom.
+auto StudentTCdf(double t, double nu) -> double {
+  double x = nu / (nu + t * t);
+  double ib = 0.5 * BetaI(0.5 * nu, 0.5, x);
+  return (t >= 0.0) ? 1.0 - ib : ib;
+}
+
+// Mixture CDF in standardized space: sum_k pi_k * t_cdf((y - mu_k)/sigma_k; df_k).
+auto MixtureCdfStd(const UncDist& dist, double y) -> double {
+  double acc = 0.0;
+  for (int i = 0; i < dist.k; ++i) {
+    double z = (y - dist.mu[i]) / dist.sigma[i];
+    acc += dist.pi[i] * StudentTCdf(z, dist.df[i]);
+  }
+  return acc;
+}
+
+}  // namespace
+
+auto UncDist::MeanCp() const -> float {
+  double mean_y = 0.0;
+  for (int i = 0; i < k; ++i) {
+    mean_y += static_cast<double>(pi[i]) * mu[i];  // Student-t mean = loc (df > 1)
+  }
+  return static_cast<float>(mean_y * u_std + u_mean);
+}
+
+auto UncDist::Cdf(float u_cp) const -> float {
+  double y = (static_cast<double>(u_cp) - u_mean) / u_std;
+  return static_cast<float>(MixtureCdfStd(*this, y));
+}
+
+auto UncDist::QuantileCp(float tau) const -> float {
+  // Bisection over the mixture CDF in standardized units; +/-50 std brackets
+  // everything (matches train_unc_head.py calibration()).
+  double lo = -50.0;
+  double hi = 50.0;
+  for (int it = 0; it < 60; ++it) {
+    double mid = 0.5 * (lo + hi);
+    if (MixtureCdfStd(*this, mid) > tau) {
+      hi = mid;
+    } else {
+      lo = mid;
+    }
+  }
+  double y = 0.5 * (lo + hi);
+  return static_cast<float>(y * u_std + u_mean);
+}
+
+auto NnueNetwork::EvalWithDistribution(const int16_t* white_accum,
+                                       const int16_t* black_accum,
+                                       S8 player_to_move) const -> UncDist {
+  UncDist dist;
+  dist.v_cp = ForwardFromAccumulators(white_accum, black_accum, player_to_move);
+  if (!has_head_) {
+    return dist;  // k stays 0: only v_cp is meaningful
+  }
+
+  // Head input x = the SAME clamped [0,127]/127 accumulator concat the eval
+  // builds (stm perspective first), as float. This is the shared-trunk read.
+  const int16_t* first = (player_to_move == kWhite) ? white_accum : black_accum;
+  const int16_t* second = (player_to_move == kWhite) ? black_accum : white_accum;
+  float x[2 * kAccumSize];
+  for (int i = 0; i < kAccumSize; ++i) {
+    x[i] = static_cast<float>(Clamp(first[i], 0, 127)) / 127.0F;
+    x[kAccumSize + i] = static_cast<float>(Clamp(second[i], 0, 127)) / 127.0F;
+  }
+
+  // MLP: in_dim -> h1 (ReLU) -> h2 (ReLU) -> 4k (raw).
+  float layer1[kHeadMaxHidden];
+  for (int j = 0; j < head_h1_; ++j) {
+    float sum = head_b0_[j];
+    const float* row = &head_w0_[static_cast<size_t>(j) * head_in_dim_];
+    for (int i = 0; i < head_in_dim_; ++i) {
+      sum += row[i] * x[i];
+    }
+    layer1[j] = sum > 0.0F ? sum : 0.0F;
+  }
+  float layer2[kHeadMaxHidden];
+  for (int j = 0; j < head_h2_; ++j) {
+    float sum = head_b1_[j];
+    const float* row = &head_w1_[static_cast<size_t>(j) * head_h1_];
+    for (int i = 0; i < head_h1_; ++i) {
+      sum += row[i] * layer1[i];
+    }
+    layer2[j] = sum > 0.0F ? sum : 0.0F;
+  }
+  const int out2 = 4 * head_k_;
+  float raw[kHeadMaxOut];
+  for (int o = 0; o < out2; ++o) {
+    float sum = head_b2_[o];
+    const float* row = &head_w2_[static_cast<size_t>(o) * head_h2_];
+    for (int i = 0; i < head_h2_; ++i) {
+      sum += row[i] * layer2[i];
+    }
+    raw[o] = sum;
+  }
+
+  // Split into (logits, mu, log_sigma, log_df) and apply MDNt's transforms.
+  const int kc = head_k_;
+  float max_logit = raw[0];
+  for (int i = 1; i < kc; ++i) {
+    if (raw[i] > max_logit) {
+      max_logit = raw[i];
+    }
+  }
+  float norm = 0.0F;
+  for (int i = 0; i < kc; ++i) {
+    dist.pi[i] = std::exp(raw[i] - max_logit);
+    norm += dist.pi[i];
+  }
+  for (int i = 0; i < kc; ++i) {
+    dist.pi[i] /= norm;
+    dist.mu[i] = raw[kc + i];
+    dist.sigma[i] = static_cast<float>(Softplus(raw[2 * kc + i])) + 1.0e-2F;
+    double dfv = Softplus(raw[3 * kc + i]);
+    dfv = (dfv < 1.0e-3 ? 1.0e-3 : (dfv > 98.0 ? 98.0 : dfv)) + 2.0;
+    dist.df[i] = static_cast<float>(dfv);
+  }
+  dist.k = kc;
+  dist.u_mean = head_u_mean_;
+  dist.u_std = head_u_std_;
+  return dist;
 }
 
 }  // namespace omegazero

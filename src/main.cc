@@ -6,11 +6,13 @@
  */
 
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 
+#include "board.h"
 #include "game.h"
 #include "nnue.h"
 #include "params.h"
@@ -61,6 +63,7 @@ auto main(int argc, char* argv[]) -> int {
   bool uci_mode = false;
   bool hce_mode = false;
   bool light_theme = false;
+  bool unc_probe = false;
   int num_threads = omegazero::DefaultThreadCount();
 
   for (int i = 1; i < argc; ++i) {
@@ -96,6 +99,8 @@ auto main(int argc, char* argv[]) -> int {
       syzygy_path = argv[++i];
     } else if (arg == "--pgn" && i + 1 < argc) {
       pgn_opponent = argv[++i];
+    } else if (arg == "--unc-probe") {
+      unc_probe = true;
     } else {
       cout << "Unknown option: " << arg << endl;
       PrintUsage(argv[0]);
@@ -111,6 +116,52 @@ auto main(int argc, char* argv[]) -> int {
   } else if (omegazero::g_nnue.HasHead() && !uci_mode) {
     cout << "NNUE: fused OZNU with uncertainty head (run_id="
          << omegazero::g_nnue.GetHeadRunId() << ")." << endl;
+  }
+
+  // Uncertainty probe: read FENs from stdin, print p(u|x) per position as JSON
+  // (one line each). The reference the A4 parity gate compares against, and the
+  // seed of the unc-007 harness (B). Requires a fused OZNU net.
+  if (unc_probe) {
+    if (!omegazero::g_nnue.HasHead()) {
+      cout << "unc-probe: net has no uncertainty head" << endl;
+      return EINVAL;
+    }
+    const double taus[] = {0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99};
+    string fen;
+    while (std::getline(std::cin, fen)) {
+      if (fen.empty()) {
+        continue;
+      }
+      try {
+        omegazero::Board board(fen);
+        omegazero::UncDist d = board.GetUncDistribution();
+        std::printf(
+            "{\"fen\":\"%s\",\"v\":%d,\"e_u_cp\":%.6f,\"u_mean\":%.6f,"
+            "\"u_std\":%.6f,\"k\":%d",
+            fen.c_str(), d.v_cp, static_cast<double>(d.MeanCp()),
+            static_cast<double>(d.u_mean), static_cast<double>(d.u_std), d.k);
+        const char* names[] = {"pi", "mu", "sigma", "df"};
+        const float* arrs[] = {d.pi, d.mu, d.sigma, d.df};
+        for (int a = 0; a < 4; ++a) {
+          std::printf(",\"%s\":[", names[a]);
+          for (int i = 0; i < d.k; ++i) {
+            std::printf("%s%.8g", i ? "," : "", static_cast<double>(arrs[a][i]));
+          }
+          std::printf("]");
+        }
+        std::printf(",\"q\":{");
+        bool first_q = true;
+        for (double tau : taus) {
+          std::printf("%s\"%.2f\":%.6f", first_q ? "" : ",", tau,
+                      static_cast<double>(d.QuantileCp(static_cast<float>(tau))));
+          first_q = false;
+        }
+        std::printf("}}\n");
+      } catch (const std::exception& e) {
+        std::printf("{\"fen\":\"%s\",\"error\":\"%s\"}\n", fen.c_str(), e.what());
+      }
+    }
+    return 0;
   }
 
   // Load Syzygy endgame tablebases (default: the repo root; override --syzygy).

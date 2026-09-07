@@ -27,6 +27,35 @@ constexpr int kActivationScale = 127;
 constexpr int kHiddenScale = 64;
 constexpr int kOutputScale = kActivationScale * kHiddenScale;  // 8128
 
+// Bounds for the (optional) uncertainty head, so its forward can use stack
+// buffers. The trained MDNt is k=5, hidden (128,128); these leave headroom.
+constexpr int kMaxMixture = 16;      // mixture components (k)
+constexpr int kHeadMaxHidden = 256;  // per hidden layer width
+constexpr int kHeadMaxOut = 4 * kMaxMixture;
+
+// The conditional eval-error distribution p(u | x) predicted by the uncertainty
+// head, where u = v - v_star (signed static-eval error, cp). A k-component
+// Student-t mixture in STANDARDIZED space; de-standardize with (u_mean, u_std).
+// See unc_research/experiments/unc-007.md and train_unc_head.py (MDNt).
+struct UncDist {
+  int v_cp = 0;     // NNUE eval (STM POV, cp) -- the point estimate the dist is around
+  int k = 0;        // mixture components (0 => no head loaded, only v_cp valid)
+  float u_mean = 0.0F;
+  float u_std = 1.0F;
+  float pi[kMaxMixture] = {};     // mixture weights (sum to 1)
+  float mu[kMaxMixture] = {};     // component locations (standardized)
+  float sigma[kMaxMixture] = {};  // component scales (standardized)
+  float df[kMaxMixture] = {};     // component degrees of freedom
+
+  // Mean error E[u | x] in cp (the correction; a distributional generalization
+  // of correction history -- see notes/correction_history.md).
+  auto MeanCp() const -> float;
+  // Mixture CDF P(U <= u_cp | x).
+  auto Cdf(float u_cp) const -> float;
+  // Inverse CDF (one-sided margin primitive): the tau-quantile of u, in cp.
+  auto QuantileCp(float tau) const -> float;
+};
+
 class NnueNetwork {
  public:
   auto Load(const std::string& path) -> bool;
@@ -39,6 +68,12 @@ class NnueNetwork {
   auto ForwardFromAccumulators(const int16_t* white_accum,
                                const int16_t* black_accum,
                                S8 player_to_move) const -> int;
+
+  // Eval + the uncertainty head's p(u | x), computed off the SAME shared
+  // accumulators as the eval (H5). If no head is loaded, only `v_cp` is set.
+  auto EvalWithDistribution(const int16_t* white_accum,
+                            const int16_t* black_accum,
+                            S8 player_to_move) const -> UncDist;
 
   auto ComputeAccumulator(S8 king_sq, S8 perspective,
                           const S8* piece_layout, const S8* player_layout,
