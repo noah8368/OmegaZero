@@ -232,6 +232,9 @@ def main():
                     help="use one common cp x-axis on every panel (compare peak widths)")
     ap.add_argument("--xlim", type=float, default=None,
                     help="half-range (cp) for --shared-x (default: robust auto)")
+    ap.add_argument("--exclude", default="",
+                    help="comma-separated labels to drop from the PLOT only "
+                         "(metrics stay on the full set)")
     a = ap.parse_args()
 
     run_dir = Path(a.run) if a.run else latest_run(a.root)
@@ -239,10 +242,18 @@ def main():
     meta = json.loads((run_dir / "meta.json").read_text()) if (run_dir / "meta.json").exists() else {}
     print(f"run: {run_dir}  ({len(rows)} positions)")
 
+    exclude = {s.strip() for s in a.exclude.split(",") if s.strip()}
+    plot_rows = [r for r in rows if r["label"] not in exclude]
+    if exclude:
+        print(f"excluded from plot ({len(exclude)}): {sorted(exclude)}")
+        print(f"plotting {len(plot_rows)}/{len(rows)} positions")
+
     figs = run_dir / "figs"
     figs.mkdir(exist_ok=True)
-    out_png = figs / ("curated_pux_sharedx.png" if a.shared_x else "curated_pux.png")
-    plot_small_multiples(rows, out_png, meta, shared_x=a.shared_x, xlim=a.xlim)
+    name = ("curated_pux" + ("_sharedx" if a.shared_x else "")
+            + ("_noopenings" if exclude else ""))
+    out_png = figs / f"{name}.png"
+    plot_small_multiples(plot_rows, out_png, meta, shared_x=a.shared_x, xlim=a.xlim)
 
     metrics = compute_metrics(rows)
     (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
