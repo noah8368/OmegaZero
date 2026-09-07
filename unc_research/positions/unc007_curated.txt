@@ -1,0 +1,37 @@
+# unc-007 curated position registry.
+#
+# Human-interpretable positions with an a-priori expectation about p(u|x), so the
+# plots are a falsifiable test, not a gallery. Format (pipe-delimited):
+#
+#   FEN | label | category | expectation
+#
+# category:
+#   tight  -- quiet/locked/simple: eval should be confident -> narrow p(u|x), E[u|x] ~ 0
+#   wide   -- sharp/tactical/imbalanced: eval is unreliable -> wide, heavy-tailed p(u|x)
+#   biased -- known static-eval blind spot: E[u|x] should be non-zero in the noted direction
+#
+# All expectations are hypotheses registered BEFORE looking at the head output.
+# '#' lines and blanks are ignored.
+
+# --- tight: expect narrow p(u|x), E[u|x] ~ 0 ---------------------------------
+rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 | startpos | tight | balanced start; narrow, centered ~0
+rnbqkbnr/ppp2ppp/4p3/3p4/3P4/4P3/PPP2PPP/RNBQKBNR w KQkq - 0 3 | exchange-french-symmetric | tight | fully symmetric, quiet; narrow ~0
+r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/2N2N2/PPPP1PPP/R1BQKB1R w KQkq - 4 4 | four-knights-symmetric | tight | symmetric development; narrow ~0
+8/8/8/4k3/8/8/8/R3K3 w Q - 0 1 | KRK | tight | trivially winning, stable eval; narrow
+8/5pk1/6p1/8/8/6P1/5PK1/8 w - - 0 1 | symmetric-KP | tight | mirror pawns; dead ~0, narrow
+4k3/8/4K3/4P3/8/8/8/8 w - - 0 1 | KPK-opposition | tight | clean winning KPK; narrow, positive
+1r4k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1 | quiet-rook-ending | tight | R+3P each, rooks off open files; dead ~0
+
+# --- wide: expect wide, heavy-tailed p(u|x) ----------------------------------
+r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1 | kiwipete | wide | dense tactics; wide, fat tails
+8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 | sharp-rook-ending | wide | loose king + passers; wide
+r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1 | tactical-melee | wide | many hanging pieces; very wide
+rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8 | open-center-tactics | wide | uncastled kings, open lines; wide
+r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQ1RK1 b kq - 0 5 | italian-sharp | wide | Greek-gift geometry; wide
+r1bqkbnr/pp1ppppp/2n5/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3 | open-sicilian-lever | wide | pre-d4 Sicilian tension; wide
+
+# --- biased: expect E[u|x] non-zero in the noted direction --------------------
+8/8/8/8/8/2k5/2p5/2K5 w - - 0 1 | KPK-drawn-blockade | biased | drawn but eval reads Black up a pawn; E[u|x] < 0 (v too low for White)
+8/8/4k3/3p4/3P4/4K3/6B1/6b1 w - - 0 1 | opp-color-bishop-draw | biased | OCB fortress-ish draw; |E[u|x]| > 0
+6k1/6p1/7p/8/8/7P/5PPK/8 w - - 0 1 | wrong-rook-pawn-ish | biased | drawish KP eval often overstated; E[u|x] != 0
+r4rk1/1b3ppp/8/8/8/8/1B3PPP/R4RK1 w - - 0 1 | bishop-pair-symmetric | biased | symmetric but two-bishop scoring may skew; small E[u|x]
