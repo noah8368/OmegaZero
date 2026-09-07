@@ -26,8 +26,16 @@ Milestones so far (C++ refactor — the mean-correction/SPSA/SPRT are deferred):
   targets build clean; default-loads the fused net & FATALs on a headless trunk; unc-007 parity PASS
   (head unchanged); perft startpos d5 / kiwipete d4 exact (movegen intact).
 
-Next (tomorrow): E (self-play three-corrector diagnostic) → F (corrected eval = raw − E[u|x]) → G
-(H5-B int8 mean) → H (SPSA) → I (SPRT vs main).
+- **E** (`67bd5da`) — **three-corrector self-play diagnostic.** Added a `corrector` datagen mode (loads
+  the fused net; logs `corrhist = GetCorrectedEval(v)` and `model_mean = v − E[u|x]` per sampled
+  position) + `unc008_corrector_diag.py`. n=1144, depth-12 `v*`: MAE raw 115.6, **model-mean 106.5
+  (−7.9%)**, corr-hist 140.4 (**+21.5% worse**); model-mean beats corr-hist head-to-head (62.8%,
+  Wilcoxon p=1.4e-21). The mean is a genuine deep-truth corrector. **Caveat:** corr-hist targets
+  play-depth search (here shallow st=0.1), not depth-12 `v*`, so this pre-check disadvantages it — the
+  SPRT (Phase I) is the verdict. **E green-lights Phase F.** (Also fixed: datagen FATALs without a net —
+  the refactor commit claimed this but missed `datagen.cc`.)
+
+Next: F (corrected eval = raw − E[u|x]) → G (H5-B int8 mean) → H (SPSA) → I (SPRT vs main).
 
 ---
 
