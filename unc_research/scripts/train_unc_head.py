@@ -191,7 +191,7 @@ _MDNT_LAYER_KEYS = (("net.0.weight", "net.0.bias"),
                     ("net.4.weight", "net.4.bias"))
 
 
-def write_head_bin(path, model, in_dim, k, hidden, u_mean, u_std, trunk_md5):
+def write_head_bin(path, model, in_dim, k, hidden, u_mean, u_std, trunk_md5, run_id=""):
     """Export the trained MDN head as a flat OZUH binary (the deliverable best.bin).
 
     Mirrors train_nnue.py's OZNN export (magic + int32 dims + raw little-endian
@@ -203,7 +203,7 @@ def write_head_bin(path, model, in_dim, k, hidden, u_mean, u_std, trunk_md5):
 
     Layout (all little-endian):
         4 bytes   magic "OZUH"
-        int32     version (=1)
+        int32     version (=2)
         int32     in_dim
         int32     k                       (mixture components)
         int32     n_hidden (=2)
@@ -211,18 +211,25 @@ def write_head_bin(path, model, in_dim, k, hidden, u_mean, u_std, trunk_md5):
         float32   u_mean_cp                (de-standardize: u_cp = y*u_std + u_mean)
         float32   u_std_cp
         16 bytes  trunk_md5                (raw; the net that produced the labels)
+        int32     run_id_len               (v2+; free-form provenance string)
+        bytes     run_id                   (v2+)
         per Linear layer (in->h1, h1->h2, h2->4k):
             float32[out][in] weight (row-major), float32[out] bias
+
+    v1 (no run_id) is still readable -- read_head_bin() version-gates the field.
     """
     model.eval()
     sd = model.state_dict()
     h = [int(x) for x in hidden]
+    run_id_b = run_id.encode("utf-8")
     with open(path, "wb") as f:
         f.write(b"OZUH")
-        f.write(struct.pack("<4i", 1, in_dim, k, len(h)))
+        f.write(struct.pack("<4i", 2, in_dim, k, len(h)))
         f.write(struct.pack("<%di" % len(h), *h))
         f.write(struct.pack("<2f", float(u_mean), float(u_std)))
         f.write(bytes.fromhex(trunk_md5))
+        f.write(struct.pack("<i", len(run_id_b)))
+        f.write(run_id_b)
         for wk, bk in _MDNT_LAYER_KEYS:
             f.write(sd[wk].cpu().numpy().astype("<f4").tobytes())
             f.write(sd[bk].cpu().numpy().astype("<f4").tobytes())
@@ -240,6 +247,10 @@ def read_head_bin(path):
         hidden = list(struct.unpack("<%di" % n_hidden, f.read(4 * n_hidden)))
         u_mean, u_std = struct.unpack("<2f", f.read(8))
         trunk_md5 = f.read(16).hex()
+        run_id = ""
+        if version >= 2:
+            (run_id_len,) = struct.unpack("<i", f.read(4))
+            run_id = f.read(run_id_len).decode("utf-8")
         model = MDNt(in_dim=in_dim, k=k, hidden=tuple(hidden))
         dims = [(hidden[0], in_dim), (hidden[1], hidden[0]), (4 * k, hidden[1])]
         sd = {}
@@ -251,7 +262,8 @@ def read_head_bin(path):
         model.load_state_dict(sd)
     model.eval()
     meta = {"version": version, "in_dim": in_dim, "k": k, "hidden": hidden,
-            "u_mean_cp": u_mean, "u_std_cp": u_std, "trunk_md5": trunk_md5}
+            "u_mean_cp": u_mean, "u_std_cp": u_std, "trunk_md5": trunk_md5,
+            "run_id": run_id}
     return model, meta
 
 
@@ -776,8 +788,18 @@ def cmd_train(args):
 
     # best.bin = the conditional head at its best-val weights (the deliverable);
     # the unconditional floor is diagnostic. Per-epoch checkpoints are in checkpoints/.
+    # run_id = the run-dir name (free-form provenance baked into the OZUH header).
+    run_id = run_dir.name
     write_head_bin(run_dir / "best.bin", cond, in_dim=2 * L1_SIZE, k=args.k,
-                   hidden=(128, 128), u_mean=u_mean, u_std=u_std, trunk_md5=trunk_md5)
+                   hidden=(128, 128), u_mean=u_mean, u_std=u_std, trunk_md5=trunk_md5,
+                   run_id=run_id)
+    # Fuse the full trunk + head into a self-contained OZNU deployable next to best.bin
+    # (unc-007). Promote it to unc_research/models/nnue_unc.bin manually when a run is
+    # chosen, mirroring the best.bin -> nnue/nnue.bin promotion for the eval net.
+    import oznu  # local import: oznu imports from this module, so avoid a top-level cycle
+    fused, _md5, _rid = oznu.pack_oznu(run_dir / "nnue_unc.bin", args.trunk,
+                                       run_dir / "best.bin", run_id)
+    print(f"  fused OZNU -> {fused}")
     (run_dir / "metrics.json").write_text(json.dumps(scalars, indent=2))
     n_ckpt = len(list(ckpt_dir.glob("epoch_*.pt")))
     print(f"\nRun dir: {run_dir}")
