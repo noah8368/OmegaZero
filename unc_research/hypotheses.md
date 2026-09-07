@@ -98,7 +98,7 @@ the position isn't secretly *worse*; futility bets it isn't secretly *better*. *
 as the design choice**; the prediction to verify is that one-sided coverage conditioned
 on position correlates with incorrect-cutoff rate in a way symmetric `|u|` cannot express.
 
-**Status:** open (design fixed to signed) · **Experiments:** unc-002 schema
+**Status:** settled by design choice (signed error) · **Experiments:** unc-002 schema; unc-007/unc-008 use one-sided reads throughout
 
 ---
 
@@ -123,7 +123,7 @@ margin benefit (H1), or a null result is unattributable.
 **Fallback if refuted.** Keep a *small residual* online corr-hist on top of the model's
 stronger mean baseline (best of both, at the cost of two mechanisms).
 
-**Status:** open · **Experiments:** (corrector-swap SPRT, post-integration)
+**Status:** open — testing in unc-008 · **Experiments:** [unc-008](experiments/unc-008.md): E diagnostic (model-mean beats corr-hist on the deep-`v*` target, n=1144, p=1.4e-21) green-lights the swap; verdict pending the Phase I SPRT vs `main`
 
 ---
 
