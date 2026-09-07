@@ -108,6 +108,9 @@ auto main(int argc, char* argv[]) -> int {
   } else if (!omegazero::g_nnue.Load(nnue_path)) {
     if (!uci_mode)
       cout << "WARNING: NNUE weights not found. Using HCE instead." << endl;
+  } else if (omegazero::g_nnue.HasHead() && !uci_mode) {
+    cout << "NNUE: fused OZNU with uncertainty head (run_id="
+         << omegazero::g_nnue.GetHeadRunId() << ")." << endl;
   }
 
   // Load Syzygy endgame tablebases (default: the repo root; override --syzygy).
