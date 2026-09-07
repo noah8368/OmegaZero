@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-09-07_14-26-57",
+  "git_commit": "26c874e",
+  "net": "unc_research/models/nnue_unc.bin",
+  "net_run_id": "2026-09-06_00-58-01_nnue_10634559pos",
+  "trunk_md5": "69e1f521e399453e90d038f078d5a8aa",
+  "registry": "unc_research/positions/unc007_curated.txt",
+  "vstar_depth": 12,
+  "vstar_nodes": 2000000,
+  "n_positions": 21,
+  "n_written": 21,
+  "n_decisive_dropped_by_analysis": 0
+}
