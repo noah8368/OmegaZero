@@ -79,19 +79,23 @@ install_system_deps_linux() {
         apt-get update -qq
         apt-get install -y -qq g++ make python3 python3-venv git
         if [[ "$SERVER_ONLY" != true ]]; then
-            apt-get install -y -qq cmake qtbase5-dev
+            # cutechess needs Qt6 (Core/Gui/Widgets/Concurrent/PrintSupport/Test
+            # via qt6-base-dev, plus the separate Svg module). The top-level
+            # find_package(Qt6 REQUIRED ...) demands all components at configure
+            # time even though we only build the CLI target.
+            apt-get install -y -qq cmake qt6-base-dev libqt6svg6-dev
         fi
     elif command -v dnf &>/dev/null; then
         info "Installing system packages (dnf)..."
         dnf install -y gcc-c++ make python3 git
         if [[ "$SERVER_ONLY" != true ]]; then
-            dnf install -y cmake qt5-qtbase-devel
+            dnf install -y cmake qt6-qtbase-devel qt6-qtsvg-devel
         fi
     elif command -v yum &>/dev/null; then
         info "Installing system packages (yum)..."
         yum install -y gcc-c++ make python3 git
         if [[ "$SERVER_ONLY" != true ]]; then
-            yum install -y cmake qt5-qtbase-devel
+            yum install -y cmake qt6-qtbase-devel qt6-qtsvg-devel
         fi
     else
         error "Unsupported package manager. Install manually: g++, make, python3, git"
