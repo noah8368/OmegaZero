@@ -43,6 +43,12 @@ TSAN_OBJECTS = build/tsan/board.o build/tsan/engine.o build/tsan/game.o \
                build/tsan/masks.o build/tsan/transposition_table.o build/tsan/params.o \
                build/tsan/piece_sq_tables.o build/tsan/search_pool.o build/tsan/syzygy.o build/tsan/tbprobe.o
 
+UNC_OBJECTS = build/unc/board.o build/unc/engine.o build/unc/game.o \
+              build/unc/magics.o build/unc/nnue.o build/unc/unc_harness.o \
+              build/unc/masks.o build/unc/transposition_table.o \
+              build/unc/params.o build/unc/search_pool.o build/unc/syzygy.o build/unc/tbprobe.o \
+              build/unc/piece_sq_tables.o
+
 all : build/play $(OBJECTS)
 	$(CC) -o build/OmegaZero $(OBJECTS) $(FLAGS) $(OPT_FLAGS)
 debug : build/debug $(DEBUG_OBJECTS)
@@ -55,6 +61,8 @@ perft : build/perft $(PERFT_OBJECTS)
 	$(CC) -o build/perft_harness $(PERFT_OBJECTS) $(FLAGS) $(OPT_FLAGS)
 tsan : build/tsan $(TSAN_OBJECTS)
 	$(CC) -o build/tsan_harness $(TSAN_OBJECTS) $(FLAGS) $(TSAN_FLAGS)
+unc_harness : build/unc $(UNC_OBJECTS)
+	$(CC) -o build/unc_harness $(UNC_OBJECTS) $(FLAGS) $(OPT_FLAGS)
 build/play/magics.o: src/magics.cc
 	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/play/%.o: src/%.cc
@@ -79,6 +87,10 @@ build/tsan/magics.o: src/magics.cc
 	$(CC) -c -o $@ $< $(FLAGS) -O0
 build/tsan/%.o: src/%.cc
 	$(CC) -c -o $@ $< $(FLAGS) $(TSAN_FLAGS)
+build/unc/magics.o: src/magics.cc
+	$(CC) -c -o $@ $< $(FLAGS) -O0
+build/unc/%.o: src/%.cc
+	$(CC) -c -o $@ $< $(FLAGS) $(OPT_FLAGS)
 build/play/tbprobe.o: src/fathom/tbprobe.c
 	$(CC) -c -o $@ $< $(FATHOM_FLAGS)
 build/debug/tbprobe.o: src/fathom/tbprobe.c
@@ -90,6 +102,8 @@ build/datagen/tbprobe.o: src/fathom/tbprobe.c
 build/perft/tbprobe.o: src/fathom/tbprobe.c
 	$(CC) -c -o $@ $< $(FATHOM_FLAGS)
 build/tsan/tbprobe.o: src/fathom/tbprobe.c
+	$(CC) -c -o $@ $< $(FATHOM_FLAGS)
+build/unc/tbprobe.o: src/fathom/tbprobe.c
 	$(CC) -c -o $@ $< $(FATHOM_FLAGS)
 
 build :
@@ -106,13 +120,15 @@ build/perft : build
 	mkdir -p $@
 build/tsan : build
 	mkdir -p $@
+build/unc : build
+	mkdir -p $@
 
 src/masks.cc :
 	python3 scripts/generate_masks.py
 src/magics.cc :
 	python3 scripts/mine_magics.py
 
--include build/play/*.d build/debug/*.d build/bench/*.d build/datagen/*.d build/perft/*.d build/tsan/*.d
+-include build/play/*.d build/debug/*.d build/bench/*.d build/datagen/*.d build/perft/*.d build/tsan/*.d build/unc/*.d
 
 .PHONY: check-deps
 check-deps:

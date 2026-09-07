@@ -13,8 +13,9 @@ The head+trunk are read straight out of the fused OZNU file (also exercising the
 Python-side OZNU extraction), so the two sides provably use the same weights.
 
 Usage:
+  make unc_harness
   python3 unc_research/scripts/unc007_parity.py \
-      --net unc_research/models/nnue_unc.bin --engine build/OmegaZero
+      --net unc_research/models/nnue_unc.bin --harness build/unc_harness
 """
 
 import argparse
@@ -75,16 +76,16 @@ def python_reference(fens, nnue_bytes, head_bytes):
     return out
 
 
-def cpp_probe(engine, net, fens):
-    """Run the engine's --unc-probe over `fens`; return the parsed JSON dicts."""
+def cpp_probe(harness, net, fens):
+    """Run build/unc_harness over `fens`; return the parsed JSON dicts."""
     proc = subprocess.run(
-        [engine, "-n", net, "--unc-probe"],
+        [harness, net],
         input="\n".join(fens) + "\n", capture_output=True, text=True, check=True)
     rows = {}
     for line in proc.stdout.splitlines():
         line = line.strip()
         if not line.startswith("{"):
-            continue  # skip the "NNUE: fused OZNU..." banner line
+            continue  # (harness status goes to stderr; stdout is JSON only)
         d = json.loads(line)
         rows[d["fen"]] = d
     return rows
@@ -94,7 +95,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--net", default="unc_research/models/nnue_unc.bin")
-    ap.add_argument("--engine", default="build/OmegaZero")
+    ap.add_argument("--harness", default="build/unc_harness")
     ap.add_argument("--fens", default=None, help="file of FENs (default: probe set)")
     ap.add_argument("--param-tol", type=float, default=2e-3)
     ap.add_argument("--q-tol-cp", type=float, default=0.5, help="quantile tol (cp)")
@@ -107,7 +108,7 @@ def main():
 
     parts = read_oznu(a.net)
     ref = python_reference(fens, parts["nnue_bytes"], parts["head_bytes"])
-    got = cpp_probe(a.engine, a.net, fens)
+    got = cpp_probe(a.harness, a.net, fens)
 
     worst_param = 0.0
     worst_eu = 0.0
