@@ -145,7 +145,7 @@ def compute_metrics(rows):
 
 
 # --- C2 plot ---------------------------------------------------------------- #
-def plot_small_multiples(rows, out_png, meta):
+def plot_small_multiples(rows, out_png, meta, shared_x=False, xlim=None):
     ordered = sorted(rows, key=lambda r: (CAT_ORDER.index(r["category"]),
                                           -spread80(r)))
     n = len(ordered)
@@ -154,13 +154,25 @@ def plot_small_multiples(rows, out_png, meta):
     fig, axes = plt.subplots(nrow, ncol, figsize=(4.0 * ncol, 2.7 * nrow))
     axes = np.array(axes).reshape(-1)
 
+    L = None
+    if shared_x:
+        if xlim is None:
+            # Robust common half-range: covers the central mass of the widest
+            # typical panel without one outlier dominating the scale.
+            edges = [max(abs(r["q"]["0.05"]), abs(r["q"]["0.95"])) for r in ordered]
+            xlim = float(min(1200.0, np.percentile(edges, 85)))
+        L = xlim
+
     for ax, r in zip(axes, ordered):
         col = CAT_COLOR[r["category"]]
         q = r["q"]
-        lo = min(q["0.01"], r["u"] if not r.get("decisive") else q["0.01"])
-        hi = max(q["0.99"], r["u"] if not r.get("decisive") else q["0.99"])
-        pad = 0.12 * (hi - lo + 1e-6)
-        grid = np.linspace(lo - pad, hi + pad, 400)
+        if shared_x:
+            grid = np.linspace(-L, L, 400)
+        else:
+            lo = min(q["0.01"], r["u"] if not r.get("decisive") else q["0.01"])
+            hi = max(q["0.99"], r["u"] if not r.get("decisive") else q["0.99"])
+            pad = 0.12 * (hi - lo + 1e-6)
+            grid = np.linspace(lo - pad, hi + pad, 400)
         dens = pdf_cp(r, grid)
 
         ax.fill_between(grid, dens, color=col, alpha=0.22)
@@ -185,6 +197,8 @@ def plot_small_multiples(rows, out_png, meta):
         ax.set_yticks([])
         ax.set_xlabel("u = v - v*  (cp)", fontsize=7)
         ax.tick_params(labelsize=7)
+        if shared_x:
+            ax.set_xlim(-L, L)
 
     for ax in axes[n:]:
         ax.set_visible(False)
@@ -214,6 +228,10 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", default=None, help="a Phase-B run dir (default: latest)")
     ap.add_argument("--root", default=str(DEFAULT_ROOT))
+    ap.add_argument("--shared-x", action="store_true",
+                    help="use one common cp x-axis on every panel (compare peak widths)")
+    ap.add_argument("--xlim", type=float, default=None,
+                    help="half-range (cp) for --shared-x (default: robust auto)")
     a = ap.parse_args()
 
     run_dir = Path(a.run) if a.run else latest_run(a.root)
@@ -223,8 +241,8 @@ def main():
 
     figs = run_dir / "figs"
     figs.mkdir(exist_ok=True)
-    out_png = figs / "curated_pux.png"
-    plot_small_multiples(rows, out_png, meta)
+    out_png = figs / ("curated_pux_sharedx.png" if a.shared_x else "curated_pux.png")
+    plot_small_multiples(rows, out_png, meta, shared_x=a.shared_x, xlim=a.xlim)
 
     metrics = compute_metrics(rows)
     (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
