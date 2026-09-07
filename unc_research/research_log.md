@@ -6,6 +6,46 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-09-07 — unc-007: deployed head validated end-to-end; P1/P2/P3 all supported
+
+Built the whole deployment + validation chain ([unc-007](experiments/unc-007.md)) and it landed
+positive on every pre-registered axis. Details in the experiment file; the arc:
+
+- **Fused net + C++ handle (Phase A).** New self-contained **OZNU** container = the full NNUE trunk +
+  the MDN head in one `unc_research/models/nnue_unc.bin` (`oznu.py`; head trainer also emits it; OZUH
+  gained a free-form `run_id`, v2). `NnueNetwork::Load` accepts it as a drop-in for `-n`, self-checks
+  md5, and `EvalWithDistribution` runs the head off the **shared clamped accumulators** (H5) — no second
+  feature encoding. `make unc_harness` is the only binary that calls the head (main stays head-free).
+  Parity gate (`unc007_parity.py`): C++ == Python head to ~1e-6 on 35 FENs.
+- **Harness + v\* (Phase B).** `unc_harness --vstar` runs datagen's exact deep target (fresh TT, depth 12,
+  node cap 2M) → realized `u = v − v*`; `unc007_harness.py` writes `experiment_results/unc-007/<run>/`.
+- **Powered results.** P1 via objective public suites (WAC 300 tactical vs Silent-but-Deadly 134 quiet,
+  vendored under `positions/suites/`): predicted 80%-width **330 vs 105 cp, Mann-Whitney p=6e-43, Cliff's
+  δ=0.82** — spread separates sharp/quiet with AUC≈0.91. P3 on val n=5000: **PIT mean 0.508, KS 0.023**,
+  central coverage within ~1-2 pts of nominal — and **conditionally** calibrated too (`unc007_conditional.py`,
+  n=8000: PIT independent of predicted-width/|eval|/phase, all corr≈0, coverage flat across regions →
+  rules out the cancellation that marginal PIT can hide). **P2 decision** (`unc007_mean.py`, val n=20000):
+  the curated null (r≈0.2) was tiny-N+OOD; as a corrector `E[u|x]` gives **r=0.43, R²=0.19, MAE −9.6% /
+  RMSE −10.0%**, helping in every width regime; the binned-mean-reliability sits on the diagonal (a correct
+  mean around a noisy target). **Verdict: `E[u|x]` IS a useful corrector — H6 worth pursuing** (real bar =
+  beating online corr-hist, still an isolated SPRT unc-003; mean degrades far-OOD).
+- **Byte-verified provenance.** `nnue/nnue.bin` == the latest NNUE run (95.5M, 2026-08-26) == the OZNN
+  section of `nnue_unc.bin`; the OZUH section == the 11M head — all byte-exact (`cmp`/md5).
+- **Scope decision.** OPENING-BOOK positions are **out of scope** for the whole line: the engine plays
+  its book without searching, so uncertainty-aware search never runs there. Curated registry v3 drops the
+  9 opening-theory positions (commented out, documented); the powered analyses are already off-book by
+  construction (datagen uses random opening moves + a 10-ply skip; WAC/SBD are test positions, not book).
+  Note: val FENs carry fullmove=1 (ToFen doesn't track it) and material/phase can't distinguish a book
+  opening from a full-board tactical middlegame, so there is no position-intrinsic "opening" filter —
+  the random-opening datagen design is what scopes it.
+
+**Net:** the head is a strong, marginally- *and* conditionally-calibrated uncertainty (spread) predictor
+whose mean is also a real corrector. Both the H1 margin (`Q_{1−C}`) and the H6 corrector-swap are now
+evidence-backed. Next: engine integration — unc-004 (wire `Q_{1−C}` into one pruning margin vs a freshly-
+SPSA-tuned constant) and/or the H5-B grain-quantized integer head for NPS.
+
+---
+
 ## 2026-09-06 — unc-006 planned: deployment-aligned calibration (tail-loss + conformal), H16
 
 The full head is well-calibrated except its top predicted-uncertainty decile (the ν≈4 tail) —

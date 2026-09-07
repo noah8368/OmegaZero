@@ -1,0 +1,51 @@
+{
+  "n_positions": 12,
+  "n_usable": 12,
+  "n_decisive_excluded": 0,
+  "P1_spread": {
+    "width_cp_mean": {
+      "tight": 106.844618,
+      "wide": 470.02569975000006,
+      "biased": 363.8691578333333
+    },
+    "width_cp_median": {
+      "tight": 106.844618,
+      "wide": 526.318169,
+      "biased": 270.92809650000004
+    },
+    "wide_gt_tight_mannwhitney_p": 0.06666666666666667,
+    "verdict": "no significant spread ordering"
+  },
+  "P2_mean_direction": {
+    "pearson_r": 0.19445390759434145,
+    "pearson_p": 0.5447809433889467,
+    "spearman_r": -0.08391608391608392,
+    "spearman_p": 0.7954145018538978,
+    "sign_agree_rate": 0.4444444444444444,
+    "sign_agree_n": 9
+  },
+  "P3_coverage": {
+    "n": 12,
+    "pit_mean": 0.3984035621176701,
+    "pit_values": [
+      0.2161,
+      0.2879,
+      0.9406,
+      0.5577,
+      0.9486,
+      0.0589,
+      0.0206,
+      0.2855,
+      0.0439,
+      0.536,
+      0.0896,
+      0.7955
+    ],
+    "central_coverage": {
+      "0.50": 0.3333333333333333,
+      "0.80": 0.5,
+      "0.90": 0.8333333333333334
+    },
+    "note": "coarse: one PIT sample per curated position, small N"
+  }
+}
