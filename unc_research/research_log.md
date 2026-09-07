@@ -6,6 +6,31 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-09-07 — unc-008 opened (H6 corrector-swap + H5-B); single fused-net eval path
+
+Pre-registered [unc-008](experiments/unc-008.md): replace the online pawn-hash correction history
+with the head's conditional mean `E[u|x]` (`corrected = raw − E[u|x]`), and — in the same experiment
+— make the head forward NPS-cheap (H5-B) so a naive-float crater cannot confound the SPRT vs `main`.
+Enabled by unc-007 P2 (mean is a useful calibrated corrector). **Milestone commits tracked in the
+unc-008 workplan table.**
+
+Milestones so far (C++ refactor — the mean-correction/SPSA/SPRT are deferred):
+- **A** (`767f953`) — unc-008 pre-registered.
+- **B/C/D** (`be7098c`) — **collapsed to ONE eval code path.** The full fused net is required from here
+  on: the engine defaults to & requires `nnue/nnue_unc.bin` (a missing net or a headless bare trunk is
+  FATAL — no fallback). **HCE stripped entirely** (`Board::Evaluate()` NNUE-only; ~380 lines of
+  handcrafted eval + `--hce`/profile removed; `ProfileForEvalMode()` always "nnue"). Corr-hist
+  (`GetCorrectedEval`) is NOT HCE and stays — unc-008 Phase F replaces it. Harnesses that eval now load
+  a net (datagen/bench FATAL if missing; debug/tsan load `nnue/nnue.bin`); perft is movegen-only and
+  keeps the `IsLoaded` accumulator guards. `README.md` ← the research-track README. Verified: all
+  targets build clean; default-loads the fused net & FATALs on a headless trunk; unc-007 parity PASS
+  (head unchanged); perft startpos d5 / kiwipete d4 exact (movegen intact).
+
+Next (tomorrow): E (self-play three-corrector diagnostic) → F (corrected eval = raw − E[u|x]) → G
+(H5-B int8 mean) → H (SPSA) → I (SPRT vs main).
+
+---
+
 ## 2026-09-07 — unc-007: deployed head validated end-to-end; P1/P2/P3 all supported
 
 Built the whole deployment + validation chain ([unc-007](experiments/unc-007.md)) and it landed
