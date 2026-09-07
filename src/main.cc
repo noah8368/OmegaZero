@@ -37,7 +37,6 @@ static void PrintUsage(const char* prog) {
        << "  -n PATH        NNUE weights file path\n"
        << "  --pgn NAME     Save game as PGN with given opponent name\n"
        << "  --uci          Run in UCI protocol mode\n"
-       << "  --hce          Use handcrafted eval instead of NNUE\n"
        << "  --light-theme  Piece symbols for light terminal backgrounds\n"
        << "  --help         Show this message\n";
 }
@@ -49,7 +48,7 @@ auto main(int argc, char* argv[]) -> int {
 
   string init_pos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   string opening_book_path = exe_dir + "../openings.pgn";
-  string nnue_path = exe_dir + "../nnue/nnue.bin";
+  string nnue_path = exe_dir + "../nnue/nnue_unc.bin";
   string syzygy_path =
       exe_dir + "../syzygy_tables";  // where setup.sh puts the tables
   string params_path = exe_dir + "../params.json";
@@ -59,7 +58,6 @@ auto main(int argc, char* argv[]) -> int {
   float increment = 0.0f;
   char player_side = 'w';
   bool uci_mode = false;
-  bool hce_mode = false;
   bool light_theme = false;
   int num_threads = omegazero::DefaultThreadCount();
 
@@ -70,8 +68,6 @@ auto main(int argc, char* argv[]) -> int {
       return 0;
     } else if (arg == "--uci" || arg == "-u") {
       uci_mode = true;
-    } else if (arg == "--hce") {
-      hce_mode = true;
     } else if (arg == "--light-theme") {
       light_theme = true;
     } else if ((arg == "-p" || arg == "--player-side") && i + 1 < argc) {
@@ -103,11 +99,15 @@ auto main(int argc, char* argv[]) -> int {
     }
   }
 
-  if (hce_mode) {
-    if (!uci_mode) cout << "Using HCE." << endl;
-  } else if (!omegazero::g_nnue.Load(nnue_path)) {
-    if (!uci_mode)
-      cout << "WARNING: NNUE weights not found. Using HCE instead." << endl;
+  if (!omegazero::g_nnue.Load(nnue_path)) {
+    std::cerr << "FATAL: could not load required net " << nnue_path
+              << " (the full unc-nnue is required from here on)." << endl;
+    return EINVAL;
+  }
+  if (!omegazero::g_nnue.HasHead()) {
+    std::cerr << "FATAL: " << nnue_path
+              << " has no uncertainty head; a fused OZNU net is required." << endl;
+    return EINVAL;
   }
 
   // Load Syzygy endgame tablebases (default: the repo root; override --syzygy).

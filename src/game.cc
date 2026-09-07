@@ -23,7 +23,6 @@
 #include "board.h"
 #include "engine.h"
 #include "move.h"
-#include "nnue.h"
 #include "syzygy.h"
 #include "time_control.h"
 
@@ -500,7 +499,7 @@ auto Game::SavePgn(const string& opponent_name) -> void {
   f << "[Result \"" << result << "\"]\n\n";
 
   // Note which of OmegaZero's evaluation and endgame resources were in play.
-  string eval_str = g_nnue.IsLoaded() ? "NNUE" : "HCE";
+  string eval_str = "NNUE";
   string syzygy_str;
   if (!g_syzygy.IsLoaded()) {
     syzygy_str = "not loaded";

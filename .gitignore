@@ -17,6 +17,7 @@ nnue/*
 !nnue/config.json.example
 !nnue/config.uncertainty.json.example
 !nnue/nnue.bin
+!nnue/nnue_unc.bin
 !nnue/model/
 nnue/model/**/*.pt
 config.json

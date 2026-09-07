@@ -21,14 +21,13 @@
 #include <string>
 #include <vector>
 
-#include "nnue.h"
-
 namespace omegazero {
 
 using std::string;
 
 auto ProfileForEvalMode() -> string {
-  return g_nnue.IsLoaded() ? "nnue" : "hce";
+  // Single eval path (unc-008): always the NNUE profile; HCE removed.
+  return "nnue";
 }
 
 // Return the substring of `text` between the braces of the object bound to
@@ -118,7 +117,7 @@ auto ParamsPathFromExe(const string& argv0) -> string {
 static auto ParamsFatal(const string& path, const string& msg) -> void {
   std::cerr << "FATAL: params.json (" << path << "): " << msg << "\n"
             << "params.json is required and holds every search parameter; "
-               "regenerate or restore it (both \"nnue\" and \"hce\" profiles)."
+               "regenerate or restore it (the \"nnue\" profile)."
             << std::endl;
   std::exit(EXIT_FAILURE);
 }

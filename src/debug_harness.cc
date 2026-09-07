@@ -231,6 +231,11 @@ auto main(int argc, char* argv[]) -> int {
   if (argc > 1) num_games = std::atoi(argv[1]);
   if (argc > 2) search_time = std::atof(argv[2]);
 
+  if (!omegazero::g_nnue.Load("nnue/nnue.bin")) {
+    std::cerr << "FATAL: nnue/nnue.bin required (HCE removed); run from repo root."
+              << std::endl;
+    return EXIT_FAILURE;
+  }
   const SearchParams params =
       LoadParamsOrDie(ParamsPathFromExe(argv[0]), ProfileForEvalMode());
 

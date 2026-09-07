@@ -245,21 +245,6 @@ class Board {
   auto UpdateSliderAttackers(S8 target_sq,
                              Bitboard all_pieces) const -> Bitboard;
 
-  // Weighs material balance and positional bonuses and computes the white and
-  // black pawn cummulative front attackspans for evaluating pawn structure.
-  auto EvaluatePiecePositions(Bitboard& white_attackspan,
-                              Bitboard& white_attack_map,
-                              Bitboard& white_defender_map,
-                              Bitboard& black_attackspan,
-                              Bitboard& black_attack_map,
-                              Bitboard& black_defender_map) const -> int;
-  auto EvaluatePawnStructure(Bitboard white_attackspan,
-                             Bitboard white_attack_map,
-                             Bitboard white_defender_map,
-                             Bitboard black_attackspan,
-                             Bitboard black_attack_map,
-                             Bitboard black_defender_map) const -> int;
-
   auto AddPiece(S8 piece_type, S8 player, S8 sq) -> void;
   auto InitHash() -> void;
   auto InitAccumulators() -> void;

@@ -94,11 +94,12 @@ auto main(int argc, char* argv[]) -> int {
                                          : "./";
 
   string nnue_path = exe_dir + "../nnue/nnue.bin";
-  if (g_nnue.Load(nnue_path)) {
-    std::cerr << "NNUE: loaded " << nnue_path << std::endl;
-  } else {
-    std::cerr << "NNUE: not found, using HCE" << std::endl;
+  if (!g_nnue.Load(nnue_path)) {
+    std::cerr << "FATAL: NNUE net required (HCE removed), not found: "
+              << nnue_path << std::endl;
+    return EXIT_FAILURE;
   }
+  std::cerr << "NNUE: loaded " << nnue_path << std::endl;
 
   float search_time = 5.0f;
   if (argc > 1) search_time = std::atof(argv[1]);

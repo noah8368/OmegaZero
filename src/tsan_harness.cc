@@ -55,6 +55,11 @@ auto main(int argc, char* argv[]) -> int {
   cout << "TSan Lazy-SMP harness: " << static_cast<int>(threads) << " threads, "
        << search_time << "s/position" << endl;
 
+  if (!omegazero::g_nnue.Load("nnue/nnue.bin")) {
+    std::cerr << "FATAL: nnue/nnue.bin required (HCE removed); run from repo root."
+              << std::endl;
+    return EXIT_FAILURE;
+  }
   const SearchParams params =
       LoadParamsOrDie(ParamsPathFromExe(argv[0]), ProfileForEvalMode());
 

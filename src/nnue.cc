@@ -268,9 +268,8 @@ auto NnueNetwork::LoadOznu(istream& f, const string& ctx) -> bool {
                   static_cast<size_t>(head_len));
   istringstream head_ss(head_str, ios::in | ios::binary);
   if (!LoadHeadStream(head_ss, ctx, trunk_md5)) {
-    cerr << "OZNU: uncertainty head unreadable; using eval only in " << ctx << endl;
-    has_head_ = false;
-    return true;
+    cerr << "OZNU: uncertainty head unreadable in " << ctx << endl;
+    return false;  // head is required (unc-008); a bad head is a hard failure
   }
   has_head_ = true;
   head_run_id_ = run_id;
