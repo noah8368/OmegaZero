@@ -1,0 +1,23 @@
+{
+  "n": 1144,
+  "mae": {
+    "raw": 115.56905594405595,
+    "corrhist": 140.41783216783216,
+    "model_mean": 106.4895104895105
+  },
+  "rmse": {
+    "raw": 185.30941097851127,
+    "corrhist": 205.4634408464813,
+    "model_mean": 166.43719809312734
+  },
+  "mae_reduction_vs_raw": {
+    "corrhist": -0.21501236659582013,
+    "model_mean": 0.07856381087806608
+  },
+  "paired_model_vs_corrhist": {
+    "model_win_rate": 0.6276223776223776,
+    "mean_abs_err_diff_corr_minus_model": 33.92832167832168,
+    "wilcoxon_p": 1.4041831021134137e-21
+  },
+  "verdict": "model-mean BEATS corr-hist -> green-light swap (Phase F)"
+}

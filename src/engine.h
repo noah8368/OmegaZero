@@ -227,6 +227,10 @@ class Engine {
     return total_nodes_ + nodes_since_time_check_;
   }
 
+  // Apply the online correction-history correction to a raw static eval. Public
+  // so the corrector diagnostic (unc-008 E) can read the live corrected eval.
+  auto GetCorrectedEval(int static_eval) const -> int;
+
 #ifdef BENCHMARK
   auto BenchmarkReport(int search_depth) -> void;
 #endif
@@ -303,7 +307,6 @@ class Engine {
            bool null_move_allowed) -> int;
   // Search captures until quiescent to mitigate the horizon effect.
   auto QuiescenceSearch(int alpha, int beta, int ply, int qs_depth = 20) -> int;
-  auto GetCorrectedEval(int static_eval) const -> int;
   auto ComputeLmrReduction(int depth, int legal_moves, S8 player_to_move,
                            const Move& move) -> int;
   auto TrySingularExtension(const TableEntry& hash_entry, int depth, int ply,
