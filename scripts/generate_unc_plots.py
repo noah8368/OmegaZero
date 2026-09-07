@@ -14,7 +14,7 @@ One subcommand:
               v_star search depth, and a v vs v_star scatter.
 
 Output:
-    Writes into a fresh research/experiment_results/unc_head/<datetime>/figs/ (each
+    Writes into a fresh unc_research/models/unc_head/<datetime>/figs/ (each
     invocation its own timestamped run), including a plot_metadata.json with
     timestamp and git commit.
 

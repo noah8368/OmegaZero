@@ -19,13 +19,13 @@ Subcommands:
               sharpness-vs-realized reliability. Runs best.bin over the val split.
 
 Output:
-    data  — a fresh unc_research/experiment_results/unc_head/<datetime>/figs/ run dir.
+    data  — a fresh unc_research/models/unc_head/<datetime>/figs/ run dir.
     model — writes head_extra_diagnostics.png into the target run's own figs/.
     Both drop a plot_metadata.json with timestamp and git commit.
 
 Usage:
     python3 unc_research/scripts/generate_unc_plots.py data nnue/data/unc_11M/validation_data.bin
-    python3 unc_research/scripts/generate_unc_plots.py model unc_research/experiment_results/unc_head/<run>
+    python3 unc_research/scripts/generate_unc_plots.py model unc_research/models/unc_head/<run>
 """
 
 import argparse
@@ -325,7 +325,7 @@ def main():
     d.set_defaults(func=cmd_data)
 
     m = sub.add_parser("model", help="deeper diagnostics of a trained head over val")
-    m.add_argument("run", help="a run dir under unc_research/experiment_results/unc_head/ "
+    m.add_argument("run", help="a run dir under unc_research/models/unc_head/ "
                    "(needs best.bin + artifacts.npz + metrics.json)")
     m.add_argument("--val", default="nnue/data/unc_11M/validation_data.bin",
                    help="validation .bin the run's artifacts were computed on")

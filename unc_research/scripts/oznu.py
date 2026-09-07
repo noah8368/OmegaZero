@@ -38,7 +38,7 @@ Subcommands:
 Usage:
     python3 unc_research/scripts/oznu.py pack \
         --nnue nnue/nnue.bin \
-        --head unc_research/experiment_results/unc_head/<run>/best.bin \
+        --head unc_research/models/unc_head/<run>/best.bin \
         --out  unc_research/models/nnue_unc.bin \
         --run-id "<free-form provenance>"          # defaults to the head run-dir name
     python3 unc_research/scripts/oznu.py inspect unc_research/models/nnue_unc.bin

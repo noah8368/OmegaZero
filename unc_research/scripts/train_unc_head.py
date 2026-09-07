@@ -27,7 +27,7 @@ is enough. unc_research/scripts/prepare_unc_data.py is the one-stop step that co
 shards and pre-bakes both .bin ahead of time, but is now optional.
 Full flow: datagen -> prepare_unc_data.py -> this trainer.
 
-Each run gets a timestamped dir under unc_research/experiment_results/unc_head/,
+Each run gets a timestamped dir under unc_research/models/unc_head/,
 mirroring nnue/model:
     <run>/checkpoints/epoch_N.pt   per-epoch checkpoints (gitignored, local only)
     <run>/best.bin                the best-val conditional head (OZUH binary;
@@ -51,7 +51,7 @@ Usage:
       --train nnue/data/unc_11M/training_data.txt \
       --val   nnue/data/unc_11M/validation_data.txt
   # re-render a past run's figures:
-  python3 unc_research/scripts/train_unc_head.py plot unc_research/experiment_results/unc_head/<run>/
+  python3 unc_research/scripts/train_unc_head.py plot unc_research/models/unc_head/<run>/
 """
 
 import argparse
@@ -844,7 +844,7 @@ def main():
     t.add_argument("--cache", default="auto",
                    help="dir to cache fp16 embeddings (.npy); 'auto' = <train_dir>/.emb_cache, '' = off")
     t.add_argument("--seed", type=int, default=0)
-    t.add_argument("--out", default="unc_research/experiment_results/unc_head",
+    t.add_argument("--out", default="unc_research/models/unc_head",
                    help="base dir for the timestamped run (best.bin + checkpoints + plots)")
     t.add_argument("--early-stop", action="store_true", dest="early_stop",
                    help="enable early stopping (off by default: run the full --epochs)")
@@ -856,7 +856,7 @@ def main():
 
     # plot subcommand: re-render a past run's figures (mirrors train_nnue.py plot).
     p = sub.add_parser("plot", help="re-render a run's calibration/loss figures from its artifacts")
-    p.add_argument("run", help="unc_research/experiment_results/unc_head/<run>/ (has artifacts.npz)")
+    p.add_argument("run", help="unc_research/models/unc_head/<run>/ (has artifacts.npz)")
     p.set_defaults(func=cmd_plot)
 
     # Backward-compatible default: bare `train_unc_head.py --trunk ...` runs `train`.

@@ -2,4 +2,4 @@ nnue/data/combined/*.txt filter=lfs diff=lfs merge=lfs -text
 nnue/nnue.bin filter=lfs diff=lfs merge=lfs -text
 nnue/model/**/*.bin filter=lfs diff=lfs merge=lfs -text
 unc_research/models/*.bin filter=lfs diff=lfs merge=lfs -text
-unc_research/experiment_results/unc_head/**/nnue_unc.bin filter=lfs diff=lfs merge=lfs -text
+unc_research/models/unc_head/**/nnue_unc.bin filter=lfs diff=lfs merge=lfs -text

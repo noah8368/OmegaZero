@@ -27,7 +27,7 @@ of the four "improve the distribution" levers, so it goes first.
 
 ## 2026-09-06 — first VALID full unc-head run: well-calibrated 10.6M head (the real unc-002 read)
 
-Full 60-epoch run on the clean data (`experiment_results/unc_head/2026-09-06_00-58-01_nnue_10634559pos`),
+Full 60-epoch run on the clean data (`models/unc_head/2026-09-06_00-58-01_nnue_10634559pos`),
 trunk = `nnue.bin` (md5 matches datagen) → **the first coherent 10.6M calibration read**.
 
 - **Headline:** val NLL cond **0.8415** / uncond (floor) **1.1755** (gain +0.334); PIT KS cond
@@ -79,7 +79,7 @@ as a first-class direction so it isn't lost; H1 (the margin crux) still comes fi
 
 ## 2026-09-06 — first full-size unc-head run is INVALID: training `.bin` 98% zero-filled (mtime-cache trap)
 
-The 2026-09-05 run (`experiment_results/unc_head/2026-09-05_20-51-41_nnue_10634560pos`) reported
+The 2026-09-05 run (`models/unc_head/2026-09-05_20-51-41_nnue_10634560pos`) reported
 great-looking numbers (val NLL cond 3.02 vs uncond 7.21, gain +4.19; coverage ~nominal; PIT KS
 0.05) but is **not a valid 10.6M read**. Diagnostic: `scripts/unc_head_run_diag.py` → fig
 `.../figs/RUN_INVALID_zero_fill_diag.png`.
