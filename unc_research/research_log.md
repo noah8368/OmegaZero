@@ -15,9 +15,24 @@ without destructive clipping — same net size, same NPS. OZUH bumps to **v4** (
 bias ×Wo[o]·127; C++ descales per row via `head_out_descale_`; v3 = uniform ×64 still readable). Python
 export/read + `int8_head_params` + C++ loader/inference updated; all targets build clean.
 
-Both heads retrained QAT **with plots + --early-stop** on this fix. Full suite + parity + NPS results appended
-below once the runs land. Expectation: small head's P2 recovers toward the normal/float corrector at
-unchanged (~0.975×) NPS; calibration (P1/P3) already int8-robust, should be unchanged.
+Small head retrained QAT **with plots + --early-stop** on this fix (`2026-09-08_01-36-57`, v4, 0.000%
+output clipping, Wo∈[14.2,168.3]). Parity PASS. **Result — the fix is clean but did NOT recover P2:**
+
+| small head | P1 δ | P2 MAE-red | P3 PIT/KS | NPS |
+|---|---|---|---|---|
+| v3 (fixed ×64 out, 8.75% clip) | 0.81 | −6.7% | 0.511/0.028 | 0.975× |
+| **v4 (per-row out, 0% clip)** | 0.81 | **−6.7%** | 0.513/0.030 | 0.966× |
+
+**Decisive disambiguation (same 20k val sample):** small head FLOAT corrector −7.6% == INT8 corrector −7.6%
+(E[u|x] differ mean 0.47 cp / p95 1.45 cp) vs the 128-wide FLOAT head's −9.6%. So **int8 is essentially
+lossless for the small head; the corrector gap is pure CAPACITY (32-wide vs 128-wide), not quantization.**
+This *corrects* the prior entry's read: the −6.7% was NOT output-saturation clipping — the v4 fix removes
+all clipping and P2 is unchanged. The fix is still worth keeping (strictly cleaner, and it makes int8
+lossless — it WILL matter for the 128-wide head, whose int8 −8.3% vs float −9.6% gap is a genuine quant
+cost). The corrector/NPS tradeoff is therefore a smooth capacity curve: 32-wide −7.6% @ ~free NPS, 128-wide
+−9.6%(float)/−8.3%(int8) @ −16.5% NPS; a mid width (64) is the untested sweet spot. Small head still beats
+corr-hist decisively on deep-`v*` (Phase E: 106.5 vs 140.4 MAE), so it stays the SPRT candidate — the SPRT
+tests whether a genuine-but-modest corrector at ~zero NPS cost gains Elo over corr-hist.
 
 ## 2026-09-08 — unc-008 G: QAT heads trained + full suite bake-off (normal vs small vs float)
 
