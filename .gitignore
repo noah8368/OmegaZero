@@ -39,6 +39,6 @@ syzygy_tables/
 # Research: per-run experiment outputs (models, plots, summaries) are tracked, but
 # the unc head's per-epoch checkpoints are training-time noise — kept local only
 # (best.bin is the committed deliverable for each run).
-unc_research/models/unc_head/*/checkpoints/
+unc_research/models/*/checkpoints/
 # Claude Code project guidance (local-only; not committed).
 CLAUDE.md
