@@ -6,6 +6,19 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-09-08 — unc-008 G: output-layer per-row scale fix (OZUH v4); heads retrained w/ plots
+
+The QAT bake-off showed the int8 corrector (P2) loss tracked **output-layer** saturation (fixed ×64 clips
+the large MDN output weights, max|w|~10; 3.1% normal / 8.75% small). Fix: give the **output layer per-row
+weight scales** Wo[o]=127/max|w_o| (hidden layers stay trunk-exact ×64), so the output weights quantize
+without destructive clipping — same net size, same NPS. OZUH bumps to **v4** (trailing float32[4k] Wo array;
+bias ×Wo[o]·127; C++ descales per row via `head_out_descale_`; v3 = uniform ×64 still readable). Python
+export/read + `int8_head_params` + C++ loader/inference updated; all targets build clean.
+
+Both heads retrained QAT **with plots + --early-stop** on this fix. Full suite + parity + NPS results appended
+below once the runs land. Expectation: small head's P2 recovers toward the normal/float corrector at
+unchanged (~0.975×) NPS; calibration (P1/P3) already int8-robust, should be unchanged.
+
 ## 2026-09-08 — unc-008 G: QAT heads trained + full suite bake-off (normal vs small vs float)
 
 Both QAT heads trained (ClippedReLU, --early-stop, trunk `nnue/nnue.bin`), fused v3, run through the full

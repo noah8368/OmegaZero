@@ -353,6 +353,23 @@ auto NnueNetwork::LoadHeadStream(istream& f, const string& ctx,
     return false;
   }
 
+  // Output-layer per-row weight scales Wo (OZUH v4): descale[o] = Wo[o]*127.
+  // v3 used the fixed kHiddenScale (Wo = 64) -> descale kOutputScale = 8128.
+  for (int o = 0; o < out2; ++o) {
+    head_out_descale_[o] = static_cast<float>(kOutputScale);
+  }
+  if (head_version >= 4) {
+    float wo[kHeadMaxOut];
+    f.read(reinterpret_cast<char*>(wo), sizeof(float) * out2);
+    if (!f) {
+      cerr << "OZNU: truncated head output scales in " << ctx << endl;
+      return false;
+    }
+    for (int o = 0; o < out2; ++o) {
+      head_out_descale_[o] = wo[o] * static_cast<float>(kActivationScale);
+    }
+  }
+
   head_in_dim_ = in_dim;
   head_k_ = k;
   head_h1_ = h1;
@@ -607,7 +624,7 @@ auto NnueNetwork::EvalWithDistribution(const int16_t* white_accum,
     for (int i = 0; i < head_h2_; ++i) {
       sum += static_cast<int32_t>(row[i]) * static_cast<int32_t>(l2[i]);
     }
-    raw[o] = static_cast<float>(sum) / static_cast<float>(kOutputScale);
+    raw[o] = static_cast<float>(sum) / head_out_descale_[o];
   }
 
   // Split into (logits, mu, log_sigma, log_df) and apply MDNt's transforms.
@@ -690,7 +707,7 @@ auto NnueNetwork::MeanCorrectionCp(const int16_t* white_accum,
     for (int m = 0; m < head_h2_; ++m) {
       sum += static_cast<int32_t>(row[m]) * static_cast<int32_t>(l2[m]);
     }
-    float out = static_cast<float>(sum) / static_cast<float>(kOutputScale);
+    float out = static_cast<float>(sum) / head_out_descale_[o];
     if (o < kc) {
       logits[o] = out;
     } else {

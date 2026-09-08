@@ -52,7 +52,8 @@ def python_reference(fens, nnue_bytes, head_bytes):
     if meta.get("version", 0) >= 3:  # QAT int8: exact integer forward (matches C++)
         from train_unc_head import int8_head_params
         xn = x.numpy() if hasattr(x, "numpy") else np.asarray(x)
-        log_pi, mu, sigma, df = int8_head_params(meta["qw"], meta["qb"], meta["k"], xn)
+        log_pi, mu, sigma, df = int8_head_params(meta["qw"], meta["qb"], meta["k"],
+                                                 xn, meta["out_descale"])
         pi = np.exp(log_pi)
     else:
         with torch.no_grad():

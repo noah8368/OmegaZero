@@ -139,6 +139,9 @@ class NnueNetwork {
   std::unique_ptr<int32_t[]> head_b1_;  // [h2]
   std::unique_ptr<int8_t[]> head_w2_;   // [4k][h2]
   std::unique_ptr<int32_t[]> head_b2_;  // [4k]
+  // Output-layer per-row descale Wo[o]*kActivationScale (OZUH v4): raw MDN param
+  // o = output_acc[o] / head_out_descale_[o]. v3 nets use a uniform kOutputScale.
+  float head_out_descale_[kHeadMaxOut] = {};
 
   // Shared int8 forward of the two ClippedReLU hidden layers; writes the int8
   // [0,127] layer-2 activations. Used by EvalWithDistribution + MeanCorrectionCp.
