@@ -119,7 +119,7 @@ static auto RunUncHarness(const string& net_path, bool with_vstar, int depth,
   if (with_vstar) {
     // Match datagen's search profile (nnue since a net is loaded) so v_star is
     // comparable to the head's training labels.
-    params = LoadParamsOrDie("params.json", ProfileForEvalMode());
+    params = LoadParamsOrDie("params.json");
     cerr << "unc_harness: v_star = fixed depth " << depth << ", node cap "
          << node_cap << endl;
   }

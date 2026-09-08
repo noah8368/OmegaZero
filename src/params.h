@@ -5,10 +5,10 @@
  * option / SPSA target / JSON key onto a SearchParams field, shared by the UCI
  * handler (option advertisement + setoption) and the JSON (de)serializer here.
  *
- * params.json (at the repo root) holds two profiles keyed by eval mode: "nnue"
- * and "hce". Values are stored in the same integer units the UCI options use
- * (doubles are scaled by their `divisor`, e.g. a weight of 0.50 is stored 50),
- * so JSON, `setoption`, and SPSA all speak identical units.
+ * params.json (at the repo root) is a flat object of every registry key. Values
+ * are stored in the same integer units the UCI options use (doubles are scaled
+ * by their `divisor`, e.g. a weight of 0.50 is stored 50), so JSON, `setoption`,
+ * and SPSA all speak identical units.
  *
  * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
  */
@@ -80,23 +80,18 @@ inline constexpr DblOpt kDblOpts[] = {
     {"TmEbfFallback", &SearchParams::tm_ebf_fallback, 100, 100, 400},
 };
 
-// The params.json profile name matching the active eval mode: "nnue" if NNUE
-// weights are loaded (g_nnue.IsLoaded()), else "hce".
-auto ProfileForEvalMode() -> std::string;
-
 // Resolve the params.json path relative to the running executable: the
 // directory of `argv0`, then "../params.json". This mirrors how the engine
 // locates its other data files, so a binary run from any working directory
 // still finds the checked-in params.json at the repo root.
 auto ParamsPathFromExe(const std::string& argv0) -> std::string;
 
-// Load the named profile from `path` and return the fully-populated parameters.
-// params.json is the sole source of truth for parameter values, so this is
-// strict: if the file cannot be opened, the profile is absent, or ANY registry
-// key is missing from it, an error is printed to stderr and the process exits.
-// Values are clamped to each option's [min, max] bounds.
-auto LoadParamsOrDie(const std::string& path, const std::string& profile)
-    -> SearchParams;
+// Load the parameters from `path` (a flat params.json) and return them fully
+// populated. params.json is the sole source of truth for parameter values, so
+// this is strict: if the file cannot be opened or ANY registry key is missing,
+// an error is printed to stderr and the process exits. Values are clamped to
+// each option's [min, max] bounds.
+auto LoadParamsOrDie(const std::string& path) -> SearchParams;
 
 }  // namespace omegazero
 

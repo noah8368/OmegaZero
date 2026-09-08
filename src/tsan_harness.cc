@@ -27,7 +27,6 @@ using omegazero::Engine;
 using omegazero::LoadParamsOrDie;
 using omegazero::Move;
 using omegazero::ParamsPathFromExe;
-using omegazero::ProfileForEvalMode;
 using omegazero::S8;
 using omegazero::SearchParams;
 using omegazero::SearchPool;
@@ -61,7 +60,7 @@ auto main(int argc, char* argv[]) -> int {
     return EXIT_FAILURE;
   }
   const SearchParams params =
-      LoadParamsOrDie(ParamsPathFromExe(argv[0]), ProfileForEvalMode());
+      LoadParamsOrDie(ParamsPathFromExe(argv[0]));
 
   for (const string& fen : kPositions) {
     Board board(fen);

@@ -861,10 +861,10 @@ auto main(int argc, char* argv[]) -> int {
   }
   std::cerr << "Datagen eval: NNUE (" << net_path << ")" << std::endl;
 
-  // Params profile follows the eval just selected ("nnue" if the net loaded,
-  // else "hce"). A missing/incomplete file is fatal -- no in-code defaults.
+  // Search params from the flat params.json; a missing/incomplete file is fatal
+  // -- no in-code defaults.
   const SearchParams params =
-      LoadParamsOrDie("params.json", ProfileForEvalMode());
+      LoadParamsOrDie("params.json");
 
   if (num_workers < 1) num_workers = 1;
   if (total_games < 1) total_games = 1;

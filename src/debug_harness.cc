@@ -239,7 +239,7 @@ auto main(int argc, char* argv[]) -> int {
     return EXIT_FAILURE;
   }
   const SearchParams params =
-      LoadParamsOrDie(ParamsPathFromExe(argv[0]), ProfileForEvalMode());
+      LoadParamsOrDie(ParamsPathFromExe(argv[0]));
 
   cout << "=== Self-play ===" << endl;
   cout << "  Games: " << num_games << "  Search time: " << search_time << "s" << endl;

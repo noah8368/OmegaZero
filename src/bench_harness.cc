@@ -108,7 +108,7 @@ auto main(int argc, char* argv[]) -> int {
   if (argc > 1) search_time = std::atof(argv[1]);
 
   const SearchParams params =
-      LoadParamsOrDie(ParamsPathFromExe(argv[0]), ProfileForEvalMode());
+      LoadParamsOrDie(ParamsPathFromExe(argv[0]));
   RunNpsBench(search_time, params);
   return 0;
 }

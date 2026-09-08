@@ -40,10 +40,10 @@ UciHandler::UciHandler(const string& book_path, const string& params_path)
   engine_ = std::make_unique<Engine>(pool_.GetTt(), board_.get(), 'w', 5.0f);
   engine_->SetInfoCallback(
       [this](const SearchInfo& info) { PrintInfo(info); });
-  // Load the runtime search parameters from params.json (profile matching the
-  // active eval mode); `setoption` overrides these afterward. There are no
-  // in-code defaults, so a missing/incomplete file is fatal (LoadParamsOrDie).
-  uci_params_ = LoadParamsOrDie(params_path, ProfileForEvalMode());
+  // Load the runtime search parameters from params.json; `setoption` overrides
+  // these afterward. There are no in-code defaults, so a missing/incomplete file
+  // is fatal (LoadParamsOrDie).
+  uci_params_ = LoadParamsOrDie(params_path);
   LoadOpeningBook(book_path_);
 }
 

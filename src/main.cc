@@ -129,9 +129,8 @@ auto main(int argc, char* argv[]) -> int {
     omegazero::Game game(init_pos, opening_book_path, player_side, search_time,
                          on_opening, light_theme, num_threads);
 
-    // Apply the params.json profile matching the eval mode set above.
-    game.SetSearchParams(omegazero::LoadParamsOrDie(
-        params_path, omegazero::ProfileForEvalMode()));
+    // Apply the tunable search parameters from params.json.
+    game.SetSearchParams(omegazero::LoadParamsOrDie(params_path));
 
     if (clock_time > 0.0f) {
       game.SetClock(clock_time, increment);

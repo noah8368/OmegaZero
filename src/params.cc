@@ -1,10 +1,9 @@
 /* Noah Himed
  *
- * Implement the params.json load/store layer over the shared parameter registry
- * (see params.h). The reader/writer is a minimal hand-rolled JSON handler: the
- * schema is a fixed two-level object ({ "<profile>": { "<Name>": <number> } })
- * that we fully control, so a small tolerant scanner suffices and avoids adding
- * any external dependency.
+ * Implement the params.json load layer over the shared parameter registry
+ * (see params.h). The reader is a minimal hand-rolled JSON handler: the schema
+ * is a flat object ({ "<Name>": <number>, ... }) that we fully control, so a
+ * small tolerant scanner suffices and avoids adding any external dependency.
  *
  * Licensed under MIT License. Terms and conditions enclosed in "LICENSE.txt".
  */
@@ -25,46 +24,7 @@ namespace omegazero {
 
 using std::string;
 
-auto ProfileForEvalMode() -> string {
-  // Single eval path (unc-008): always the NNUE profile; HCE removed.
-  return "nnue";
-}
-
-// Return the substring of `text` between the braces of the object bound to
-// key `"<profile>"`, or empty if the key/object is not found. Braces inside
-// quoted strings are ignored so nested object matching stays correct.
-static auto ExtractProfileBlock(const string& text, const string& profile)
-    -> string {
-  const string key = "\"" + profile + "\"";
-  size_t pos = text.find(key);
-  if (pos == string::npos) return "";
-  pos = text.find('{', pos + key.size());
-  if (pos == string::npos) return "";
-
-  int depth = 0;
-  bool in_str = false;
-  for (size_t i = pos; i < text.size(); ++i) {
-    const char c = text[i];
-    if (in_str) {
-      if (c == '\\') {
-        ++i;  // skip the escaped character
-      } else if (c == '"') {
-        in_str = false;
-      }
-      continue;
-    }
-    if (c == '"') {
-      in_str = true;
-    } else if (c == '{') {
-      ++depth;
-    } else if (c == '}') {
-      if (--depth == 0) return text.substr(pos + 1, i - pos - 1);
-    }
-  }
-  return "";  // unbalanced braces
-}
-
-// Scan a profile block for "<key>": <number> pairs into a map. Tolerant of
+// Scan the params object for "<key>": <number> pairs into a map. Tolerant of
 // whitespace/commas/newlines; values may be negative or decimal.
 static auto ParseNumberFields(const string& block) -> std::map<string, double> {
   std::map<string, double> fields;
@@ -117,25 +77,19 @@ auto ParamsPathFromExe(const string& argv0) -> string {
 static auto ParamsFatal(const string& path, const string& msg) -> void {
   std::cerr << "FATAL: params.json (" << path << "): " << msg << "\n"
             << "params.json is required and holds every search parameter; "
-               "regenerate or restore it (the \"nnue\" profile)."
+               "regenerate or restore it."
             << std::endl;
   std::exit(EXIT_FAILURE);
 }
 
-auto LoadParamsOrDie(const string& path, const string& profile)
-    -> SearchParams {
+auto LoadParamsOrDie(const string& path) -> SearchParams {
   std::ifstream f(path);
   if (!f) {
     ParamsFatal(path, "could not open file");
   }
   std::stringstream buf;
   buf << f.rdbuf();
-  const string block = ExtractProfileBlock(buf.str(), profile);
-  if (block.empty()) {
-    ParamsFatal(path, "profile \"" + profile + "\" not found");
-  }
-
-  const std::map<string, double> fields = ParseNumberFields(block);
+  const std::map<string, double> fields = ParseNumberFields(buf.str());
 
   // Every registry key must be present: no field may fall back to a code value.
   std::vector<string> missing;
@@ -150,8 +104,7 @@ auto LoadParamsOrDie(const string& path, const string& profile)
     for (size_t i = 0; i < missing.size(); ++i) {
       list += (i ? ", " : "") + missing[i];
     }
-    ParamsFatal(path, "profile \"" + profile +
-                          "\" is missing required key(s): " + list);
+    ParamsFatal(path, "missing required key(s): " + list);
   }
 
   SearchParams out;

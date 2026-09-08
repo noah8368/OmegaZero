@@ -15,8 +15,8 @@ params.json stores. Perturbations are applied per game via cutechess-cli's
 `setoption` overrides it, only the *tuned* parameters need to be passed each
 iteration (untuned ones stay at their current best from params.json).
 
-Results are written back into the matching params.json profile ("nnue" or
-"hce"), so a completed run drops straight into normal play.
+Results are written back into the flat params.json, so a completed run drops
+straight into normal play.
 
 Requires cutechess-cli (auto-detected in cutechess/build/ or PATH), and a built
 engine (`make` first).
@@ -39,12 +39,12 @@ Algorithm (standard Spall SPSA with the OpenBench schedule):
     c_end is the final perturbation magnitude; r_end the final learning rate.
 
 Usage:
-    # Tune a subset for the NNUE profile, 20k games at 8+0.08, 6 concurrent
+    # Tune a subset, 20k games at 8+0.08, 6 concurrent
     python3 scripts/spsa.py run --params RazoringMargin,SeeMargin,FutilityMargin \\
         --games 20000 --tc 8+0.08 --concurrency 6
 
-    # Tune every knob for the HCE profile
-    python3 scripts/spsa.py run --profile hce --games 40000 --tc 8+0.08 -c 8
+    # Tune a single param (e.g. the RFP quantile), overnight
+    python3 scripts/spsa.py run --params RfpQuantile --games 40000 --tc 8+0.08 -c 8
 
     # Generate an editable config, hand-pick knobs, then run it
     python3 scripts/spsa.py init --out spsa_config.json
@@ -52,8 +52,7 @@ Usage:
 
 A --config file may also carry an optional top-level "run" block to make it a
 self-contained recipe (any subset of games / games_per_iter / concurrency / tc):
-    { "profile": "nnue",
-      "run": {"games": 30000, "games_per_iter": 4, "concurrency": 4,
+    { "run": {"games": 30000, "games_per_iter": 4, "concurrency": 4,
               "tc": "10+0.1,30+0.3,60+0.6,60+0"},
       "params": { ... } }
 Explicit CLI flags override the "run" block, which overrides the built-in
@@ -152,7 +151,7 @@ def clamp(x, lo, hi):
 
 
 # ---------------------------------------------------------------------------
-# params.json I/O (updates only the tuned profile, preserves the rest)
+# params.json I/O (updates only the tuned keys, preserves the rest)
 # ---------------------------------------------------------------------------
 
 def load_params_json(path):
@@ -169,14 +168,13 @@ def write_params_json(path, data):
     Path(path).write_text(json.dumps(data, indent=2) + "\n")
 
 
-def save_profile(path, profile, theta, out_path=None):
-    """Round theta into params.json[profile] and write the result to `out_path`
-    (defaults to `path`), preserving all other content. Reading the full file
-    from `path` keeps every checkpoint a complete, drop-in params.json."""
+def save_params(path, theta, out_path=None):
+    """Round theta into the flat params.json and write the result to `out_path`
+    (defaults to `path`), preserving all other keys. Reading the full file from
+    `path` keeps every checkpoint a complete, drop-in params.json."""
     data = load_params_json(path)
-    prof = data.setdefault(profile, {})
     for name, val in theta.items():
-        prof[name] = int(round(val))
+        data[name] = int(round(val))
     write_params_json(out_path or path, data)
 
 
@@ -405,10 +403,8 @@ def cmd_run(args):
     engine = engine.resolve()
     if not engine.exists():
         sys.exit(f"Engine not found: {engine}\nRun 'make' first.")
-    if args.profile not in ("nnue", "hce"):
-        sys.exit("--profile must be 'nnue' or 'hce'")
 
-    extra_args = ["--hce"] if args.profile == "hce" else []
+    extra_args = []
     cutechess = sprt.find_cutechess(args.cutechess)
     opts = get_engine_options(engine, extra_args)
     tuned = select_tuned(args, opts)
@@ -419,9 +415,9 @@ def cmd_run(args):
     if not openings.exists():
         sys.exit(f"Openings file not found: {openings}")
 
-    # Starting point: current params.json[profile] values, else registry default.
-    profile_vals = load_params_json(args.out).get(args.profile, {})
-    theta = {name: float(profile_vals.get(name, opts[name][0])) for name in tuned}
+    # Starting point: current params.json values, else registry default.
+    cur_vals = load_params_json(args.out)
+    theta = {name: float(cur_vals.get(name, opts[name][0])) for name in tuned}
 
     iterations = max(1, args.games // args.games_per_iter)
     A = 0.1 * iterations
@@ -460,11 +456,11 @@ def cmd_run(args):
         orig_start = meta.get("start_theta") or _first_history_start(history_csv,
                                                                      names)
         # Warm-start theta from the newest checkpoint.
-        cp_vals = load_params_json(newest_cp).get(args.profile, {})
+        cp_vals = load_params_json(newest_cp)
         missing = [n for n in names if n not in cp_vals]
         if missing:
             sys.exit(f"--resume: checkpoint {newest_cp.name} is missing params "
-                     f"({', '.join(missing)}); profile/--params mismatch?")
+                     f"({', '.join(missing)}); --params mismatch?")
         theta = {n: float(cp_vals[n]) for n in names}
         start_iter = t_done + 1
         if start_iter > iterations:
@@ -475,7 +471,7 @@ def cmd_run(args):
         write_header = not history_csv.exists()
     else:
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        run_dir = RESULTS_DIR / f"{ts}_{args.profile}_{sprt.get_version_tag()}"
+        run_dir = RESULTS_DIR / f"{ts}_{sprt.get_version_tag()}"
         run_dir.mkdir(parents=True, exist_ok=True)
         checkpoint_dir = run_dir / "checkpoint"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -486,7 +482,6 @@ def cmd_run(args):
         orig_start = dict(theta)
         # Persist run metadata so a later --resume can pin the schedule exactly.
         (run_dir / "meta.json").write_text(json.dumps({
-            "profile": args.profile,
             "params": names,
             "games": args.games,
             "games_per_iter": args.games_per_iter,
@@ -511,7 +506,7 @@ def cmd_run(args):
               "perturbations will have no effect. Add a --tc entry.")
 
     print(f"\n{'=' * 68}")
-    print(f"  SPSA tuning — profile '{args.profile}'  ({len(names)} params)")
+    print(f"  SPSA tuning — {len(names)} params")
     if args.resume:
         print(f"  RESUMING {run_dir.name}")
         print(f"  from checkpoint {newest_cp.name} — iter {start_iter}/{iterations}"
@@ -573,20 +568,20 @@ def cmd_run(args):
                           f"last={result:.2f} [{tc_label}]\n    {snap}",
                           flush=True)
                 if t % args.checkpoint_every == 0:
-                    save_profile(args.out, args.profile, theta,
-                                 out_path=checkpoint_dir / f"iter_{t:05d}.json")
+                    save_params(args.out, theta,
+                                out_path=checkpoint_dir / f"iter_{t:05d}.json")
         except KeyboardInterrupt:
             print("\n  Interrupted — saving current best.", flush=True)
 
     best_json = checkpoint_dir / "best.json"
-    save_profile(args.out, args.profile, theta, out_path=best_json)
+    save_params(args.out, theta, out_path=best_json)
     # True pre-run start: recorded start_theta on resume, else the pre-loop
     # params.json values for a fresh run.
-    start_vals = {n: float((orig_start or {}).get(n, profile_vals.get(n, opts[n][0])))
+    start_vals = {n: float((orig_start or {}).get(n, cur_vals.get(n, opts[n][0])))
                   for n in names}
     print(f"\n{'=' * 68}")
     print(f"  Done. Tuned {len(names)} params over {games_done} games.")
-    print(f"  Best values written to {best_json} [{args.profile}]:")
+    print(f"  Best values written to {best_json}:")
     for n in names:
         print(f"    {n:<26} {int(round(start_vals[n])):>6} -> "
               f"{int(round(theta[n])):>6}")
@@ -598,8 +593,7 @@ def cmd_run(args):
     if games_done > 0:
         try:
             end_vals = {n: float(theta[n]) for n in names}
-            subtitle = (f"{run_dir.name}   ·   profile '{args.profile}', "
-                        f"{games_done} games   ·   start → end")
+            subtitle = (f"{run_dir.name}   ·   {games_done} games   ·   start → end")
             out = render_shift_plot(names, start_vals, end_vals,
                                     run_dir / "shift.png", "SPSA parameter shift",
                                     subtitle)
@@ -622,20 +616,19 @@ def cmd_init(args):
     if not engine.exists():
         sys.exit(f"Engine not found: {engine}\nRun 'make' first.")
 
-    extra_args = ["--hce"] if args.profile == "hce" else []
-    opts = get_engine_options(engine, extra_args)
-    profile_vals = load_params_json(DEFAULT_PARAMS_JSON).get(args.profile, {})
+    opts = get_engine_options(engine, [])
+    cur_vals = load_params_json(DEFAULT_PARAMS_JSON)
 
     params = {}
     for name, (dflt, lo, hi) in opts.items():
         params[name] = {
-            "value": int(profile_vals.get(name, dflt)),
+            "value": int(cur_vals.get(name, dflt)),
             "min": lo, "max": hi,
             "c_end": round(default_c_end(lo, hi), 3),
             "r_end": args.r_end,
             "tune": True,
         }
-    cfg = {"profile": args.profile, "params": params}
+    cfg = {"params": params}
     Path(args.out).write_text(json.dumps(cfg, indent=2) + "\n")
     print(f"Wrote tuning config ({len(params)} params) to {args.out}")
     print("Edit it (set \"tune\": false to freeze a knob), then:")
@@ -812,8 +805,6 @@ def main():
     run_p = sub.add_parser("run", help="Run an SPSA tuning session")
     run_p.add_argument("--engine", default="build/OmegaZero",
                        help="Engine binary (default: build/OmegaZero)")
-    run_p.add_argument("--profile", default="nnue", choices=["nnue", "hce"],
-                       help="params.json profile / eval mode to tune (default: nnue)")
     run_p.add_argument("--params", default=None,
                        help="Comma-separated knobs to tune (default: all). "
                             "Ignored if --config is given.")
@@ -868,7 +859,6 @@ def main():
 
     init_p = sub.add_parser("init", help="Emit an editable spsa_config.json")
     init_p.add_argument("--engine", default="build/OmegaZero")
-    init_p.add_argument("--profile", default="nnue", choices=["nnue", "hce"])
     init_p.add_argument("-r", "--r-end", type=float, default=0.002, dest="r_end")
     init_p.add_argument("--out", default="spsa_config.json")
 
