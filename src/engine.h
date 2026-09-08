@@ -110,6 +110,7 @@ struct SearchParams {
   // --- Pruning / reduction margins, depths, thresholds ---
   int aspiration_delta{};  // initial aspiration half-window (cp)
   int futility_margin{};   // per-depth (reverse) futility margin (cp)
+  double rfp_risk{};       // reverse-futility risk C: margin=Q_{1-C}(u|x)-E[u|x] (unc-009 H1)
   int max_futility_pruning_depth{};  // max depth for (reverse) futility pruning
   int max_late_move_pruning_depth{};  // max depth for late-move pruning
   int max_see_pruning_depth{};        // max depth for SEE pruning
@@ -251,7 +252,8 @@ class Engine {
   auto ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
                            bool at_pv_node, bool in_check) -> bool;
   auto ShouldReverseFutilityPrune(int static_eval, int depth, int beta,
-                                  bool at_pv_node, bool in_check) -> bool;
+                                  bool at_pv_node, bool in_check, int margin)
+      -> bool;
   auto ShouldFutilityPrune(const Move& move, int static_eval, int depth,
                            bool at_pv_node, bool in_check, int alpha) -> bool;
   auto ShouldLateMovePrune(const Move& move, int num_quiet_searched, int depth,
@@ -570,15 +572,16 @@ inline auto Engine::ValidateTtMove(const Move& move) const -> bool {
 
 inline auto Engine::ShouldReverseFutilityPrune(int static_eval, int depth,
                                                int beta, bool at_pv_node,
-                                               bool in_check) -> bool {
+                                               bool in_check, int margin)
+    -> bool {
   if (depth > 2 || at_pv_node || in_check) {
     return false;
   }
-  if (improving_) {
-    // Prune less aggressively when static eval is improving.
-    return static_eval - (depth - 1) * params_.futility_margin >= beta;
-  }
-  return static_eval - depth * params_.futility_margin >= beta;
+  // unc-009 H1: `margin` is the head's position-conditional one-sided quantile
+  // Q_{1-C}(u|x) - E[u|x] (computed at the eval site, where the distribution is
+  // in hand), replacing the old depth*futility_margin constant. The prune shape
+  // (static_eval - margin >= beta) is unchanged.
+  return static_eval - margin >= beta;
 }
 
 inline auto Engine::ShouldFutilityPrune(const Move& move, int static_eval,

@@ -654,9 +654,26 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   // corrector that replaced the old online correction history (SPRT +7.7 Elo).
   // The head runs on the int8 path (MeanCorrectionCp): the two big MLP layers
   // are integer/NEON and only logits/mu are computed (H5-B).
+  // unc-009 H1: at RFP-eligible nodes (depth<=2, non-PV, non-check) take ONE full
+  // head forward -- it yields the mean-corrected eval AND the RFP margin quantile
+  // (no second forward). RFP can only fire when static_eval >= beta (margin >= 0),
+  // so gate the expensive quantile *bisection* on that, reusing the same dist.
+  // Every other node keeps the H6 int8 mean-only fast path untouched.
   int static_eval = kInvalidEval;
+  int rfp_margin = 0;
   if (!in_check) {
-    static_eval = board_->Evaluate() - board_->GetMeanCorrectionCp();
+    if (depth <= 2 && !at_pv_node) {
+      UncDist dist = board_->GetUncDistribution();
+      const int mean = static_cast<int>(std::lround(dist.MeanCp()));
+      static_eval = dist.v_cp - mean;
+      if (static_eval >= beta) {  // margin = Q_{1-C}(u|x) - E[u|x], C = rfp_risk
+        const float tau = 1.0F - static_cast<float>(params_.rfp_risk);
+        rfp_margin = max(0, static_cast<int>(std::lround(dist.QuantileCp(tau))) -
+                               mean);
+      }
+    } else {
+      static_eval = board_->Evaluate() - board_->GetMeanCorrectionCp();
+    }
   }
   eval_history_[ply] = static_eval;
   if (in_check)
@@ -677,7 +694,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   }
 
   if (ShouldReverseFutilityPrune(static_eval, depth, beta, at_pv_node,
-                                 in_check)) {
+                                 in_check, rfp_margin)) {
     return beta;
   }
 
