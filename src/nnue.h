@@ -120,9 +120,11 @@ class NnueNetwork {
   std::unique_ptr<int8_t[]> output_weight_; // [kL3OutSize]
   int32_t output_bias_ = 0;
 
-  // Uncertainty head (float MDN over the frozen 512-dim trunk embedding),
-  // populated only from a fused OZNU file. Layers: in_dim->h1->h2->(4*k). See
-  // unc_research/scripts/oznu.py (OZNU) and train_unc_head.py (OZUH / MDNt).
+  // Uncertainty head (QAT int8 MDN over the frozen 512-dim trunk embedding),
+  // populated only from a fused OZNU file (OZUH v3). Layers: in_dim->h1->h2->(4*k),
+  // two ClippedReLU hidden layers. Quantized like the trunk tail: weights int8
+  // (x kHiddenScale), biases int32 (x kOutputScale), int8 [0,127] activations,
+  // /kHiddenScale requant. See oznu.py (OZNU) and train_unc_head.py (OZUH / MDNt).
   bool has_head_ = false;
   int head_in_dim_ = 0;
   int head_k_ = 0;
@@ -131,12 +133,17 @@ class NnueNetwork {
   float head_u_mean_ = 0.0F;
   float head_u_std_ = 1.0F;
   std::string head_run_id_;
-  std::unique_ptr<float[]> head_w0_;  // [h1][in_dim]
-  std::unique_ptr<float[]> head_b0_;  // [h1]
-  std::unique_ptr<float[]> head_w1_;  // [h2][h1]
-  std::unique_ptr<float[]> head_b1_;  // [h2]
-  std::unique_ptr<float[]> head_w2_;  // [4k][h2]
-  std::unique_ptr<float[]> head_b2_;  // [4k]
+  std::unique_ptr<int8_t[]> head_w0_;   // [h1][in_dim] int8 (x kHiddenScale)
+  std::unique_ptr<int32_t[]> head_b0_;  // [h1] int32 (x kOutputScale)
+  std::unique_ptr<int8_t[]> head_w1_;   // [h2][h1]
+  std::unique_ptr<int32_t[]> head_b1_;  // [h2]
+  std::unique_ptr<int8_t[]> head_w2_;   // [4k][h2]
+  std::unique_ptr<int32_t[]> head_b2_;  // [4k]
+
+  // Shared int8 forward of the two ClippedReLU hidden layers; writes the int8
+  // [0,127] layer-2 activations. Used by EvalWithDistribution + MeanCorrectionCp.
+  auto HeadHidden(const int16_t* white_accum, const int16_t* black_accum,
+                  S8 player_to_move, int8_t* l2_out) const -> void;
 };
 
 extern NnueNetwork g_nnue;

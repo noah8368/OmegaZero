@@ -159,14 +159,25 @@ def embed(records, ft_w, ft_b, chunk=20000):
 # --------------------------------------------------------------------------- #
 #  mdn_t head (Student-t mixture) -- ported from unc001b_stress.py MDNP
 # --------------------------------------------------------------------------- #
+class ClippedReLU(nn.Module):
+    """ReLU clamped to [0, 1] -- QAT: matches the trunk's int8 activation range
+    (train_nnue.py's ClippedReLU), so the head's hidden activations train into
+    [0,1] -> int8 [0,127] and the fixed-scale int8 export is faithful."""
+
+    def forward(self, x):
+        return torch.clamp(x, 0.0, 1.0)
+
+
 class MDNt(nn.Module):
     def __init__(self, in_dim, k=5, hidden=(128, 128)):
         super().__init__()
         self.k = k
         h1, h2 = hidden
+        # ClippedReLU (not ReLU) so the head is quantization-aware like the trunk
+        # (unc-008 G). The input embedding is already the trunk's ClippedReLU [0,1].
         self.net = nn.Sequential(
-            nn.Linear(in_dim, h1), nn.ReLU(),
-            nn.Linear(h1, h2), nn.ReLU(),
+            nn.Linear(in_dim, h1), ClippedReLU(),
+            nn.Linear(h1, h2), ClippedReLU(),
             nn.Linear(h2, 4 * k),  # per component: logit, mu, log_sigma, log_df
         )
 
@@ -190,20 +201,65 @@ _MDNT_LAYER_KEYS = (("net.0.weight", "net.0.bias"),
                     ("net.2.weight", "net.2.bias"),
                     ("net.4.weight", "net.4.bias"))
 
+# QAT fixed-point scales -- identical to the trunk (train_nnue.py): activations
+# [0,1] -> int8 [0,127], weights int8 (x64), biases int32 (x8128). The requant
+# after a hidden matmul is sum/64 clamped [0,127] (== 127 * ClippedReLU(z)); the
+# output layer's int32 accumulator descales by 8128 to raw MDN params.
+HEAD_ACT_SCALE = 127
+HEAD_WEIGHT_SCALE = 64
+HEAD_BIAS_SCALE = HEAD_ACT_SCALE * HEAD_WEIGHT_SCALE  # 8128
+
+
+def quant_w_i8(w):
+    """Float weight -> int8 (x64, clamped [-128,127]). numpy in, numpy int8 out."""
+    return np.clip(np.round(np.asarray(w) * HEAD_WEIGHT_SCALE), -128, 127).astype(np.int8)
+
+
+def quant_b_i32(b):
+    """Float bias -> int32 (x8128)."""
+    return np.clip(np.round(np.asarray(b) * HEAD_BIAS_SCALE),
+                   -(2 ** 31), 2 ** 31 - 1).astype(np.int32)
+
+
+def int8_head_params(qw, qb, k, x):
+    """Integer int8 forward of the QAT head, bit-matching the C++ inference (the
+    parity reference). qw/qb are the three layers' int8 weights / int32 biases
+    (as stored). x is the float [0,1] embedding [N, in_dim]. Returns numpy
+    (log_pi, mu, sigma, df) after the same MDN transforms as MDNt.params.
+
+    Fixed-point contract (mirrors ForwardFromAccumulators): activations are int8
+    [0,127] (= round(a*127)); a hidden layer is int32 acc = b_i32 + Wi8.ai8, then
+    act = trunc(acc/64) clamped [0,127]; the output layer descales acc by 8128."""
+    qx = np.clip(np.round(np.asarray(x, dtype=np.float64) * HEAD_ACT_SCALE),
+                 0, 127).astype(np.int32)                       # [N, in_dim]
+    a = qx
+    for li in (0, 1):  # two ClippedReLU hidden layers
+        acc = qb[li][None, :].astype(np.int64) + a.astype(np.int64) @ qw[li].T.astype(np.int64)
+        a = np.clip(np.trunc(acc / HEAD_WEIGHT_SCALE), 0, 127).astype(np.int32)
+    acc = qb[2][None, :].astype(np.int64) + a.astype(np.int64) @ qw[2].T.astype(np.int64)
+    raw = acc.astype(np.float64) / HEAD_BIAS_SCALE              # [N, 4k] raw MDN params
+    logits, mu, log_sigma, log_df = np.split(raw, 4, axis=1)
+    log_pi = logits - (np.log(np.sum(np.exp(logits - logits.max(1, keepdims=True)),
+                                     axis=1, keepdims=True)) + logits.max(1, keepdims=True))
+    softplus = lambda z: np.logaddexp(0.0, z)
+    sigma = softplus(log_sigma) + 1e-2
+    df = np.clip(softplus(log_df), 1e-3, 98.0) + 2.0
+    return log_pi, mu, sigma, df
+
 
 def write_head_bin(path, model, in_dim, k, hidden, u_mean, u_std, trunk_md5, run_id=""):
     """Export the trained MDN head as a flat OZUH binary (the deliverable best.bin).
 
-    Mirrors train_nnue.py's OZNN export (magic + int32 dims + raw little-endian
-    arrays) but float32 and un-quantized: there is no C++ MDN inference yet to fix
-    a quantization scheme against, and quantizing the head's sigma/df params is
-    lossy in exactly the tail unc-002 cares about. The head is meaningless without
-    the frozen trunk that produced its embedding and the (u_mean, u_std) the target
-    was standardized with, so both are baked in. Reload with read_head_bin().
+    Mirrors train_nnue.py's OZNN export and its quantization (unc-008 G): the head
+    is QAT (ClippedReLU) so it ships as fixed-scale int8 -- weights int8 (x64),
+    biases int32 (x8128) -- run by the C++ integer inference with no runtime
+    quantization. The head is meaningless without the frozen trunk that produced
+    its embedding and the (u_mean, u_std) the target was standardized with, so both
+    are baked in. Reload with read_head_bin().
 
     Layout (all little-endian):
         4 bytes   magic "OZUH"
-        int32     version (=2)
+        int32     version (=3; QAT int8. v1/v2 were float32, still readable)
         int32     in_dim
         int32     k                       (mixture components)
         int32     n_hidden (=2)
@@ -214,7 +270,8 @@ def write_head_bin(path, model, in_dim, k, hidden, u_mean, u_std, trunk_md5, run
         int32     run_id_len               (v2+; free-form provenance string)
         bytes     run_id                   (v2+)
         per Linear layer (in->h1, h1->h2, h2->4k):
-            float32[out][in] weight (row-major), float32[out] bias
+            v3:      int8[out][in] weight (row-major, x64), int32[out] bias (x8128)
+            v1/v2:   float32[out][in] weight (row-major),   float32[out] bias
 
     v1 (no run_id) is still readable -- read_head_bin() version-gates the field.
     """
@@ -224,15 +281,21 @@ def write_head_bin(path, model, in_dim, k, hidden, u_mean, u_std, trunk_md5, run
     run_id_b = run_id.encode("utf-8")
     with open(path, "wb") as f:
         f.write(b"OZUH")
-        f.write(struct.pack("<4i", 2, in_dim, k, len(h)))
+        f.write(struct.pack("<4i", 3, in_dim, k, len(h)))  # v3: QAT int8 weights
         f.write(struct.pack("<%di" % len(h), *h))
         f.write(struct.pack("<2f", float(u_mean), float(u_std)))
         f.write(bytes.fromhex(trunk_md5))
         f.write(struct.pack("<i", len(run_id_b)))
         f.write(run_id_b)
         for wk, bk in _MDNT_LAYER_KEYS:
-            f.write(sd[wk].cpu().numpy().astype("<f4").tobytes())
-            f.write(sd[bk].cpu().numpy().astype("<f4").tobytes())
+            w = sd[wk].cpu().numpy()
+            b = sd[bk].cpu().numpy()
+            sat = float(np.mean(np.abs(w * HEAD_WEIGHT_SCALE) > 127.0))
+            if sat > 0.0:
+                print(f"  [quant] {wk}: {sat * 100:.3f}% weights saturate int8 "
+                      f"(|w|>{127.0 / HEAD_WEIGHT_SCALE:.3f}); max|w|={np.abs(w).max():.3f}")
+            f.write(quant_w_i8(w).astype("<i1").tobytes())   # int8 weight (x64)
+            f.write(quant_b_i32(b).astype("<i4").tobytes())  # int32 bias (x8128)
 
 
 def read_head_bin(path):
@@ -254,9 +317,19 @@ def read_head_bin(path):
         model = MDNt(in_dim=in_dim, k=k, hidden=tuple(hidden))
         dims = [(hidden[0], in_dim), (hidden[1], hidden[0]), (4 * k, hidden[1])]
         sd = {}
+        qw, qb = [], []  # raw int8/int32 arrays (v3) for the exact int8 parity ref
         for (out, inn), (wk, bk) in zip(dims, _MDNT_LAYER_KEYS):
-            w = np.frombuffer(f.read(4 * out * inn), dtype="<f4").reshape(out, inn).copy()
-            b = np.frombuffer(f.read(4 * out), dtype="<f4").copy()
+            if version >= 3:  # QAT int8: weight int8 (x64), bias int32 (x8128)
+                wi = np.frombuffer(f.read(out * inn), dtype="<i1").reshape(out, inn).copy()
+                bi = np.frombuffer(f.read(4 * out), dtype="<i4").copy()
+                qw.append(wi.astype(np.int32))
+                qb.append(bi.astype(np.int32))
+                # dequantized floats for the float MDNt model (analysis convenience)
+                w = wi.astype(np.float32) / HEAD_WEIGHT_SCALE
+                b = bi.astype(np.float32) / HEAD_BIAS_SCALE
+            else:
+                w = np.frombuffer(f.read(4 * out * inn), dtype="<f4").reshape(out, inn).copy()
+                b = np.frombuffer(f.read(4 * out), dtype="<f4").copy()
             sd[wk] = torch.from_numpy(w)
             sd[bk] = torch.from_numpy(b)
         model.load_state_dict(sd)
@@ -264,6 +337,8 @@ def read_head_bin(path):
     meta = {"version": version, "in_dim": in_dim, "k": k, "hidden": hidden,
             "u_mean_cp": u_mean, "u_std_cp": u_std, "trunk_md5": trunk_md5,
             "run_id": run_id}
+    if version >= 3:  # exact int8 forward inputs for parity (int8_head_params)
+        meta["qw"], meta["qb"] = qw, qb
     return model, meta
 
 
@@ -720,7 +795,11 @@ def cmd_train(args):
     # Conditional model (the deliverable) — checkpoints every epoch into ckpt_dir.
     print("\n=== Conditional mdn_t (frozen trunk embedding) ===")
     in_dim = 2 * L1_SIZE
-    cond = MDNt(in_dim=in_dim, k=args.k)
+    hidden = tuple(int(x) for x in str(args.hidden).split(","))
+    if len(hidden) != 2:
+        sys.exit(f"--hidden must be 'h1,h2' (got {args.hidden!r})")
+    print(f"head hidden={hidden}  (~{in_dim * hidden[0] + hidden[0] * hidden[1] + hidden[1] * 4 * args.k:,} params)")
+    cond = MDNt(in_dim=in_dim, k=args.k, hidden=hidden)
     cond_val, cond_hist = train(cond, xtr_t, ytr_t, xva_t, yva_t, args.epochs, args.bs,
                                 args.lr, "cond", ckpt_dir=ckpt_dir, patience=patience,
                                 in_dim=in_dim, shuffle_block=args.shuffle_block,
@@ -732,7 +811,7 @@ def cmd_train(args):
     # zero_input so it never materializes a zeros tensor the size of xtr (that
     # was a second ~21GB allocation) nor grinds all 10.6M rows for a marginal.
     print("\n=== Unconditional floor (zeroed input) ===")
-    uncond = MDNt(in_dim=in_dim, k=args.k)
+    uncond = MDNt(in_dim=in_dim, k=args.k, hidden=hidden)
     floor_n = min(args.floor_subsample, len(ytr_t))
     fidx = torch.randperm(len(ytr_t), generator=torch.Generator().manual_seed(args.seed))[:floor_n]
     ytr_floor = ytr_t[fidx].contiguous()
@@ -779,7 +858,7 @@ def cmd_train(args):
         "pinball_cp_uncond": {str(t): unc_cal["pinball_cp"][t] for t in taus},
         "n_train": len(utr), "n_val": len(uva),
         "u_mean_cp": u_mean, "u_std_cp": u_std,
-        "epochs": args.epochs, "k": args.k, "bs": args.bs, "lr": args.lr,
+        "epochs": args.epochs, "k": args.k, "hidden": list(hidden), "bs": args.bs, "lr": args.lr,
         "warmup_epochs": args.warmup_epochs, "shuffle_block": args.shuffle_block,
         "floor_subsample": args.floor_subsample,
         "early_stop": bool(args.early_stop), "patience": patience,
@@ -791,7 +870,7 @@ def cmd_train(args):
     # run_id = the run-dir name (free-form provenance baked into the OZUH header).
     run_id = run_dir.name
     write_head_bin(run_dir / "best.bin", cond, in_dim=2 * L1_SIZE, k=args.k,
-                   hidden=(128, 128), u_mean=u_mean, u_std=u_std, trunk_md5=trunk_md5,
+                   hidden=hidden, u_mean=u_mean, u_std=u_std, trunk_md5=trunk_md5,
                    run_id=run_id)
     # Fuse the full trunk + head into a self-contained OZNU deployable next to best.bin
     # (unc-007). Promote it to unc_research/models/nnue_unc.bin manually when a run is
@@ -830,6 +909,8 @@ def main():
     t.add_argument("--val", default="nnue/data/unc_11M/validation_data.txt",
                    help="validation split (.txt or .bin; .txt auto-encodes)")
     t.add_argument("--k", type=int, default=5)
+    t.add_argument("--hidden", default="128,128",
+                   help="head hidden widths 'h1,h2' (default 128,128; small QAT head: 32,32)")
     t.add_argument("--epochs", type=int, default=60)
     t.add_argument("--bs", type=int, default=8192,
                    help="batch size (big is fine: the head is tiny; ~16x fewer steps than 512)")

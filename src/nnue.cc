@@ -320,6 +320,14 @@ auto NnueNetwork::LoadHeadStream(istream& f, const string& ctx,
     f.ignore(rid_len);
   }
 
+  // unc-008 G: the play/eval engine requires a QAT int8 head (OZUH v3). Legacy
+  // float heads (v1/v2) are rejected -- there is no float MDN inference path.
+  if (head_version < 3) {
+    cerr << "OZNU: head version " << head_version << " is float (pre-QAT); "
+         << "a v3 int8 head is required in " << ctx << endl;
+    return false;
+  }
+
   const int h1 = hidden[0];
   const int h2 = hidden[1];
   const int out2 = 4 * k;
@@ -328,18 +336,18 @@ auto NnueNetwork::LoadHeadStream(istream& f, const string& ctx,
     cerr << "OZNU: head too large for inference buffers in " << ctx << endl;
     return false;
   }
-  auto w0 = std::make_unique<float[]>(static_cast<size_t>(h1) * in_dim);
-  auto b0 = std::make_unique<float[]>(h1);
-  auto w1 = std::make_unique<float[]>(static_cast<size_t>(h2) * h1);
-  auto b1 = std::make_unique<float[]>(h2);
-  auto w2 = std::make_unique<float[]>(static_cast<size_t>(out2) * h2);
-  auto b2 = std::make_unique<float[]>(out2);
-  f.read(reinterpret_cast<char*>(w0.get()), sizeof(float) * h1 * in_dim);
-  f.read(reinterpret_cast<char*>(b0.get()), sizeof(float) * h1);
-  f.read(reinterpret_cast<char*>(w1.get()), sizeof(float) * h2 * h1);
-  f.read(reinterpret_cast<char*>(b1.get()), sizeof(float) * h2);
-  f.read(reinterpret_cast<char*>(w2.get()), sizeof(float) * out2 * h2);
-  f.read(reinterpret_cast<char*>(b2.get()), sizeof(float) * out2);
+  auto w0 = std::make_unique<int8_t[]>(static_cast<size_t>(h1) * in_dim);
+  auto b0 = std::make_unique<int32_t[]>(h1);
+  auto w1 = std::make_unique<int8_t[]>(static_cast<size_t>(h2) * h1);
+  auto b1 = std::make_unique<int32_t[]>(h2);
+  auto w2 = std::make_unique<int8_t[]>(static_cast<size_t>(out2) * h2);
+  auto b2 = std::make_unique<int32_t[]>(out2);
+  f.read(reinterpret_cast<char*>(w0.get()), sizeof(int8_t) * h1 * in_dim);
+  f.read(reinterpret_cast<char*>(b0.get()), sizeof(int32_t) * h1);
+  f.read(reinterpret_cast<char*>(w1.get()), sizeof(int8_t) * h2 * h1);
+  f.read(reinterpret_cast<char*>(b1.get()), sizeof(int32_t) * h2);
+  f.read(reinterpret_cast<char*>(w2.get()), sizeof(int8_t) * out2 * h2);
+  f.read(reinterpret_cast<char*>(b2.get()), sizeof(int32_t) * out2);
   if (!f) {
     cerr << "OZNU: truncated head weights in " << ctx << endl;
     return false;
@@ -586,44 +594,20 @@ auto NnueNetwork::EvalWithDistribution(const int16_t* white_accum,
     return dist;  // k stays 0: only v_cp is meaningful
   }
 
-  // Head input x = the SAME clamped [0,127]/127 accumulator concat the eval
-  // builds (stm perspective first), as float. This is the shared-trunk read.
-  const int16_t* first = (player_to_move == kWhite) ? white_accum : black_accum;
-  const int16_t* second = (player_to_move == kWhite) ? black_accum : white_accum;
-  float x[2 * kAccumSize];
-  for (int i = 0; i < kAccumSize; ++i) {
-    x[i] = static_cast<float>(Clamp(first[i], 0, 127)) / 127.0F;
-    x[kAccumSize + i] = static_cast<float>(Clamp(second[i], 0, 127)) / 127.0F;
-  }
-
-  // MLP: in_dim -> h1 (ReLU) -> h2 (ReLU) -> 4k (raw).
-  float layer1[kHeadMaxHidden];
-  for (int j = 0; j < head_h1_; ++j) {
-    float sum = head_b0_[j];
-    const float* row = &head_w0_[static_cast<size_t>(j) * head_in_dim_];
-    for (int i = 0; i < head_in_dim_; ++i) {
-      sum += row[i] * x[i];
-    }
-    layer1[j] = sum > 0.0F ? sum : 0.0F;
-  }
-  float layer2[kHeadMaxHidden];
-  for (int j = 0; j < head_h2_; ++j) {
-    float sum = head_b1_[j];
-    const float* row = &head_w1_[static_cast<size_t>(j) * head_h1_];
-    for (int i = 0; i < head_h1_; ++i) {
-      sum += row[i] * layer1[i];
-    }
-    layer2[j] = sum > 0.0F ? sum : 0.0F;
-  }
+  // Integer int8 forward (QAT, like the trunk tail): the two ClippedReLU hidden
+  // layers (shared with MeanCorrectionCp), then the output rows descaled by
+  // kOutputScale to raw MDN params. No float MLP, no runtime quantization.
+  int8_t l2[kHeadMaxHidden];
+  HeadHidden(white_accum, black_accum, player_to_move, l2);
   const int out2 = 4 * head_k_;
   float raw[kHeadMaxOut];
   for (int o = 0; o < out2; ++o) {
-    float sum = head_b2_[o];
-    const float* row = &head_w2_[static_cast<size_t>(o) * head_h2_];
+    int32_t sum = head_b2_[o];
+    const int8_t* row = &head_w2_[static_cast<size_t>(o) * head_h2_];
     for (int i = 0; i < head_h2_; ++i) {
-      sum += row[i] * layer2[i];
+      sum += static_cast<int32_t>(row[i]) * static_cast<int32_t>(l2[i]);
     }
-    raw[o] = sum;
+    raw[o] = static_cast<float>(sum) / static_cast<float>(kOutputScale);
   }
 
   // Split into (logits, mu, log_sigma, log_df) and apply MDNt's transforms.
@@ -653,19 +637,84 @@ auto NnueNetwork::EvalWithDistribution(const int16_t* white_accum,
   return dist;
 }
 
+auto NnueNetwork::HeadHidden(const int16_t* white_accum,
+                             const int16_t* black_accum, S8 player_to_move,
+                             int8_t* l2_out) const -> void {
+  // Input = the SAME clamped accumulator concat the eval reads (H5), int8
+  // [0,127] (stm perspective first). Two ClippedReLU hidden layers, integer
+  // math identical to ForwardFromAccumulators: int32 acc = bias + int8w . int8a,
+  // activation = Clamp(acc / kHiddenScale, 0, kActivationScale).
+  const int16_t* first = (player_to_move == kWhite) ? white_accum : black_accum;
+  const int16_t* second = (player_to_move == kWhite) ? black_accum : white_accum;
+  int8_t x[2 * kAccumSize];
+  for (int i = 0; i < kAccumSize; ++i) {
+    x[i] = static_cast<int8_t>(Clamp(first[i], 0, 127));
+    x[kAccumSize + i] = static_cast<int8_t>(Clamp(second[i], 0, 127));
+  }
+  int8_t l1[kHeadMaxHidden];
+  for (int j = 0; j < head_h1_; ++j) {
+    int32_t sum = head_b0_[j];
+    const int8_t* row = &head_w0_[static_cast<size_t>(j) * head_in_dim_];
+    for (int i = 0; i < head_in_dim_; ++i) {
+      sum += static_cast<int32_t>(row[i]) * static_cast<int32_t>(x[i]);
+    }
+    l1[j] = static_cast<int8_t>(Clamp(sum / kHiddenScale, 0, kActivationScale));
+  }
+  for (int m = 0; m < head_h2_; ++m) {
+    int32_t sum = head_b1_[m];
+    const int8_t* row = &head_w1_[static_cast<size_t>(m) * head_h1_];
+    for (int j = 0; j < head_h1_; ++j) {
+      sum += static_cast<int32_t>(row[j]) * static_cast<int32_t>(l1[j]);
+    }
+    l2_out[m] = static_cast<int8_t>(Clamp(sum / kHiddenScale, 0, kActivationScale));
+  }
+}
+
 auto NnueNetwork::MeanCorrectionCp(const int16_t* white_accum,
                                    const int16_t* black_accum,
                                    S8 player_to_move) const -> int {
   if (!has_head_) {
     return 0;
   }
-  // INTERIM (unc-008 G): float mean while the head is being re-trained QAT-style
-  // (ClippedReLU, fixed int8 scales) like the trunk. Once the QAT net lands this
-  // becomes an integer fixed-shift forward mirroring ForwardFromAccumulators,
-  // sharing the two hidden layers with EvalWithDistribution and computing only
-  // the logits/mu output rows. No runtime quantization here by design.
-  UncDist d = EvalWithDistribution(white_accum, black_accum, player_to_move);
-  return static_cast<int>(std::lround(d.MeanCp()));
+  // int8 forward (QAT). Shares the two hidden layers with EvalWithDistribution
+  // and computes only the mean's output rows -- logits[0..k), mu[k..2k) -- then
+  // E[u|x] = softmax(logits) . mu (standardized), de-standardized to cp.
+  const int kc = head_k_;
+  int8_t l2[kHeadMaxHidden];
+  HeadHidden(white_accum, black_accum, player_to_move, l2);
+  float logits[kMaxMixture];
+  float mu[kMaxMixture];
+  for (int o = 0; o < 2 * kc; ++o) {
+    int32_t sum = head_b2_[o];
+    const int8_t* row = &head_w2_[static_cast<size_t>(o) * head_h2_];
+    for (int m = 0; m < head_h2_; ++m) {
+      sum += static_cast<int32_t>(row[m]) * static_cast<int32_t>(l2[m]);
+    }
+    float out = static_cast<float>(sum) / static_cast<float>(kOutputScale);
+    if (o < kc) {
+      logits[o] = out;
+    } else {
+      mu[o - kc] = out;
+    }
+  }
+  float max_logit = logits[0];
+  for (int i = 1; i < kc; ++i) {
+    if (logits[i] > max_logit) {
+      max_logit = logits[i];
+    }
+  }
+  float norm = 0.0F;
+  float pi[kMaxMixture];
+  for (int i = 0; i < kc; ++i) {
+    pi[i] = std::exp(logits[i] - max_logit);
+    norm += pi[i];
+  }
+  float mean_std = 0.0F;
+  for (int i = 0; i < kc; ++i) {
+    mean_std += (pi[i] / norm) * mu[i];
+  }
+  float mean_cp = mean_std * head_u_std_ + head_u_mean_;
+  return static_cast<int>(std::lround(mean_cp));
 }
 
 }  // namespace omegazero

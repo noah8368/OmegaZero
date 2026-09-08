@@ -49,10 +49,16 @@ def python_reference(fens, nnue_bytes, head_bytes):
 
     u_mean, u_std = meta["u_mean_cp"], meta["u_std_cp"]
     x = _embed_fens(fens, ft_w, ft_b)
-    with torch.no_grad():
-        log_pi, mu, sigma, df = model.params(x)
-    pi = log_pi.exp().numpy()
-    mu, sigma, df = mu.numpy(), sigma.numpy(), df.numpy()
+    if meta.get("version", 0) >= 3:  # QAT int8: exact integer forward (matches C++)
+        from train_unc_head import int8_head_params
+        xn = x.numpy() if hasattr(x, "numpy") else np.asarray(x)
+        log_pi, mu, sigma, df = int8_head_params(meta["qw"], meta["qb"], meta["k"], xn)
+        pi = np.exp(log_pi)
+    else:
+        with torch.no_grad():
+            log_pi, mu, sigma, df = model.params(x)
+        pi = log_pi.exp().numpy()
+        mu, sigma, df = mu.numpy(), sigma.numpy(), df.numpy()
 
     def mix_cdf(row, yv):  # standardized CDF for one FEN's mixture
         z = (yv - mu[row]) / sigma[row]
