@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-09-08T01:50:31.418326",
+  "git_commit": "f815b63",
+  "command": "train",
+  "plots": [
+    "head_loss_curves.png",
+    "head_pit_reliability.png",
+    "head_coverage.png",
+    "head_uncertainty_distribution.png"
+  ]
+}

@@ -6,6 +6,25 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-09-08 — unc-008 I: SPRT set up — small QAT head (model-mean) vs main (corr-hist)
+
+Proceeding to the H6 SPRT with the **small QAT head** (`2026-09-08_01-36-57`, v4) deployed to
+`nnue/nnue_unc.bin`. TEST = this branch build (model-mean corrector, ~free NPS); BASE = `main` (2358a28,
+online corr-hist). `params.json` is byte-identical on both branches, so the test is a clean
+corr-hist-vs-model-mean isolation — same search params, same trunk weights (OZNN == nnue.bin), only the
+corrector differs. Real clock **10+0.1** (dynamic TM active, the regime it must hold in), Threads=1/engine,
+default H1 bounds (elo0=0/elo1=5, α=β=0.05). **SPSA (Phase H) and the head-size ablation (32/64/128) are
+deferred to one end-of-line tuning pass**, so this is the first H6 read on untuned params. Pre-flight green:
+engine plays with the v4 net (bestmove e2e4), openings.pgn present, both builds load the same trunk.
+
+Command (run under caffeinate; SPRT auto-stops at a bound):
+
+    caffeinate -i python3 scripts/sprt.py run --baseline-commit main \
+        --tc 10+0.1 --threads 1 --concurrency 4 --max-games 30000
+
+Watch the first game's engine-load lines: BASE (`main`) must load **NNUE** (`nnue/nnue.bin`), not fall back
+to HCE — if it shows HCE, stop (LFS didn't populate the worktree net) rather than trust the result.
+
 ## 2026-09-08 — unc-008 G: output-layer per-row scale fix (OZUH v4); heads retrained w/ plots
 
 The QAT bake-off showed the int8 corrector (P2) loss tracked **output-layer** saturation (fixed ×64 clips
