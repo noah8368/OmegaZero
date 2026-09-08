@@ -687,8 +687,8 @@ auto Board::InitAccumulators() -> void {
 }
 
 auto Board::GetUncDistribution() const -> UncDist {
-  return g_nnue.EvalWithDistribution(accum_[kWhite], accum_[kBlack],
-                                     player_to_move_);
+  return g_nnue.HeadDistribution(accum_[kWhite], accum_[kBlack],
+                                 player_to_move_);
 }
 
 auto Board::GetMeanCorrectionCp() const -> int {

@@ -69,13 +69,13 @@ static auto SearchVStar(Board& board, const SearchParams& params, int depth,
   return v_star;
 }
 
-static auto PrintDistJson(const string& fen, const UncDist& d, int e_u_cp_i8,
-                          bool with_vstar, int v_star, int u, int reached_depth,
-                          uint64_t nodes) -> void {
+static auto PrintDistJson(const string& fen, int v, const UncDist& d,
+                          int e_u_cp_i8, bool with_vstar, int v_star, int u,
+                          int reached_depth, uint64_t nodes) -> void {
   std::printf(
       "{\"fen\":\"%s\",\"v\":%d,\"e_u_cp\":%.6f,\"e_u_cp_i8\":%d,"
       "\"u_mean\":%.6f,\"u_std\":%.6f,\"k\":%d",
-      fen.c_str(), d.v_cp, static_cast<double>(d.MeanCp()), e_u_cp_i8,
+      fen.c_str(), v, static_cast<double>(d.MeanCp()), e_u_cp_i8,
       static_cast<double>(d.u_mean), static_cast<double>(d.u_std), d.k);
   if (with_vstar) {
     std::printf(",\"v_star\":%d,\"u\":%d,\"depth\":%d,\"nodes\":%llu,\"decisive\":%s",
@@ -131,6 +131,7 @@ static auto RunUncHarness(const string& net_path, bool with_vstar, int depth,
     }
     try {
       Board board(fen);
+      int v = board.Evaluate();  // trunk eval (v_cp), now separate from the head
       UncDist d = board.GetUncDistribution();
       int e_u_cp_i8 = board.GetMeanCorrectionCp();  // int8 fast path (unc-008 G)
       int v_star = 0;
@@ -139,9 +140,9 @@ static auto RunUncHarness(const string& net_path, bool with_vstar, int depth,
       uint64_t nodes = 0;
       if (with_vstar) {
         v_star = SearchVStar(board, params, depth, node_cap, reached_depth, nodes);
-        u = d.v_cp - v_star;
+        u = v - v_star;
       }
-      PrintDistJson(fen, d, e_u_cp_i8, with_vstar, v_star, u, reached_depth,
+      PrintDistJson(fen, v, d, e_u_cp_i8, with_vstar, v_star, u, reached_depth,
                     nodes);
     } catch (const std::exception& e) {
       std::printf("{\"fen\":\"%s\",\"error\":\"%s\"}\n", fen.c_str(), e.what());

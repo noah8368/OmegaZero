@@ -665,10 +665,10 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     if (depth <= 2 && !at_pv_node) {
       UncDist dist = board_->GetUncDistribution();
       const int mean = static_cast<int>(std::lround(dist.MeanCp()));
-      static_eval = dist.v_cp - mean;
-      if (static_eval >= beta) {  // margin = Q_{1-C}(u|x) - E[u|x], C = rfp_risk
-        const float tau = 1.0F - static_cast<float>(params_.rfp_risk);
-        rfp_margin = max(0, static_cast<int>(std::lround(dist.QuantileCp(tau))) -
+      static_eval = board_->Evaluate() - mean;  // trunk eval - E[u|x]
+      if (static_eval >= beta) {  // margin = Q_tau(u|x) - E[u|x], tau = rfp_quantile
+        rfp_margin = max(0, static_cast<int>(std::lround(dist.QuantileCp(
+                                static_cast<float>(params_.rfp_quantile)))) -
                                mean);
       }
     } else {

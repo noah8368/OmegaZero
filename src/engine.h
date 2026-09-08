@@ -110,7 +110,7 @@ struct SearchParams {
   // --- Pruning / reduction margins, depths, thresholds ---
   int aspiration_delta{};  // initial aspiration half-window (cp)
   int futility_margin{};   // per-depth (reverse) futility margin (cp)
-  double rfp_risk{};       // reverse-futility risk C: margin=Q_{1-C}(u|x)-E[u|x] (unc-009 H1)
+  double rfp_quantile{};   // reverse-futility quantile level tau=1-C: margin=Q_tau(u|x)-E[u|x] (unc-009 H1)
   int max_futility_pruning_depth{};  // max depth for (reverse) futility pruning
   int max_late_move_pruning_depth{};  // max depth for late-move pruning
   int max_see_pruning_depth{};        // max depth for SEE pruning

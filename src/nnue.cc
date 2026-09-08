@@ -695,13 +695,12 @@ auto UncDist::QuantileCp(float tau) const -> float {
 }
 
 
-auto NnueNetwork::EvalWithDistribution(const int16_t* white_accum,
-                                       const int16_t* black_accum,
-                                       S8 player_to_move) const -> UncDist {
+auto NnueNetwork::HeadDistribution(const int16_t* white_accum,
+                                   const int16_t* black_accum,
+                                   S8 player_to_move) const -> UncDist {
   UncDist dist;
-  dist.v_cp = ForwardFromAccumulators(white_accum, black_accum, player_to_move);
   if (!has_head_) {
-    return dist;  // k stays 0: only v_cp is meaningful
+    return dist;  // k stays 0: no head -> no distribution
   }
 
   // Integer int8 forward (QAT, like the trunk tail): the two ClippedReLU hidden
@@ -786,7 +785,7 @@ auto NnueNetwork::MeanCorrectionCp(const int16_t* white_accum,
   if (!has_head_) {
     return 0;
   }
-  // int8 forward (QAT). Shares the two hidden layers with EvalWithDistribution
+  // int8 forward (QAT). Shares the two hidden layers with HeadDistribution
   // and computes only the mean's output rows -- logits[0..k), mu[k..2k) -- then
   // E[u|x] = softmax(logits) . mu (standardized), de-standardized to cp.
   const int kc = head_k_;

@@ -38,8 +38,10 @@ constexpr int kHeadMaxOut = 4 * kMaxMixture;
 // Student-t mixture in STANDARDIZED space; de-standardize with (u_mean, u_std).
 // See unc_research/experiments/unc-007.md and train_unc_head.py (MDNt).
 struct UncDist {
-  int v_cp = 0;     // NNUE eval (STM POV, cp) -- the point estimate the dist is around
-  int k = 0;        // mixture components (0 => no head loaded, only v_cp valid)
+  // The distribution is over the eval ERROR u only; the point estimate v it is
+  // centered on (Board::Evaluate()) is the trunk's job and lives outside this
+  // struct -- see HeadDistribution (head-only, no trunk pass).
+  int k = 0;        // mixture components (0 => no head loaded)
   float u_mean = 0.0F;
   float u_std = 1.0F;
   float pi[kMaxMixture] = {};     // mixture weights (sum to 1)
@@ -72,15 +74,17 @@ class NnueNetwork {
                                const int16_t* black_accum,
                                S8 player_to_move) const -> int;
 
-  // Eval + the uncertainty head's p(u | x), computed off the SAME shared
-  // accumulators as the eval (H5). If no head is loaded, only `v_cp` is set.
-  auto EvalWithDistribution(const int16_t* white_accum,
-                            const int16_t* black_accum,
-                            S8 player_to_move) const -> UncDist;
+  // The uncertainty head's p(u | x) ONLY, computed off the SAME shared
+  // accumulators as the eval (H5) -- the head MLP, no trunk pass. The point
+  // estimate v it centers on comes separately from ForwardFromAccumulators /
+  // Board::Evaluate(). Returns k=0 if no head is loaded.
+  auto HeadDistribution(const int16_t* white_accum,
+                        const int16_t* black_accum,
+                        S8 player_to_move) const -> UncDist;
 
   // Fast int8 mean-only corrector: E[u | x] in cp (STM POV) -- the correction
   // term the search subtracts from the raw eval (unc-008 H6/G). Same value as
-  // EvalWithDistribution().MeanCp() up to int8 quantization error, but runs the
+  // HeadDistribution().MeanCp() up to int8 quantization error, but runs the
   // two big MLP layers on the integer path and computes only the logits/mu
   // outputs (softmax + weighted sum in float), skipping sigma/df and all
   // quantile machinery. Returns 0 if no head is loaded.
@@ -147,7 +151,7 @@ class NnueNetwork {
   float head_out_descale_[kHeadMaxOut] = {};
 
   // Shared int8 forward of the two ClippedReLU hidden layers; writes the int8
-  // [0,127] layer-2 activations. Used by EvalWithDistribution + MeanCorrectionCp.
+  // [0,127] layer-2 activations. Used by HeadDistribution + MeanCorrectionCp.
   auto HeadHidden(const int16_t* white_accum, const int16_t* black_accum,
                   S8 player_to_move, int8_t* l2_out) const -> void;
 };
