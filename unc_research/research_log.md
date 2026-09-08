@@ -6,6 +6,26 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-09-08 — unc-008 I: **H6 ACCEPTED — corrector-swap gains +7.7 Elo (SPRT vs main)**
+
+**The uncertainty head's conditional mean beats online correction history in a real SPRT.** TEST = this
+branch (`8396454`, small QAT head `512→32→32` v4, model-mean corrector) vs BASE = `main` (`2358a28`,
+corr-hist). 10+0.1, Threads=1, concurrency 8, H1 bounds (elo0=0/elo1=5, α=β=0.05). LLR crossed +2.94 →
+**H1_ACCEPTED, +7.7 Elo.** NPS-neutral (0.97×), so the gain is eval quality, not speed. Clean isolation:
+identical `params.json` both sides, same trunk weights (OZNN==nnue.bin), BASE verified on real NNUE (not
+HCE), games clean (no forfeits). Setup integrity re-verified before trusting: deployed net = the latest v4
+small head (OZUH v4, run 2026-09-08_01-36-57), corr-hist removed from the search path, SPRT launched after
+the net restore + rebuild.
+
+This is the **first engine-integrated payoff of the whole unc-001→008 line** and validates the core thesis:
+a learned conditional distribution over eval error carries real, exploitable signal. And it's a **floor** —
+achieved with the *weakest* head (capacity-limited small, −7.6% corrector) on *untuned* params. H6 fallback
+(residual corr-hist) not needed; corr-hist can be retired. The same validated head carries calibrated
+quantiles (P1/P3), so H1 (pruning margins) now builds on a deployed, SPRT-proven net.
+
+**Next:** end-ablation for the ceiling — head size (32/64/128) × SPSA re-tune under the new eval — then
+physically remove dormant corr-hist, then H1/unc-004 (wire `Q_{1−C}` into a pruning margin).
+
 ## 2026-09-08 — unc-008 I: SPRT set up — small QAT head (model-mean) vs main (corr-hist)
 
 Proceeding to the H6 SPRT with the **small QAT head** (`2026-09-08_01-36-57`, v4) deployed to

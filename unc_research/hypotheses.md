@@ -123,7 +123,7 @@ margin benefit (H1), or a null result is unattributable.
 **Fallback if refuted.** Keep a *small residual* online corr-hist on top of the model's
 stronger mean baseline (best of both, at the cost of two mechanisms).
 
-**Status:** open — testing in unc-008 · **Experiments:** [unc-008](experiments/unc-008.md): E diagnostic (model-mean beats corr-hist on the deep-`v*` target, n=1144, p=1.4e-21) green-lights the swap; verdict pending the Phase I SPRT vs `main`
+**Status:** **ACCEPTED (2026-09-08)** — the corrector-swap gains Elo. · **Experiments:** [unc-008](experiments/unc-008.md): E diagnostic (model-mean beats corr-hist on the deep-`v*` target, n=1144, p=1.4e-21) green-lit the swap; **Phase I SPRT vs `main` (10+0.1) H1_ACCEPTED at +7.7 Elo** — the frozen/offline learned mean *beats* online corr-hist head to head, at ~free NPS (0.97×). Proven in the *weakest* config (small capacity-limited head, untuned params), so the gain is a floor. Corr-hist can be removed; the fallback (residual corr-hist) is not needed. Next: end-ablation (head size + SPSA) for the ceiling; H1 margins now stand on a deployed, SPRT-validated head.
 
 ---
 
