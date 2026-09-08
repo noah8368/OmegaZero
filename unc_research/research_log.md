@@ -6,6 +6,30 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-09-08 — unc-008 G: QAT heads trained + full suite bake-off (normal vs small vs float)
+
+Both QAT heads trained (ClippedReLU, --early-stop, trunk `nnue/nnue.bin`), fused v3, run through the full
+unc-007 suite on the **C++ int8 path** (C++↔numpy int8 parity PASS, dE[u|x] ~5e-6). Reference = the original
+float head.
+
+| axis | float | normal int8 (84.8k) | small int8 (18.1k) |
+|---|---|---|---|
+| NPS vs 388k baseline | — | 323,878 (0.835×) | 378,425 (**0.975×**) |
+| P1 Cliff's δ | 0.82 | 0.81 | 0.81 |
+| P2 corrector r / MAE-red | 0.43 / −9.6% | 0.404 / −8.3% | 0.367 / −6.7% |
+| P3 PIT / KS | 0.508 / 0.023 | 0.507 / 0.019 | 0.511 / 0.028 |
+| P3 conditional max\|r\| | ≈0 | 0.034 | 0.046 |
+| int8 output saturation | — | 3.1% | 8.75% |
+
+**QAT worked:** calibration (P1 spread + P3 marginal/conditional) survives int8 intact for both heads — the
+thing PTQ wrecked. Corrector (P2) is the cost axis: normal keeps ~86% of float's MAE benefit, small ~70%,
+the loss in the sharp regime tracking output-layer saturation (fixed ×64 coarse for MDN outputs, max|w|
+9–14). NPS mirrors it: small nearly free (0.975×), normal −16.5%. **Decision: small head → SPRT first**
+(near-pure eval-quality test, no NPS confound, still beats corr-hist on deep-`v*`); normal is the fallback.
+Likely-strictly-better follow-up: finer output-layer scale to recover the small head's P2 at the same size.
+Full table + figures in [unc-007](experiments/unc-007.md#results--qat-int8-heads-through-the-suite-2026-09-08);
+NPS ledger in [unc-008](experiments/unc-008.md).
+
 ## 2026-09-08 — unc-008 G: head goes QAT (like the trunk); normal vs small head bake-off
 
 Changed tactics on H5-B. Load-time PTQ of the float head (dynamic int8) hit **317k NPS (0.82× the corr-hist
