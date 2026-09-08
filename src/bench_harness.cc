@@ -93,7 +93,10 @@ auto main(int argc, char* argv[]) -> int {
   exe_dir = (last_slash != string::npos) ? exe_dir.substr(0, last_slash + 1)
                                          : "./";
 
-  string nnue_path = exe_dir + "../nnue/nnue.bin";
+  // unc-008 Phase F: bench the fused net so the head forward (the per-eval
+  // corrector cost) is included in the NPS -- benching the headless trunk would
+  // hide the crater this harness exists to measure.
+  string nnue_path = exe_dir + "../nnue/nnue_unc.bin";
   if (!g_nnue.Load(nnue_path)) {
     std::cerr << "FATAL: NNUE net required (HCE removed), not found: "
               << nnue_path << std::endl;

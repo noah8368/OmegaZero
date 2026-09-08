@@ -651,8 +651,17 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   // Look for the first ply we weren't in check between 2 and 4 plies ago. If
   // the static eval has improved, or we were in check both 2 and 4 plies ago,
   // set the improving flag to true.
-  int raw_static_eval = in_check ? kInvalidEval : board_->Evaluate();
-  int static_eval = in_check ? kInvalidEval : GetCorrectedEval(raw_static_eval);
+  // unc-008 Phase F: the corrected static eval is `raw - E[u|x]`, where E[u|x]
+  // is the uncertainty head's conditional mean error -- the distributional
+  // generalization of correction history, which this replaces. A single fused
+  // forward off the shared accumulators yields both the raw eval (dist.v_cp,
+  // == Board::Evaluate()) and the mean, so there is no extra trunk pass; the
+  // added cost is the head MLP (H5-B: made cheap in Phase G).
+  int static_eval = kInvalidEval;
+  if (!in_check) {
+    UncDist dist = board_->GetUncDistribution();
+    static_eval = dist.v_cp - static_cast<int>(std::lround(dist.MeanCp()));
+  }
   eval_history_[ply] = static_eval;
   if (in_check)
     improving_ = false;
@@ -861,9 +870,10 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     return board_->KingInCheck() ? kWorstEval + ply : kNeutralEval;
   }
   StoreTtEntry(best_eval, orig_alpha, beta, depth, ply, best_move);
-  if (!in_check && best_eval < beta) {
-    UpdateCorrectionHistory(raw_static_eval, best_eval, depth);
-  }
+  // unc-008 Phase F: online correction history retired from the search path;
+  // the head's conditional mean is now the correction term (see the static-eval
+  // site above). The corr-hist tables/methods remain for the datagen corrector
+  // diagnostic and the pre-registered residual-corrhist fallback (unc-008 doc).
   return best_eval;
 }
 

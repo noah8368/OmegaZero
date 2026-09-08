@@ -35,7 +35,17 @@ Milestones so far (C++ refactor — the mean-correction/SPSA/SPRT are deferred):
   SPRT (Phase I) is the verdict. **E green-lights Phase F.** (Also fixed: datagen FATALs without a net —
   the refactor commit claimed this but missed `datagen.cc`.)
 
-Next: F (corrected eval = raw − E[u|x]) → G (H5-B int8 mean) → H (SPSA) → I (SPRT vs main).
+- **F** — **model-mean corrector wired live + naive-float NPS crater recorded.** `Pvs` static eval is now
+  `raw − E[u|x]` via one fused forward off the shared accumulators (`dist.v_cp − round(dist.MeanCp())`;
+  `v_cp == Evaluate()`, no extra trunk pass); `UpdateCorrectionHistory` dropped from the search path.
+  Corr-hist tables/methods **kept dormant** (datagen diagnostic + pre-registered residual-corrhist
+  fallback; delete only after the SPRT verdict). bench/debug harnesses now load the **fused** net so the
+  head forward is exercised. `bench_harness 4` NPS: **388,017 → 60,510 avg (6.4×, −84%)** — the crater is
+  the per-node float MLP head (`512→128→128→20`, ~84k MACs), fully attributed (kiwipete craters least:
+  qsearch stand-pat stays raw). A 6.4× loss would swamp any eval gain, so **Phase G (H5-B int8 + π/μ-only)
+  is mandatory before the SPRT.** Build clean (`-Werror`); ASan self-play soak on the new path clean.
+
+Next: G (H5-B int8 mean — restore NPS to budget) → H (SPSA) → I (SPRT vs main).
 
 ---
 
