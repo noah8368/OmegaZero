@@ -651,16 +651,15 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   // Look for the first ply we weren't in check between 2 and 4 plies ago. If
   // the static eval has improved, or we were in check both 2 and 4 plies ago,
   // set the improving flag to true.
-  // unc-008 Phase F: the corrected static eval is `raw - E[u|x]`, where E[u|x]
-  // is the uncertainty head's conditional mean error -- the distributional
-  // generalization of correction history, which this replaces. A single fused
-  // forward off the shared accumulators yields both the raw eval (dist.v_cp,
-  // == Board::Evaluate()) and the mean, so there is no extra trunk pass; the
-  // added cost is the head MLP (H5-B: made cheap in Phase G).
+  // unc-008 Phase F/G: the corrected static eval is `raw - E[u|x]`, where
+  // E[u|x] is the uncertainty head's conditional mean error -- the
+  // distributional generalization of correction history, which this replaces.
+  // Phase G runs the head on the int8 path (MeanCorrectionCp): the two big MLP
+  // layers are integer/NEON and only logits/mu are computed (H5-B), cutting the
+  // naive-float NPS crater Phase F recorded.
   int static_eval = kInvalidEval;
   if (!in_check) {
-    UncDist dist = board_->GetUncDistribution();
-    static_eval = dist.v_cp - static_cast<int>(std::lround(dist.MeanCp()));
+    static_eval = board_->Evaluate() - board_->GetMeanCorrectionCp();
   }
   eval_history_[ply] = static_eval;
   if (in_check)

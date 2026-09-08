@@ -653,4 +653,19 @@ auto NnueNetwork::EvalWithDistribution(const int16_t* white_accum,
   return dist;
 }
 
+auto NnueNetwork::MeanCorrectionCp(const int16_t* white_accum,
+                                   const int16_t* black_accum,
+                                   S8 player_to_move) const -> int {
+  if (!has_head_) {
+    return 0;
+  }
+  // INTERIM (unc-008 G): float mean while the head is being re-trained QAT-style
+  // (ClippedReLU, fixed int8 scales) like the trunk. Once the QAT net lands this
+  // becomes an integer fixed-shift forward mirroring ForwardFromAccumulators,
+  // sharing the two hidden layers with EvalWithDistribution and computing only
+  // the logits/mu output rows. No runtime quantization here by design.
+  UncDist d = EvalWithDistribution(white_accum, black_accum, player_to_move);
+  return static_cast<int>(std::lround(d.MeanCp()));
+}
+
 }  // namespace omegazero

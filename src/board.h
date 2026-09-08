@@ -200,6 +200,9 @@ class Board {
   // Eval + the uncertainty head's p(u | x) for the current position, off the
   // maintained accumulators (requires a fused OZNU net; see unc-007).
   auto GetUncDistribution() const -> UncDist;
+  // Fast int8 mean-only corrector E[u|x] in cp (STM POV); see
+  // NnueNetwork::MeanCorrectionCp (unc-008 G). 0 if no head is loaded.
+  auto GetMeanCorrectionCp() const -> int;
   auto GetCastlingRight(S8 player, S8 side) const -> bool;
 
   auto ToFen() const -> std::string;

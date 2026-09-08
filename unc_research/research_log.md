@@ -6,6 +6,28 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-09-08 — unc-008 G: head goes QAT (like the trunk); normal vs small head bake-off
+
+Changed tactics on H5-B. Load-time PTQ of the float head (dynamic int8) hit **317k NPS (0.82× the corr-hist
+baseline, up from the 0.16× float crater)** but the int8-vs-float **mean parity was poor**: 2.6 cp mean /
+8.4 cp p95 / 58 cp max over 434 sharp+quiet FENs — noise on the order of the ~9 cp corrector signal, worst
+exactly where the correction is largest. So PTQ is dropped entirely (C++ load-time quant code removed) and
+the head is being **retrained QAT-style, matching the trunk**: ClippedReLU `[0,1]` activations + fixed
+export scales (act ×127, weights ×64 → int8, bias ×8128 → int32), integer inference with a `/64` requant —
+no runtime quantization. OZUH bumps to v3 (int8 weights). The embedding cache stays valid (it's the trunk's
+`[0,1]` embedding, unchanged by head QAT), so retrains are head-only/cheap.
+
+**Two heads trained + compared on the full unc-007 suite** (pre-registered in [unc-007](experiments/unc-007.md#qat-re-validation-normal-vs-small-head-pre-registered-2026-09-08-unc-008-g)):
+**normal** `512→128→128→4k` (~84.8k params) vs **small** `512→32→32→4k` (~18.1k params, ~on par with the
+trunk tail's ~17.5k, mirrors its `32,32` widths). P1 (sharp/quiet spread) + P2 (mean corrector) + P3
+(marginal/conditional calibration + coverage) + C++/numpy int8 parity, both heads, vs the original float
+numbers. Decision = which head carries into the unc-008 SPRT: small if it holds quality (structurally
+NPS-safe, per-node ≈ the trunk tail), else normal. Interim: `MeanCorrectionCp` is a float stub pending the
+QAT net. Both runs: trunk `nnue/nnue.bin` (the `--trunk` default, fused in → OZNN stays byte-identical to
+the deployed trunk) + `--early-stop` (patience 8, best-val checkpoint).
+
+---
+
 ## 2026-09-07 — unc-008 opened (H6 corrector-swap + H5-B); single fused-net eval path
 
 Pre-registered [unc-008](experiments/unc-008.md): replace the online pawn-hash correction history

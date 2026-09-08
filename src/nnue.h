@@ -75,6 +75,15 @@ class NnueNetwork {
                             const int16_t* black_accum,
                             S8 player_to_move) const -> UncDist;
 
+  // Fast int8 mean-only corrector: E[u | x] in cp (STM POV) -- the correction
+  // term the search subtracts from the raw eval (unc-008 H6/G). Same value as
+  // EvalWithDistribution().MeanCp() up to int8 quantization error, but runs the
+  // two big MLP layers on the integer path and computes only the logits/mu
+  // outputs (softmax + weighted sum in float), skipping sigma/df and all
+  // quantile machinery. Returns 0 if no head is loaded.
+  auto MeanCorrectionCp(const int16_t* white_accum, const int16_t* black_accum,
+                        S8 player_to_move) const -> int;
+
   auto ComputeAccumulator(S8 king_sq, S8 perspective,
                           const S8* piece_layout, const S8* player_layout,
                           int16_t* accum) const -> void;

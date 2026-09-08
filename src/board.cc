@@ -691,6 +691,11 @@ auto Board::GetUncDistribution() const -> UncDist {
                                      player_to_move_);
 }
 
+auto Board::GetMeanCorrectionCp() const -> int {
+  return g_nnue.MeanCorrectionCp(accum_[kWhite], accum_[kBlack],
+                                 player_to_move_);
+}
+
 auto Board::PushAccumulators() -> void {
   AccumEntry entry;
   std::memcpy(entry.data, accum_, sizeof(accum_));
