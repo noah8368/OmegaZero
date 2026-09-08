@@ -31,6 +31,10 @@ using std::vector;
 
 NnueNetwork g_nnue;
 
+// Builds the t-CDF LUT (defined after the CDF helpers); called at head load so
+// the one-time build runs single-threaded, never mid-search.
+auto InitQuantileLut() -> void;
+
 static inline int Clamp(int val, int lo, int hi) {
   if (val < lo) {
     return lo;
@@ -382,6 +386,7 @@ auto NnueNetwork::LoadHeadStream(istream& f, const string& ctx,
   head_b1_ = std::move(b1);
   head_w2_ = std::move(w2);
   head_b2_ = std::move(b2);
+  InitQuantileLut();  // build the t-CDF LUT now (single-threaded), not mid-search
   return true;
 }
 
@@ -570,7 +575,92 @@ auto MixtureCdfStd(const UncDist& dist, double y) -> double {
   return acc;
 }
 
+// ---- LUT-accelerated Student-t CDF (unc-004: fast quantiles for search) ------
+// The exact StudentTCdf is an incomplete-beta continued fraction (~hundreds of
+// float ops); a per-node margin quantile bisects it ~9k continued-fraction steps
+// deep -- unaffordable in the hot path. TcdfLut precomputes the t-CDF on a fixed
+// (|t|, df) grid at load and bilinearly interpolates at query time: no live
+// incomplete-beta, no exp. Symmetry F(-t)=1-F(t) halves the table (store t>=0).
+// The df axis is uniform in 1/df (dense at small df, where the heavy tail lives
+// and F varies most; ~flat as df->normal). Built once, read-only during search.
+struct TcdfLut {
+  static constexpr int kNT = 1024;      // |t| samples over [0, kTMax]
+  static constexpr int kNDf = 48;       // df buckets (uniform in 1/df)
+  static constexpr double kTMax = 32.0;  // |t| beyond this: CDF ~ 1
+  static constexpr double kDfMin = 2.0;  // head clamps df to [2, 100]
+  static constexpr double kDfMax = 100.0;
+
+  float tbl_[kNDf][kNT];  // ~192 KB; tbl_[j][i] = F(t_i; df_j), t_i >= 0
+  double t_step_;
+  double inv_df_lo_;   // 1/kDfMax
+  double inv_df_step_;
+
+  TcdfLut() {
+    t_step_ = kTMax / (kNT - 1);
+    inv_df_lo_ = 1.0 / kDfMax;
+    const double inv_df_hi = 1.0 / kDfMin;
+    inv_df_step_ = (inv_df_hi - inv_df_lo_) / (kNDf - 1);
+    for (int j = 0; j < kNDf; ++j) {
+      const double df = 1.0 / (inv_df_lo_ + j * inv_df_step_);
+      for (int i = 0; i < kNT; ++i) {
+        tbl_[j][i] = static_cast<float>(StudentTCdf(i * t_step_, df));
+      }
+    }
+  }
+
+  // Bilinear (|t|, 1/df) interpolation of F(t; df), with F(-t)=1-F(t).
+  inline auto Eval(double t, double df) const -> double {
+    const bool neg = t < 0.0;
+    double at = neg ? -t : t;
+    double cdf;
+    if (at >= kTMax) {
+      cdf = 1.0;
+    } else {
+      double fi = at / t_step_;
+      int i = static_cast<int>(fi);
+      const double gi = fi - i;
+      double inv_df = 1.0 / df;
+      double fj = (inv_df - inv_df_lo_) / inv_df_step_;
+      if (fj < 0.0) {
+        fj = 0.0;
+      } else if (fj > kNDf - 1) {
+        fj = kNDf - 1;
+      }
+      int j = static_cast<int>(fj);
+      double gj = fj - j;
+      if (j >= kNDf - 1) {
+        j = kNDf - 2;
+        gj = 1.0;
+      }
+      const double c0 = tbl_[j][i] + gi * (tbl_[j][i + 1] - tbl_[j][i]);
+      const double c1 = tbl_[j + 1][i] + gi * (tbl_[j + 1][i + 1] - tbl_[j + 1][i]);
+      cdf = c0 + gj * (c1 - c0);
+    }
+    return neg ? 1.0 - cdf : cdf;
+  }
+};
+
+// Built once on first use (thread-safe static init); forced at head load so the
+// build never stalls a search thread. Read-only afterward.
+auto Lut() -> const TcdfLut& {
+  static const TcdfLut lut;
+  return lut;
+}
+
+auto MixtureCdfLut(const UncDist& dist, double y) -> double {
+  const TcdfLut& lut = Lut();
+  double acc = 0.0;
+  for (int i = 0; i < dist.k; ++i) {
+    const double z = (y - dist.mu[i]) / dist.sigma[i];
+    acc += dist.pi[i] * lut.Eval(z, dist.df[i]);
+  }
+  return acc;
+}
+
 }  // namespace
+
+// Force the t-CDF LUT to build (single-threaded, at net load). See LoadHeadStream.
+auto InitQuantileLut() -> void { (void)Lut(); }
 
 auto UncDist::MeanCp() const -> float {
   double mean_y = 0.0;
@@ -586,13 +676,15 @@ auto UncDist::Cdf(float u_cp) const -> float {
 }
 
 auto UncDist::QuantileCp(float tau) const -> float {
-  // Bisection over the mixture CDF in standardized units; +/-50 std brackets
-  // everything (matches train_unc_head.py calibration()).
-  double lo = -50.0;
-  double hi = 50.0;
-  for (int it = 0; it < 60; ++it) {
+  // Bisection over the mixture CDF, per-component t-CDF from the LUT (no live
+  // incomplete-beta). Bracket matches the LUT range (+/-32 std); 16 iters ->
+  // ~1e-3 std (sub-cp) precision. Cheap enough for the search hot path; matches
+  // the exact incomplete-beta quantile to ~1 cp (validated off unc_harness).
+  double lo = -TcdfLut::kTMax;
+  double hi = TcdfLut::kTMax;
+  for (int it = 0; it < 16; ++it) {
     double mid = 0.5 * (lo + hi);
-    if (MixtureCdfStd(*this, mid) > tau) {
+    if (MixtureCdfLut(*this, mid) > tau) {
       hi = mid;
     } else {
       lo = mid;
@@ -601,6 +693,7 @@ auto UncDist::QuantileCp(float tau) const -> float {
   double y = 0.5 * (lo + hi);
   return static_cast<float>(y * u_std + u_mean);
 }
+
 
 auto NnueNetwork::EvalWithDistribution(const int16_t* white_accum,
                                        const int16_t* black_accum,

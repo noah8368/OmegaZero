@@ -6,6 +6,23 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-09-08 — unc-009 opened (H1): LUT-accelerated quantile primitive built
+
+With H6 shipped, opened [unc-009](experiments/unc-009.md) to test **H1** — do position-conditional pruning
+margins `Q_{1−C}(u|x)` beat a freshly-SPSA-tuned **constant**? Design choices: **RFP first** (tightest fit
+— RFP trusts the static eval within a high-side margin, exactly the head's one-sided quantile; cleanest
+isolation; `depth ≤ 2` leverage; head already forwarded there for the corrector); baseline = the SPSA-tuned
+*unconditional* constant so a win isolates *conditioning*.
+
+Built the quantile primitive (the H5 NPS-viability piece): replaced `QuantileCp` with a **LUT-accelerated**
+version — a precomputed Student-t CDF table (`|t|∈[0,32]`×`1/df∈[2,100]`, symmetry-halved, bilinear, ~192KB,
+built at load via `InitQuantileLut`), bisected 16 iters over ±32 std. Measured vs the naive live
+incomplete-beta bisection: **39,106 → 776 ns/call (50.4×)**, accuracy **≤0.18 cp** at every τ incl. the 0.99
+tail (tail preserved — why we skipped the std proxy). Rejected: naive (16× NPS crater), std (flattens fat
+tails), QR-DQN direct output (needs retrain + H2's pure-QR tail weakness — held as escalation). Validated
+the LUT off `unc_harness` JSON (Python/scipy exact reference); the throwaway `SlowQuantileCp` + `--qbench`
+were used once then stripped. Next: wire RFP margin = `Q_{1−C}` (SPSA param `C`) → SPSA → SPRT vs constant.
+
 ## 2026-09-08 — unc-008 I: **H6 ACCEPTED — corrector-swap gains +7.7 Elo (SPRT vs main)**
 
 **The uncertainty head's conditional mean beats online correction history in a real SPRT.** TEST = this

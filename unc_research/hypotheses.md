@@ -187,7 +187,12 @@ so `corrected ≈ raw` at step 0; unfreeze-as-fallback carries no NPS risk — i
 depends on *which* weight columns change, not their values). See
 [unc-002](experiments/unc-002.md) "Data strategy".
 
-**Status:** open (deployment representation decided) · **Experiments:** (integration spike, Week 3)
+**Status:** partly realized — the **mean** rides the folded int8 head (unc-008 H6, shipped +7.7 Elo), and
+the **quantile** is now NPS-viable via a LUT-accelerated `QuantileCp` ([unc-009](experiments/unc-009.md):
+50.4× over the naive incomplete-beta, ≤0.18 cp error, tail intact). The LUT differs from the
+originally-decided offline cp-grain (C51) format — no offline baking / retrain, full precision, a 16-iter
+per-node bisection instead of a prefix-sum; the grain / QR-on-grid stays the escalation if the LUT bottlenecks
+once wired. · **Experiments:** unc-008 (mean), unc-009 (quantile + integration)
 
 ---
 
@@ -211,7 +216,9 @@ unconditional one at tuned `C`? See
 [notes/pruning_integration.md](notes/pruning_integration.md) for the derivation.
 
 **Decides:** whether this becomes a search feature or "just" a calibration study.
-**Status:** open · **Experiments:** (planned, post-integration — unc-004)
+**Status:** open — testing in [unc-009](experiments/unc-009.md) (RFP margin first). The quantile primitive
+is built (LUT-accelerated `QuantileCp`, 50.4× over naive, ≤0.18 cp); next wire the RFP margin + SPRT vs the
+SPSA-tuned constant. · **Experiments:** unc-009 (renamed from the old unc-004 placeholder)
 
 ---
 

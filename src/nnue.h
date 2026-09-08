@@ -53,6 +53,9 @@ struct UncDist {
   // Mixture CDF P(U <= u_cp | x).
   auto Cdf(float u_cp) const -> float;
   // Inverse CDF (one-sided margin primitive): the tau-quantile of u, in cp.
+  // Bisection over the mixture CDF where the per-component Student-t CDF is a
+  // precomputed LUT read (unc-004) -- no live incomplete-beta, cheap enough for
+  // the search hot path. Cdf() keeps the exact incomplete-beta for validation.
   auto QuantileCp(float tau) const -> float;
 };
 
