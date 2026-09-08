@@ -1,0 +1,15 @@
+{
+  "n": 5000,
+  "pit_mean": 0.506603482251292,
+  "pit_std": 0.28440227988382755,
+  "ks_stat": 0.01863526918802927,
+  "ks_p": 0.061289156415000656,
+  "central_coverage": {
+    "0.50": 0.5068,
+    "0.80": 0.8162,
+    "0.90": 0.9114,
+    "0.95": 0.9606,
+    "0.99": 0.9938
+  },
+  "note": "val split (in-distribution, held out from training gradients); decisive v* sentinels dropped"
+}

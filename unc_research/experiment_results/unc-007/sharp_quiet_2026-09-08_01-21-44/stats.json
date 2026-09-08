@@ -1,0 +1,16 @@
+{
+  "n_sharp": 300,
+  "n_quiet": 134,
+  "median_width_cp": {
+    "sharp": 327.4594425,
+    "quiet": 99.7303535
+  },
+  "mean_width_cp": {
+    "sharp": 368.97273694666666,
+    "quiet": 130.6690465522388
+  },
+  "mannwhitney_u": 36352.0,
+  "mannwhitney_p_sharp_gt_quiet": 1.2992794749262523e-41,
+  "cliffs_delta": 0.8085572139303483,
+  "verdict": "sharp > quiet (p<1e-3)"
+}
