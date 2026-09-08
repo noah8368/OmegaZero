@@ -84,7 +84,6 @@ Engine::Engine(TranspositionTable* tt, Board* board, S8 player_side,
 
   memset(history_heuristic_, 0, sizeof(history_heuristic_));
   memset(continuation_history_, 0, sizeof(continuation_history_));
-  memset(correction_history_, 0, sizeof(correction_history_));
   memset(capture_history_, 0, sizeof(capture_history_));
   fill(begin(eval_history_), end(eval_history_), kInvalidEval);
 }
@@ -124,7 +123,6 @@ Engine::Engine(TranspositionTable* tt, Board* board, S8 player_side,
 
   memset(history_heuristic_, 0, sizeof(history_heuristic_));
   memset(continuation_history_, 0, sizeof(continuation_history_));
-  memset(correction_history_, 0, sizeof(correction_history_));
   memset(capture_history_, 0, sizeof(capture_history_));
   fill(begin(eval_history_), end(eval_history_), kInvalidEval);
 
@@ -651,12 +649,11 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   // Look for the first ply we weren't in check between 2 and 4 plies ago. If
   // the static eval has improved, or we were in check both 2 and 4 plies ago,
   // set the improving flag to true.
-  // unc-008 Phase F/G: the corrected static eval is `raw - E[u|x]`, where
-  // E[u|x] is the uncertainty head's conditional mean error -- the
-  // distributional generalization of correction history, which this replaces.
-  // Phase G runs the head on the int8 path (MeanCorrectionCp): the two big MLP
-  // layers are integer/NEON and only logits/mu are computed (H5-B), cutting the
-  // naive-float NPS crater Phase F recorded.
+  // unc-008 (H6): the corrected static eval is `raw - E[u|x]`, where E[u|x] is
+  // the uncertainty head's conditional mean error -- a learned, offline
+  // corrector that replaced the old online correction history (SPRT +7.7 Elo).
+  // The head runs on the int8 path (MeanCorrectionCp): the two big MLP layers
+  // are integer/NEON and only logits/mu are computed (H5-B).
   int static_eval = kInvalidEval;
   if (!in_check) {
     static_eval = board_->Evaluate() - board_->GetMeanCorrectionCp();
@@ -869,10 +866,6 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     return board_->KingInCheck() ? kWorstEval + ply : kNeutralEval;
   }
   StoreTtEntry(best_eval, orig_alpha, beta, depth, ply, best_move);
-  // unc-008 Phase F: online correction history retired from the search path;
-  // the head's conditional mean is now the correction term (see the static-eval
-  // site above). The corr-hist tables/methods remain for the datagen corrector
-  // diagnostic and the pre-registered residual-corrhist fallback (unc-008 doc).
   return best_eval;
 }
 

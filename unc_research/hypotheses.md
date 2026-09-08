@@ -123,7 +123,23 @@ margin benefit (H1), or a null result is unattributable.
 **Fallback if refuted.** Keep a *small residual* online corr-hist on top of the model's
 stronger mean baseline (best of both, at the cost of two mechanisms).
 
-**Status:** **ACCEPTED (2026-09-08)** — the corrector-swap gains Elo. · **Experiments:** [unc-008](experiments/unc-008.md): E diagnostic (model-mean beats corr-hist on the deep-`v*` target, n=1144, p=1.4e-21) green-lit the swap; **Phase I SPRT vs `main` (10+0.1) H1_ACCEPTED at +7.7 Elo** — the frozen/offline learned mean *beats* online corr-hist head to head, at ~free NPS (0.97×). Proven in the *weakest* config (small capacity-limited head, untuned params), so the gain is a floor. Corr-hist can be removed; the fallback (residual corr-hist) is not needed. Next: end-ablation (head size + SPSA) for the ceiling; H1 margins now stand on a deployed, SPRT-validated head.
+**Status:** **ACCEPTED (2026-09-08)** — the corrector-swap gains Elo. · **Experiments:** [unc-008](experiments/unc-008.md): E diagnostic (model-mean beats corr-hist on the deep-`v*` target, n=1144, p=1.4e-21) green-lit the swap; **Phase I SPRT vs `main` (10+0.1) H1_ACCEPTED at +7.7 Elo** — the frozen/offline learned mean *beats* online corr-hist head to head, at ~free NPS (0.97×). Proven in the *weakest* config (small capacity-limited head, untuned params), so the gain is a floor. Corr-hist **removed from the codebase** (H6 confirmed; residual-corrhist fallback not needed). Next: end-ablation (below); H1 margins now stand on a deployed, SPRT-validated head.
+
+### Deferred study — head-capacity × SPSA ablation (post-H6, end-of-line)
+
+**Deferred by design (2026-09-08):** ship the current **small** QAT head now and integrate the uncertainty
+signal into more search features (each SPRT-gated); run *one* combined tuning pass at the end to lock in the
+best model params. The ablation, when we get to it:
+- **Head width sweep** `{32 (current), 64, 96?, 128}` × QAT v4 → the corrector(P2)/NPS/calibration Pareto
+  (the corrector–NPS tradeoff is a smooth **capacity** curve, not a quant artifact — unc-007 QAT finding).
+  Hold depth=2 (the C++ loader assumes `n_hidden==2`) and k=5 (k drives the *tail* / H1, not the mean).
+- **SPSA re-tune** of search params under the model-mean eval (params today are `main`'s, tuned for
+  corr-hist) — verify under a real clock (10+0.1) per the TM gotcha.
+- **Arbiter:** SPRT the top head vs the current small head (measures the *incremental* capacity gain,
+  cheaper than re-vs-`main`), then the winner + SPSA vs `main` for the tuned ceiling Elo.
+- The `512→32→32`, `512→128→128` v3/v4 run dirs are kept on-disk as ablation seeds. The "own-accumulator
+  head" (a 2nd feature-transform, decoupling from the shared trunk embedding) is a *separate* future line,
+  not part of this width/tuning ablation.
 
 ---
 

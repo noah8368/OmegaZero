@@ -88,9 +88,6 @@ static const string kStartFen =
 // Uncertainty-label mode config (unc-002), set from nnue/config.json in main().
 // Declared here (ahead of WriteMetadata) so the metadata writer can report them.
 static bool g_uncertainty_mode = false;
-// unc-008 E: superset of uncertainty mode that also logs the corr-hist and
-// model-mean correctors per sampled position (requires the fused OZNU net).
-static bool g_corrector_mode = false;
 static int g_target_depth = 12;
 static uint64_t g_node_cap = 2000000;
 
@@ -212,8 +209,6 @@ struct UncertaintyPosition {
   int v_star;      // fixed-depth + node-capped search score
   int depth;       // deepest completed depth of the v_star search
   uint64_t nodes;  // nodes visited by the v_star search
-  int corrhist = 0;    // corrector mode: corr-hist-corrected eval (GetCorrectedEval(v))
-  int model_mean = 0;  // corrector mode: model-mean-corrected eval (v - E[u|x])
 };
 
 enum GameResult { kWhiteWin, kBlackWin, kDrawResult };
@@ -371,16 +366,6 @@ static auto PlayGameUncertainty(int target_depth, uint64_t node_cap,
     int score_stm = 0;
     if (sample_this_ply) {
       int v = board.Evaluate();  // raw static eval, STM POV
-      // unc-008 E: capture the two live correctors BEFORE the v* search (which
-      // updates corr-hist). corr-hist reflects prior in-game play; the model mean
-      // is a static head read. Both require the fused net (corrector mode).
-      int corrhist = 0;
-      int model_mean = 0;
-      if (g_corrector_mode) {
-        corrhist = engine.GetCorrectedEval(v);
-        model_mean = v - static_cast<int>(
-                             std::lround(board.GetUncDistribution().MeanCp()));
-      }
       reached_depth = 0;
       // Decouple v_star from search history: clear the TT so this is a clean,
       // reproducible from-scratch fixed-depth search rather than a value served
@@ -408,8 +393,7 @@ static auto PlayGameUncertainty(int target_depth, uint64_t node_cap,
         U64 hash = board.GetBoardHash();
         if (seen_hashes.find(hash) == seen_hashes.end()) {
           seen_hashes.insert(hash);
-          positions.push_back({board.ToFen(), v, score_stm, reached_depth, nodes,
-                               corrhist, model_mean});
+          positions.push_back({board.ToFen(), v, score_stm, reached_depth, nodes});
         }
       }
     } else {
@@ -675,16 +659,10 @@ static auto WorkerThread(int worker_id, int num_games, float search_time,
                                      params, rng, positions, seen_hashes);
         string result_str = ResultToStr(result);
         for (const auto& p : positions) {
-          if (g_corrector_mode) {
-            // fen | v | v_star | corrhist | model_mean | depth | nodes | result
-            out << p.fen << " | " << p.v << " | " << p.v_star << " | "
-                << p.corrhist << " | " << p.model_mean << " | " << p.depth
-                << " | " << p.nodes << " | " << result_str << '\n';
-          } else {
-            out << p.fen << " | " << p.v << " | " << p.v_star << " | "
-                << (p.v - p.v_star) << " | " << p.depth << " | " << p.nodes
-                << " | " << result_str << '\n';
-          }
+          // fen | v | v_star | u | depth | nodes | result
+          out << p.fen << " | " << p.v << " | " << p.v_star << " | "
+              << (p.v - p.v_star) << " | " << p.depth << " | " << p.nodes
+              << " | " << result_str << '\n';
         }
         num_positions = static_cast<int>(positions.size());
       } else {
@@ -867,24 +845,17 @@ auto main(int argc, char* argv[]) -> int {
   float validation_fraction = cfg.val_fraction;
   g_email = cfg.email;
   g_name = cfg.name;
-  g_corrector_mode = (cfg.mode == "corrector");
-  g_uncertainty_mode = (cfg.mode == "uncertainty") || g_corrector_mode;
+  g_uncertainty_mode = (cfg.mode == "uncertainty");
   g_target_depth = cfg.target_depth;
   g_node_cap = cfg.node_cap;
 
   // Load here -- before the params read and before any worker builds a Board --
   // so each Board's constructor seeds its accumulators from the loaded net. (Run
   // from the repo root, where nnue/, params.json, and nnue/config.json live.)
-  // HCE removed (unc-008): a net is required. Corrector mode needs the fused
-  // OZNU net (for the head's E[u|x]); other modes use the bare trunk.
-  const char* net_path = g_corrector_mode ? "nnue/nnue_unc.bin" : "nnue/nnue.bin";
+  // HCE removed (unc-008): the bare trunk net is required for all datagen modes.
+  const char* net_path = "nnue/nnue.bin";
   if (!g_nnue.Load(net_path)) {
     std::cerr << "FATAL: datagen requires " << net_path << " (HCE removed)."
-              << std::endl;
-    return EXIT_FAILURE;
-  }
-  if (g_corrector_mode && !g_nnue.HasHead()) {
-    std::cerr << "FATAL: corrector mode requires the fused OZNU net (has a head)."
               << std::endl;
     return EXIT_FAILURE;
   }

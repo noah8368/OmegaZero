@@ -45,11 +45,6 @@ enum GameStatus : S8 {
 };
 
 constexpr int kSearchLimit = 128;
-constexpr int kCorrHistSize = 16384;
-// Correction-history fixed-point grain and saturation bound. Compile-time
-// power-of-two so the per-node divide in GetCorrectedEval is a shift (~8% NPS).
-constexpr int kCorrHistGrain = 256;
-constexpr int kCorrHistMax = 256;
 
 constexpr int kBestEval = 32000;
 constexpr int kNeutralEval = -25;
@@ -227,10 +222,6 @@ class Engine {
     return total_nodes_ + nodes_since_time_check_;
   }
 
-  // Apply the online correction-history correction to a raw static eval. Public
-  // so the corrector diagnostic (unc-008 E) can read the live corrected eval.
-  auto GetCorrectedEval(int static_eval) const -> int;
-
 #ifdef BENCHMARK
   auto BenchmarkReport(int search_depth) -> void;
 #endif
@@ -329,8 +320,6 @@ class Engine {
   auto UpdateHistoryHeuristic(const Move& move, int bonus) -> void;
   auto UpdateContinuationHistory(const Move& prev_move, const Move& move,
                                  int bonus) -> void;
-  auto UpdateCorrectionHistory(int static_eval, int search_score, int depth)
-      -> void;
   auto UpdateCaptureHistory(const Move& move, int bonus) -> void;
   auto RecordBetaCutoff(const Move& move, int depth, int ply,
                         const vector<Move>& searched_quiet_moves,
@@ -406,12 +395,9 @@ class Engine {
   // history-gravity update, so int16_t holds them with margin and halves the
   // footprint of the two largest tables (continuation_history_ 576->288 KB,
   // duplicated per Lazy-SMP worker). Arithmetic promotes to int on read.
-  // correction_history_ stays int: it clamps to +/-kCorrHistMax*kCorrHistGrain
-  // (65536), which overflows S16.
   S16 history_heuristic_[kNumPlayers][kNumPieceTypes][kNumSq];
   S16 continuation_history_[kNumPieceTypes][kNumSq][kNumPieceTypes][kNumSq];
   int eval_history_[kSearchLimit];
-  int correction_history_[kNumPlayers][kCorrHistSize];
   S16 capture_history_[kNumPlayers][kNumPieceTypes][kNumSq][kNumPieceTypes];
 
   uint64_t total_nodes_;
@@ -637,13 +623,6 @@ inline auto Engine::Pvs(int alpha, int beta, int depth, int ply,
   return Pvs(pv_move, alpha, beta, depth, ply, null_move_allowed);
 }
 
-inline auto Engine::GetCorrectedEval(int static_eval) const -> int {
-  S8 player = board_->GetPlayerToMove();
-  int idx = board_->GetPawnHash() % kCorrHistSize;
-  int correction = correction_history_[player][idx];
-  return static_eval + correction / kCorrHistGrain;
-}
-
 inline auto Engine::ComputeLmrReduction(int depth, int legal_moves,
                                         S8 player_to_move, const Move& move)
     -> int {
@@ -717,18 +696,6 @@ inline auto Engine::UpdateContinuationHistory(const Move& prev_move,
                            [move.moving_piece][move.target_sq];
   // History-gravity update.
   cont_history += (bonus - cont_history * abs(bonus) / kMaxHistoryBonus);
-}
-
-inline auto Engine::UpdateCorrectionHistory(int static_eval, int search_score,
-                                            int depth) -> void {
-  S8 player = board_->GetPlayerToMove();
-  int idx = board_->GetPawnHash() % kCorrHistSize;
-  int diff = search_score - static_eval;
-  int weight = min(depth + 1, 16);
-  int& entry = correction_history_[player][idx];
-  entry += (diff * kCorrHistGrain - entry) * weight / 256;
-  entry = clamp(entry, -kCorrHistMax * kCorrHistGrain,
-                kCorrHistMax * kCorrHistGrain);
 }
 
 inline auto Engine::UpdateCaptureHistory(const Move& move, int bonus) -> void {
