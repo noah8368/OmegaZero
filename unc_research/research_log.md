@@ -6,6 +6,40 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-09-09 — Methodology: **tune once at the end**, not per feature (+ zero-game evidence)
+
+**Decision (standing policy).** We do NOT re-SPSA the existing param set after each feature. Retuning is
+deferred to a single joint SPSA at the end of the research, once all seemingly-helpful features are in. The
+lone exception is a **genuinely new parameter** (e.g. `RfpQuantile`), which is tuned when introduced because
+it has no prior value. Rationale: compute is finite (each tune is hours for likely-marginal gain), the params
+are already decently tuned from v5, and the features change *what the search does with the eval distribution*,
+not the cp scale the margins live on — so the existing margins stay in-regime. A single end-of-research joint
+tune is also *better* than N piecemeal ones (captures interactions, tunes against the final feature set).
+
+**Evidence (three points).** (1) unc-008 held **+7.7 Elo** with `futility_margin` untouched through a whole
+corrector swap. (2) HCE→NNUE — a far larger eval-distribution change — yielded only ~20–30 Elo from a *full*
+retune. (3) **New zero-game diagnostic** (`unc_research/scripts/rfp_meancorr_diag.py`, 445 quiet+sharp positions via
+`unc_harness`, deployed head `2026-09-08_01-36-57`): the H6 mean correction `E[u|x]` vs `FutilityMargin=260` —
+**signed mean +15.3 cp** (the systematic bias a constant re-tune could recover ≈ **6% of the depth-1 margin**),
+mean |E[u\|x]| 34.9 cp (13%), p90 78.5 cp, p99 264 cp. The key read: a *constant* margin's optimum tracks only
+the **systematic** shift (~15 cp → `futility_margin` 260 would drift to ~245–253, a 3–6% nudge); the ~35 cp
+per-position scatter is irreducible by any constant — it's the **H1 motivation**, not a retune argument. And a
+re-tuned constant recovers only that 15 cp while the quantile exploits the full conditional structure, so the
+retune can't close the gap H1 tests. Position set skews sharp, so the true bias at (quieter) RFP nodes is
+likely ≤15 cp. Verdict: **positive** — skipping per-feature retunes displaces the baseline by single-digit %,
+well inside the conditional signal. Honest caveat: +15 cp is *small, not nil* (just above the ~10 cp "didn't
+move" bar).
+
+**Bonus (settles the E null).** Same diagnostic: int8 `GetMeanCorrectionCp` vs float `MeanCp` differ by
+**0.26 cp mean / 0.50 cp max** → the int8-vs-float delta at RFP nodes is sub-cp, so `8d0ff77` is a clean H1
+null.
+
+**Consequences.** unc-009 milestone **D2 (re-tune the constant null) is dropped**; after D1 (the running τ
+tune) we go straight to E: tuned-τ HEAD vs the `8d0ff77` constant null **as-is** (its v5 `futility_margin`),
+`sprt.py run --baseline-commit 8d0ff77`, tune 8+0.08 / verdict 10+0.1.
+
+---
+
 ## 2026-09-08 — unc-009 opened (H1): LUT-accelerated quantile primitive built
 
 With H6 shipped, opened [unc-009](experiments/unc-009.md) to test **H1** — do position-conditional pruning

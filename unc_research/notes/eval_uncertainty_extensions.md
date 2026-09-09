@@ -124,6 +124,56 @@ O3** (reduced-search error is just `p(u|x,d) − p(u|x,d−R)`); see
 [reduced_search_uncertainty.md](reduced_search_uncertainty.md) §"depth question." Flag as the
 grand-unification path — highest payoff, highest cost, do not assume.
 
+## Parameterization: the minimal new-param set (5)
+
+The O1 tooling turns **one risk level `C`** + the head's `p(u|x)` into a per-position, per-tail
+cp margin, so the "new param" at each site is a *scalar* (a confidence `C`, or — for the
+reduction/time sites — a *slope*), never a margin. The question is how many distinct scalars
+the whole rollout needs. §5 says "one scalar per heuristic"; that over-counts. Sharing by
+**stakes tier** (not by site) gives the minimal defensible set:
+
+| # | Param | Type | Sites it drives | Replaces |
+|---|---|---|---|---|
+| 1 | **`C_prune`** | confidence | RFP · forward futility · razoring · delta (§2) | `RfpQuantile` (exists) + `FutilityMargin` + `RazoringMargin` + `qs_delta` |
+| 2 | **`C_asp`** | confidence (2-sided band, §1) | aspiration window | `aspiration_delta` |
+| 3 | **`C_sing`** | confidence (§3) | singular margin | the `2·depth` constant |
+| 4 | **`k_lmr`** | slope | LMR reduction modulated by `σ̂(x)` | (part of) the hand-tuned LMR curve |
+| 5 | **`k_tm`** | slope | root time alloc ∝ `σ̂(x_root)` (§4) | the volatility proxy in `Tm*` |
+
+**Why `C_prune` is one knob for four sites.** All four are near-leaf *"prune when C-confident
+the corrected eval is robustly on the wrong side of a bound."* They share a **risk level**, not
+a margin — RFP reads the **upper** tail (vs β), futility/razoring/delta the **lower** tail (vs
+α), and the head produces the correct (asymmetric, per-position) cp margin for each. So "RFP
+and futility share `C`" is right, but the justification is *equal risk tolerance*, not "their
+margins are close" (the old cp-world reasoning). The thing that could later force a split is
+**stakes**: RFP returns β (prunes a whole subtree) while futility skips one move — a purist
+gives the higher-stakes site a more conservative `C`. **Razoring** is the likeliest first
+defector (its historic margin ran ~2–4× futility's). Start shared; split only on SPRT evidence.
+
+**Why not fewer.** Collapsing `C_prune`/`C_asp`/`C_sing` into one global `C` (→ 3 params) is
+over-minimal: stakes and reversibility differ — an aspiration mis-size costs a re-search, an
+RFP mis-fire misses a subtree, a singular mis-fire mis-shapes an extension — so one `C` can't
+be conservative where it's irreversible *and* aggressive where it's cheap. The three-tier split
+(prune / window / singular) is the parsimony-vs-expressiveness sweet spot.
+
+**NPS corollary (see the cheapness note below).** The two int8 hidden layers dominate the head
+cost and already run at every node for the corrector, so the *full* dist is nearly free once
+you have them; each converted site's marginal cost is **one `QuantileCp` bisection** (~776 ns)
+when it evaluates. So compute **one dist per node** and read every site's margin off it — never
+re-forward per site. This makes converting many sites NPS-cheap *if* plumbed through a single
+per-node dist handle. (`GetMeanCorrectionCp` vs `GetUncDistribution` differ only by the
+sigma/df output rows — a few %; the real added cost is the bisection, gated per site.)
+As the rollout fills in, the full dist ends up computed at every node anyway, so the
+mean-only fast path is **subsumed** — the H6/H1 split resolves itself with progress. The one
+place it may *survive* is **qsearch** (§2): leaf density is highest there, so a gated/mean-only
+path for qsearch nodes with no active margin consumer stays the NPS-sensitive call (H5 per
+§Honesty-flags).
+
+**Optional add-ons (not part of the base 5).** Dynamic `C` (§5, a schedule on any `C_*`) and the
+calibration-gated fallback (§6) add at most one scalar each and ship *alongside*, not instead of,
+the above. The depth-conditioned info-gain LMR (§7) is a *different, larger* model (needs
+`p(u|x,d)`); `k_lmr` here is the cheap interim that modulates the existing curve off current O1.
+
 ## Ranking for the honest roadmap
 
 Order to actually try these, by (payoff × low-risk × reuses-existing-head):
