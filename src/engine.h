@@ -252,7 +252,8 @@ class Engine {
   auto ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
                            bool at_pv_node, bool in_check) -> bool;
   auto ShouldReverseFutilityPrune(int static_eval, int depth, int beta,
-                                  bool at_pv_node, bool in_check, int margin)
+                                  bool at_pv_node, bool in_check,
+                                  const UncDist* rfp_dist, int unc_mean)
       -> bool;
   auto ShouldFutilityPrune(const Move& move, int static_eval, int depth,
                            bool at_pv_node, bool in_check, int alpha) -> bool;
@@ -572,15 +573,25 @@ inline auto Engine::ValidateTtMove(const Move& move) const -> bool {
 
 inline auto Engine::ShouldReverseFutilityPrune(int static_eval, int depth,
                                                int beta, bool at_pv_node,
-                                               bool in_check, int margin)
-    -> bool {
-  if (depth > 2 || at_pv_node || in_check) {
+                                               bool in_check,
+                                               const UncDist* rfp_dist,
+                                               int unc_mean) -> bool {
+  // RFP can only fire on a fail-high frontier (static_eval >= beta, so the
+  // margin >= 0 could still push it under beta), so gate the expensive quantile
+  // bisection behind these early-outs -- it runs only at eligible fail-high
+  // candidates. `rfp_dist` (the head's p(u|x)) is non-null exactly on the
+  // RFP-eligible path (depth<=2, non-PV, non-check), which this guard enforces.
+  if (depth > 2 || at_pv_node || in_check || static_eval < beta) {
     return false;
   }
-  // unc-009 H1: `margin` is the head's position-conditional one-sided quantile
-  // Q_{1-C}(u|x) - E[u|x] (computed at the eval site, where the distribution is
-  // in hand), replacing the old depth*futility_margin constant. The prune shape
+  // unc-009 H1: position-conditional margin = Q_tau(u|x) - E[u|x], clamped >= 0
+  // (tau = rfp_quantile, `unc_mean` = E[u|x] already computed at the eval site).
+  // Replaces the old depth*futility_margin constant; the prune shape
   // (static_eval - margin >= beta) is unchanged.
+  const int margin =
+      max(0, static_cast<int>(std::lround(rfp_dist->QuantileCp(
+                 static_cast<float>(params_.rfp_quantile)))) -
+                 unc_mean);
   return static_eval - margin >= beta;
 }
 

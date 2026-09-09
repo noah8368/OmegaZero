@@ -655,22 +655,21 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   // The head runs on the int8 path (MeanCorrectionCp): the two big MLP layers
   // are integer/NEON and only logits/mu are computed (H5-B).
   // unc-009 H1: at RFP-eligible nodes (depth<=2, non-PV, non-check) take ONE full
-  // head forward -- it yields the mean-corrected eval AND the RFP margin quantile
-  // (no second forward). RFP can only fire when static_eval >= beta (margin >= 0),
-  // so gate the expensive quantile *bisection* on that, reusing the same dist.
-  // Every other node keeps the H6 int8 mean-only fast path untouched.
+  // head forward -- it yields the mean-corrected eval AND (in ShouldReverseFutility-
+  // Prune, off the same dist) the RFP margin quantile, no second forward. Hand the
+  // distribution + its mean to the RFP predicate, which owns the margin math and
+  // gates the expensive quantile bisection on the fail-high frontier. Every other
+  // node keeps the H6 int8 mean-only fast path untouched.
   int static_eval = kInvalidEval;
-  int rfp_margin = 0;
+  int unc_mean = 0;
+  UncDist rfp_dist;                       // head p(u|x): populated only on the
+  const UncDist* rfp_dist_ptr = nullptr;  // RFP-eligible path (else stays null)
   if (!in_check) {
     if (depth <= 2 && !at_pv_node) {
-      UncDist dist = board_->GetUncDistribution();
-      const int mean = static_cast<int>(std::lround(dist.MeanCp()));
-      static_eval = board_->Evaluate() - mean;  // trunk eval - E[u|x]
-      if (static_eval >= beta) {  // margin = Q_tau(u|x) - E[u|x], tau = rfp_quantile
-        rfp_margin = max(0, static_cast<int>(std::lround(dist.QuantileCp(
-                                static_cast<float>(params_.rfp_quantile)))) -
-                               mean);
-      }
+      rfp_dist = board_->GetUncDistribution();
+      rfp_dist_ptr = &rfp_dist;
+      unc_mean = static_cast<int>(std::lround(rfp_dist.MeanCp()));
+      static_eval = board_->Evaluate() - unc_mean;  // trunk eval - E[u|x]
     } else {
       static_eval = board_->Evaluate() - board_->GetMeanCorrectionCp();
     }
@@ -693,8 +692,8 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     return QuiescenceSearch(alpha, beta, ply);
   }
 
-  if (ShouldReverseFutilityPrune(static_eval, depth, beta, at_pv_node,
-                                 in_check, rfp_margin)) {
+  if (ShouldReverseFutilityPrune(static_eval, depth, beta, at_pv_node, in_check,
+                                 rfp_dist_ptr, unc_mean)) {
     return beta;
   }
 
