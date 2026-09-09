@@ -2,7 +2,7 @@
   "TmWindow": 5,
   "AspirationDelta": 18,
   "FutilityMargin": 260,
-  "PruneQuantile": 834,
+  "RfpQuantile": 834,
   "MaxFutilityPruningDepth": 2,
   "MaxLateMovePruningDepth": 2,
   "MaxSeePruningDepth": 5,

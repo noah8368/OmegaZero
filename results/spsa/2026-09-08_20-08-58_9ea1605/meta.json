@@ -1,0 +1,18 @@
+{
+  "params": [
+    "RfpQuantile"
+  ],
+  "games": 20000,
+  "games_per_iter": 8,
+  "iterations": 2500,
+  "seed": null,
+  "start_theta": {
+    "RfpQuantile": 900.0
+  },
+  "schedule": {
+    "RfpQuantile": {
+      "c_end": 48.0,
+      "r_end": 0.01
+    }
+  }
+}

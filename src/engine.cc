@@ -654,12 +654,13 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   // corrector that replaced the old online correction history (SPRT +7.7 Elo).
   // The head runs on the int8 path (MeanCorrectionCp): the two big MLP layers
   // are integer/NEON and only logits/mu are computed (H5-B).
-  // unc-009 H1: at RFP-eligible nodes (depth<=2, non-PV, non-check) take ONE full
-  // head forward -- it yields the mean-corrected eval AND (in ShouldReverseFutility-
-  // Prune, off the same dist) the RFP margin quantile, no second forward. Hand the
-  // distribution + its mean to the RFP predicate, which owns the margin math and
-  // gates the expensive quantile bisection on the fail-high frontier. Every other
-  // node keeps the H6 int8 mean-only fast path untouched.
+  // unc-009 H1: at RFP-eligible nodes (depth<=2, non-PV, non-check) take ONE
+  // full head forward -- it yields the mean-corrected eval AND (in
+  // ShouldReverseFutility- Prune, off the same dist) the RFP margin quantile,
+  // no second forward. Hand the distribution + its mean to the RFP predicate,
+  // which owns the margin math and gates the expensive quantile bisection on
+  // the fail-high frontier. Every other node keeps the H6 int8 mean-only fast
+  // path untouched.
   int static_eval = kInvalidEval;
   int unc_mean = 0;
   UncDist rfp_dist;                       // head p(u|x): populated only on the
@@ -675,9 +676,9 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     }
   }
   eval_history_[ply] = static_eval;
-  if (in_check)
+  if (in_check) {
     improving_ = false;
-  else if (ply >= 2 && eval_history_[ply - 2] != kInvalidEval) {
+  } else if (ply >= 2 && eval_history_[ply - 2] != kInvalidEval) {
     improving_ = static_eval > eval_history_[ply - 2];
   } else if (ply >= 4 && eval_history_[ply - 4] != kInvalidEval) {
     improving_ = static_eval > eval_history_[ply - 4];

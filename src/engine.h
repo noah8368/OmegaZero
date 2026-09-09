@@ -110,7 +110,7 @@ struct SearchParams {
   // --- Pruning / reduction margins, depths, thresholds ---
   int aspiration_delta{};  // initial aspiration half-window (cp)
   int futility_margin{};   // per-depth (reverse) futility margin (cp)
-  double rfp_quantile{};   // reverse-futility quantile level tau=1-C: margin=Q_tau(u|x)-E[u|x] (unc-009 H1)
+  double prune_quantile{};  // conditional-margin quantile level tau: margin=Q_tau(u|x)-E[u|x]; drives RFP today, prune-general (unc-009 H1)
   int max_futility_pruning_depth{};  // max depth for (reverse) futility pruning
   int max_late_move_pruning_depth{};  // max depth for late-move pruning
   int max_see_pruning_depth{};        // max depth for SEE pruning
@@ -585,12 +585,12 @@ inline auto Engine::ShouldReverseFutilityPrune(int static_eval, int depth,
     return false;
   }
   // unc-009 H1: position-conditional margin = Q_tau(u|x) - E[u|x], clamped >= 0
-  // (tau = rfp_quantile, `unc_mean` = E[u|x] already computed at the eval site).
+  // (tau = prune_quantile, `unc_mean` = E[u|x] already computed at the eval site).
   // Replaces the old depth*futility_margin constant; the prune shape
   // (static_eval - margin >= beta) is unchanged.
   const int margin =
       max(0, static_cast<int>(std::lround(rfp_dist->QuantileCp(
-                 static_cast<float>(params_.rfp_quantile)))) -
+                 static_cast<float>(params_.prune_quantile)))) -
                  unc_mean);
   return static_eval - margin >= beta;
 }
