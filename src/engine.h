@@ -21,6 +21,7 @@
 
 #include "board.h"
 #include "move.h"
+#include "nnue.h"
 #include "out_of_time.h"
 #include "transposition_table.h"
 
@@ -92,39 +93,41 @@ inline auto ScoreFromTt(int score, int ply) -> int {
 // required before the engine may search.
 struct SearchParams {
   // --- Dynamic time management ---
-  int tm_window{};             // recent iterations weighed for move stability
-  double tm_move_decay{};      // geometric decay favoring recent changes
-  double tm_move_weight{};     // weight of the best-move-stability term
-  double tm_score_weight{};    // weight of the score-stability term
-  double tm_score_scale{};     // cp swing mapping to full magnitude-instability
-  double tm_osc_weight{};      // extra weight for score oscillation
-  double tm_mate_difficulty{};      // difficulty once a mate is found/faced
-  double tm_obvious_difficulty{};   // difficulty for an obvious recapture
-  double tm_subtree_weight{};  // weight of the subtree/node-effort term
-  double tm_subtree_ema_alpha{};    // EMA smoothing of the best-move node share
-  double tm_difficulty_min{};  // clamp floor on the difficulty multiplier
-  double tm_difficulty_max{};  // clamp ceiling on the difficulty multiplier
-  double tm_ebf_min{};         // predictive early-stop EBF clamp floor
-  double tm_ebf_max{};         // predictive early-stop EBF clamp ceiling
-  double tm_ebf_fallback{};    // EBF used before two iterations complete
+  int tm_window{};           // recent iterations weighed for move stability
+  double tm_move_decay{};    // geometric decay favoring recent changes
+  double tm_move_weight{};   // weight of the best-move-stability term
+  double tm_score_weight{};  // weight of the score-stability term
+  double tm_score_scale{};   // cp swing mapping to full magnitude-instability
+  double tm_osc_weight{};    // extra weight for score oscillation
+  double tm_mate_difficulty{};     // difficulty once a mate is found/faced
+  double tm_obvious_difficulty{};  // difficulty for an obvious recapture
+  double tm_subtree_weight{};      // weight of the subtree/node-effort term
+  double tm_subtree_ema_alpha{};   // EMA smoothing of the best-move node share
+  double tm_difficulty_min{};      // clamp floor on the difficulty multiplier
+  double tm_difficulty_max{};      // clamp ceiling on the difficulty multiplier
+  double tm_ebf_min{};             // predictive early-stop EBF clamp floor
+  double tm_ebf_max{};             // predictive early-stop EBF clamp ceiling
+  double tm_ebf_fallback{};        // EBF used before two iterations complete
   // --- Pruning / reduction margins, depths, thresholds ---
-  int aspiration_delta{};  // initial aspiration half-window (cp)
-  int futility_margin{};   // per-depth (reverse) futility margin (cp)
-  double prune_quantile{};  // conditional-margin quantile level tau: margin=Q_tau(u|x)-E[u|x]; drives RFP today, prune-general (unc-009 H1)
+  int aspiration_delta{};   // initial aspiration half-window (cp)
+  int futility_margin{};    // per-depth (reverse) futility margin (cp)
+  double prune_quantile{};  // conditional-margin quantile level tau:
+                            // margin=Q_tau(u|x)-E[u|x]; drives RFP today,
+                            // prune-general (unc-009 H1)
   int max_futility_pruning_depth{};  // max depth for (reverse) futility pruning
   int max_late_move_pruning_depth{};  // max depth for late-move pruning
   int max_see_pruning_depth{};        // max depth for SEE pruning
   int see_margin{};                   // per-depth SEE-pruning margin (cp)
-  int history_lmr_threshold{};     // history below which LMR reduces one more
-  int num_early_moves{};           // moves searched at full depth before LMR
-  int min_reduction_depth{};       // min depth for late-move reductions
-  int min_iir_depth{};             // min depth for internal iterative reduction
-  int max_razoring_depth{};        // max depth for razoring
-  int razoring_margin{};           // razoring drop-to-qsearch margin (cp)
-  int singular_depth_min{};        // min depth for singular extensions
-  int null_move_depth_min{};       // min depth for null-move pruning
-  int null_move_depth_high_r{};    // depth above which NMP uses the larger R
-  int qs_delta{};                  // quiescence delta-pruning margin (cp)
+  int history_lmr_threshold{};   // history below which LMR reduces one more
+  int num_early_moves{};         // moves searched at full depth before LMR
+  int min_reduction_depth{};     // min depth for late-move reductions
+  int min_iir_depth{};           // min depth for internal iterative reduction
+  int max_razoring_depth{};      // max depth for razoring
+  int razoring_margin{};         // razoring drop-to-qsearch margin (cp)
+  int singular_depth_min{};      // min depth for singular extensions
+  int null_move_depth_min{};     // min depth for null-move pruning
+  int null_move_depth_high_r{};  // depth above which NMP uses the larger R
+  int qs_delta{};                // quiescence delta-pruning margin (cp)
 };
 
 // Upper bound on legal moves (~218), sizing the per-root-move node table.
@@ -145,8 +148,8 @@ class Engine {
  public:
   Engine(TranspositionTable* tt, Board* board, S8 player_side,
          float search_time);
-  Engine(TranspositionTable* tt, Board* board, S8 player_side, float search_time,
-         const vector<U64>& pos_history);
+  Engine(TranspositionTable* tt, Board* board, S8 player_side,
+         float search_time, const vector<U64>& pos_history);
 
   // Register a callback invoked once per completed depth during GetBestMove().
   // Used by the UCI handler for `info` lines; unset means no reporting.
@@ -167,8 +170,8 @@ class Engine {
   auto GetUserSide() const -> S8;
 
   // Whether a Syzygy tablebase probe (root DTZ or in-search WDL) has actually
-  // returned a usable result since the last ResetSyzygyUsed(). Lets callers note
-  // in the PGN whether the tablebases influenced any move of the game.
+  // returned a usable result since the last ResetSyzygyUsed(). Lets callers
+  // note in the PGN whether the tablebases influenced any move of the game.
   auto SyzygyUsed() const -> bool;
   auto ResetSyzygyUsed() -> void;
 
@@ -247,17 +250,17 @@ class Engine {
   // to a `root_moves` entry (so it carries the full Move fields), set
   // `score_out` to a TB score, and return it in `tb_move`. Root DTZ probing is
   // valid at any rule50 (it handles the 50-move rule).
-  auto ProbeTbRoot(const vector<Move>& root_moves, Move& tb_move, int& score_out)
-      -> bool;
+  auto ProbeTbRoot(const vector<Move>& root_moves, Move& tb_move,
+                   int& score_out) -> bool;
   auto ShouldNullMovePrune(int alpha, int beta, int depth, int ply,
                            bool at_pv_node, bool in_check) -> bool;
-  auto ShouldReverseFutilityPrune(int static_eval, int depth, int beta,
-                                  bool at_pv_node, bool in_check,
-                                  const UncDist* rfp_dist, int unc_mean)
-      -> bool;
-  auto ShouldFutilityPrune(const Move& move, int static_eval, int depth,
-                           bool at_pv_node, bool in_check, int alpha,
-                           int fp_margin) -> bool;
+  auto ShouldReverseFutilityPrune(const UncDist& unc_dist, int raw_eval,
+                                  int depth, int beta, bool at_pv_node,
+                                  bool in_check) -> bool;
+  auto ShouldFutilityPrune(const Move& move, int raw_eval, int fp_margin,
+                           int depth, bool at_pv_node, bool in_check,
+                           int alpha) -> bool;
+
   auto ShouldLateMovePrune(const Move& move, int num_quiet_searched, int depth,
                            bool at_pv_node, bool gives_check, bool in_check,
                            int ply) -> bool;
@@ -285,7 +288,8 @@ class Engine {
   auto InitTimeManagement() -> void;
   // After a completed iteration at `depth` (with `elapsed` seconds spent so
   // far), rescale the soft bound by search difficulty and report whether the
-  // loop should stop (soft bound crossed, or next iteration unlikely to finish).
+  // loop should stop (soft bound crossed, or next iteration unlikely to
+  // finish).
   auto UpdateSoftBoundAndShouldStop(int depth, float elapsed) -> bool;
   // First legal move among `moves` (honoring `go searchmoves`), or an empty
   // Move if none is legal. Used to guarantee a non-empty best move when the
@@ -419,9 +423,9 @@ class Engine {
   // surfaced via SyzygyUsed() and cleared by ResetSyzygyUsed().
   bool syzygy_used_ = false;
 
-  // Cache of previously evaluated positions. Not owned: injected at construction
-  // and shared across all Engines in a Lazy-SMP SearchPool (single-threaded
-  // callers each own their own). Must outlive the Engine.
+  // Cache of previously evaluated positions. Not owned: injected at
+  // construction and shared across all Engines in a Lazy-SMP SearchPool
+  // (single-threaded callers each own their own). Must outlive the Engine.
   TranspositionTable* transposition_table_;
 };
 
@@ -572,41 +576,38 @@ inline auto Engine::ValidateTtMove(const Move& move) const -> bool {
          board_->GetPlayerOnSq(move.start_sq) == board_->GetPlayerToMove();
 }
 
-inline auto Engine::ShouldReverseFutilityPrune(int static_eval, int depth,
+inline auto Engine::ShouldReverseFutilityPrune(const UncDist& unc_dist,
+                                               int raw_eval, int depth,
                                                int beta, bool at_pv_node,
-                                               bool in_check,
-                                               const UncDist* rfp_dist,
-                                               int unc_mean) -> bool {
+                                               bool in_check) -> bool {
   // RFP can only fire on a fail-high frontier (static_eval >= beta, so the
   // margin >= 0 could still push it under beta), so gate the expensive quantile
   // bisection behind these early-outs -- it runs only at eligible fail-high
   // candidates. `rfp_dist` (the head's p(u|x)) is non-null exactly on the
   // RFP-eligible path (depth<=2, non-PV, non-check), which this guard enforces.
-  if (depth > 2 || at_pv_node || in_check || static_eval < beta) {
+  if (depth > 2 || at_pv_node || in_check || raw_eval < beta) {
     return false;
   }
   // unc-009 H1: position-conditional margin = Q_tau(u|x) - E[u|x], clamped >= 0
-  // (tau = prune_quantile, `unc_mean` = E[u|x] already computed at the eval site).
-  // Replaces the old depth*futility_margin constant; the prune shape
+  // (tau = prune_quantile, `unc_mean` = E[u|x] already computed at the eval
+  // site). Replaces the old depth*futility_margin constant; the prune shape
   // (static_eval - margin >= beta) is unchanged.
-  const int margin =
-      max(0, static_cast<int>(std::lround(rfp_dist->QuantileCp(
-                 static_cast<float>(params_.prune_quantile)))) -
-                 unc_mean);
-  return static_eval - margin >= beta;
+  int margin = static_cast<int>(std::lround(
+      unc_dist.QuantileCp(static_cast<float>(params_.prune_quantile))));
+  return raw_eval - margin >= beta;
 }
 
-inline auto Engine::ShouldFutilityPrune(const Move& move, int static_eval,
-                                        int depth, bool at_pv_node,
-                                        bool in_check, int alpha,
-                                        int fp_margin) -> bool {
-  // `fp_margin` is the position-conditional lower-tail cushion, computed ONCE
-  // per node in Pvs (see its derivation there) -- it is move-independent, so it
-  // must not be recomputed per quiet move here. This predicate stays a cheap
-  // per-move comparison; the single QuantileCp bisection lives at the node.
+inline auto Engine::ShouldFutilityPrune(const Move& move, int raw_eval,
+                                        int fp_margin, int depth,
+                                        bool at_pv_node, bool in_check,
+                                        int alpha) -> bool {
+  // fp_margin = depth*futility_margin - Q_{1-tau}(u|x), the position-conditional
+  // lower-tail cushion computed ONCE per node in Pvs (move-independent). This
+  // predicate stays a cheap per-move comparison; the QuantileCp bisection is not
+  // repeated per quiet move.
   return depth <= params_.max_futility_pruning_depth && !at_pv_node &&
          !in_check && move.captured_piece == kNA &&
-         move.promoted_to_piece == kNA && static_eval + fp_margin <= alpha;
+         move.promoted_to_piece == kNA && raw_eval + fp_margin <= alpha;
 }
 
 inline auto Engine::ShouldLateMovePrune(const Move& move,

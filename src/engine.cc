@@ -646,42 +646,41 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
     return beta;
   }
 
-  // Look for the first ply we weren't in check between 2 and 4 plies ago. If
-  // the static eval has improved, or we were in check both 2 and 4 plies ago,
-  // set the improving flag to true.
-  // unc-008 (H6): the corrected static eval is `raw - E[u|x]`, where E[u|x] is
-  // the uncertainty head's conditional mean error -- a learned, offline
-  // corrector that replaced the old online correction history (SPRT +7.7 Elo).
-  // The head runs on the int8 path (MeanCorrectionCp): the two big MLP layers
-  // are integer/NEON and only logits/mu are computed (H5-B).
-  // unc-009 H1: at RFP-eligible nodes (depth<=2, non-PV, non-check) take ONE
-  // full head forward -- it yields the mean-corrected eval AND (in
-  // ShouldReverseFutility- Prune, off the same dist) the RFP margin quantile,
-  // no second forward. Hand the distribution + its mean to the RFP predicate,
-  // which owns the margin math and gates the expensive quantile bisection on
-  // the fail-high frontier. Every other node keeps the H6 int8 mean-only fast
-  // path untouched.
-  int static_eval = kInvalidEval;
-  int unc_mean = 0;
-  UncDist unc_dist;                       // head p(u|x): populated only on the
-  const UncDist* unc_dist_ptr = nullptr;  // margin-eligible path (else null)
+  // Uncertainty head p(u|x). The FULL distribution (mean + quantiles) is taken
+  // only where a margin consumer reads it -- depth<=2, non-PV, non-check (RFP +
+  // forward futility); every other node keeps the H6 int8 mean-only fast path
+  // for the corrected eval. In check there's no eval (kInvalidEval sentinel),
+  // preserving the improving_ semantics.
+  // NOTE: the dist is gated on depth<=2, so MaxFutilityPruningDepth must stay
+  // <= 2 (fp_margin is only computed here); RFP is likewise depth<=2.
+  int raw_eval = kInvalidEval;
+  int corrected_eval = kInvalidEval;
+  int fp_margin = 0;  // forward-futility cushion, computed once per node below
+  UncDist unc_dist;   // head p(u|x): populated only on the margin-eligible path
   if (!in_check) {
+    raw_eval = board_->Evaluate();
     if (depth <= 2 && !at_pv_node) {
       unc_dist = board_->GetUncDistribution();
-      unc_dist_ptr = &unc_dist;
-      unc_mean = static_cast<int>(std::lround(unc_dist.MeanCp()));
-      static_eval = board_->Evaluate() - unc_mean;  // trunk eval - E[u|x]
+      corrected_eval =
+          raw_eval - static_cast<int>(std::lround(unc_dist.MeanCp()));
+      // Forward-futility lower-tail cushion = depth floor - Q_{1-tau}(u|x).
+      // Q_{1-tau} < 0, so this is depth*futility_margin + |Q|.
+      // Move-independent, so the QuantileCp bisection runs ONCE here, never per
+      // quiet move below.
+      const float lower_tau = 1.0F - static_cast<float>(params_.prune_quantile);
+      fp_margin = depth * params_.futility_margin -
+                  static_cast<int>(std::lround(unc_dist.QuantileCp(lower_tau)));
     } else {
-      static_eval = board_->Evaluate() - board_->GetMeanCorrectionCp();
+      corrected_eval = raw_eval - board_->GetMeanCorrectionCp();
     }
   }
-  eval_history_[ply] = static_eval;
+  eval_history_[ply] = corrected_eval;
   if (in_check) {
     improving_ = false;
   } else if (ply >= 2 && eval_history_[ply - 2] != kInvalidEval) {
-    improving_ = static_eval > eval_history_[ply - 2];
+    improving_ = corrected_eval > eval_history_[ply - 2];
   } else if (ply >= 4 && eval_history_[ply - 4] != kInvalidEval) {
-    improving_ = static_eval > eval_history_[ply - 4];
+    improving_ = corrected_eval > eval_history_[ply - 4];
   } else {
     improving_ = true;
   }
@@ -689,12 +688,12 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   // Drop into quiescence search immediately if the current position static
   // evalustion doesn't look promising.
   if (depth <= params_.max_razoring_depth && !at_pv_node && !in_check &&
-      static_eval + params_.razoring_margin < alpha) {
+      corrected_eval + params_.razoring_margin < alpha) {
     return QuiescenceSearch(alpha, beta, ply);
   }
 
-  if (ShouldReverseFutilityPrune(static_eval, depth, beta, at_pv_node, in_check,
-                                 unc_dist_ptr, unc_mean)) {
+  if (ShouldReverseFutilityPrune(unc_dist, raw_eval, depth, beta, at_pv_node,
+                                 in_check)) {
     return beta;
   }
 
@@ -727,35 +726,7 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
   int best_eval = kWorstEval;
   int made_moves_counter = 0;
   bool futility_pruned = false;
-  // unc-009 (futility site): the position-conditional lower-tail margin is the
-  // mirror of the RFP upper-tail one. Forward futility is a fail-LOW bet -- it
-  // skips a quiet move believing the node is hopeless -- so the cushion is "how
-  // far could this eval be UNDERestimating the truth here?", the lower tail of
-  // the signed eval error u = v - v*. RFP reads Q_tau(u|x); futility reads the
-  // complement Q_{1-tau}(u|x) off the SAME head (the shared `C_prune` risk
-  // level -- notes/eval_uncertainty_extensions.md). margin = E[u|x] - Q_{1-tau},
-  // clamped >= 0, so the optimistic upper bound `static_eval + fp_margin` is
-  // what ShouldFutilityPrune tests against alpha. This replaces the old
-  // depth*futility_margin constant (depth scaling and the conditional quantile
-  // both absorb position-dependence; dropping it mirrors the RFP swap). Computed
-  // ONCE here -- it is move-independent, so the QuantileCp bisection must not
-  // run per quiet move in the loop below.
-  int fp_margin = 0;
-  if (!in_check && !at_pv_node && depth <= params_.max_futility_pruning_depth) {
-    // Invariant: FP is eligible exactly where the dist is computed (depth <= 2,
-    // non-PV, non-check). A null here means MaxFutilityPruningDepth was tuned
-    // past the dist-computation depth -- fail loud rather than silently prune on
-    // a stale margin.
-    if (unc_dist_ptr == nullptr) {
-      throw std::logic_error(
-          "futility: null uncertainty distribution at an FP-eligible node "
-          "(MaxFutilityPruningDepth exceeds the dist-computation depth)");
-    }
-    const float lower_tau =
-        static_cast<float>(1000 - params_.prune_quantile) / 1000.0F;
-    fp_margin = max(0, unc_mean - static_cast<int>(std::lround(
-                                      unc_dist_ptr->QuantileCp(lower_tau))));
-  }
+
   // Only full-window (PV) nodes yield a real principal variation; skip the
   // splice on null-window nodes to keep it off the hot path.
   bool collect_pv = beta - alpha > 1;
@@ -779,8 +750,8 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       continue;
     }
 
-    if (ShouldFutilityPrune(move, static_eval, depth, at_pv_node, in_check,
-                            alpha, fp_margin)) {
+    if (ShouldFutilityPrune(move, raw_eval, fp_margin, depth, at_pv_node,
+                            in_check, alpha)) {
       futility_pruned = true;
       continue;
     }
