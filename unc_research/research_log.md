@@ -6,6 +6,31 @@ the per-experiment files under `experiments/`.
 
 ---
 
+## 2026-09-10 — unc-009 E: **H1 ACCEPTED — conditional RFP margin gains +11.0 Elo (SPRT)**
+
+**The crux verdict: position-conditional pruning margins beat a constant.** TEST = `90ba5a4` (RFP margin =
+`Q_τ(u|x) − E[u|x]`, tuned `PruneQuantile`=834 / τ=0.834) vs BASE = `8d0ff77` (mean-model correction + the
+old constant `depth·futility_margin` RFP). 10+0.1, Threads=1, concurrency 8, H1 bounds (elo0=0/elo1=5,
+α=β=0.05). LLR crossed +elo1 → **H1_ACCEPTED, +11.0 Elo** (95% CI +3.6…+18.5), **6130 games**, 2332–1660–2138
+(51.58%). Run `results/sprt/2026-09-09_19-10-11_90ba5a4_vs_8d0ff77`.
+
+This validates the **core thesis of the whole unc line**: the head's conditional error distribution carries
+exploitable *search* signal beyond its mean. The head has now paid off twice — unc-008 H6 (+7.7, the *mean*
+`E[u|x]` as corrector) and now unc-009 H1 (+11.0, the *quantile* `Q_τ` as pruning margin) — so conditioning
+the margin on position, not just de-biasing the eval, is worth real Elo. RFP becomes the first uncertainty
+feature; the LUT quantile is NPS-affordable in the hot path as designed (no NPS regression surfaced — the
+SPRT is the arbiter).
+
+**Honesty on the null.** Per the 2026-09-09 no-retune policy the baseline ran its **v5-tuned constant**
+`futility_margin`, not a freshly-SPSA'd one (D2 dropped). So the strict pre-registered claim ("conditioning
+beats an *equally-tuned* constant") is softened to "beats the v5 constant." The zero-game diagnostic bounds the
+gap: the corrector's systematic bias at RFP nodes is ~+15cp (~6% of margin), and a re-tuned constant could
+recover at most that — so +11.0 is, if anything, a mild *under*-count of conditioning's value, not an inflation.
+
+**Next (milestone F unlocked):** convert the next margin — forward **futility** — to `Q_τ` under the shared
+`C_prune` (= `PruneQuantile`), one SPRT-gated site at a time (razoring, delta, … per the O1 param taxonomy in
+`notes/eval_uncertainty_extensions.md`).
+
 ## 2026-09-09 — Methodology: **tune once at the end**, not per feature (+ zero-game evidence)
 
 **Decision (standing policy).** We do NOT re-SPSA the existing param set after each feature. Retuning is

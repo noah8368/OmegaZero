@@ -1,0 +1,2 @@
+timestamp,test_label,base_label,test_commit,base_commit,elo0,elo1,alpha,beta,st,tc,games,wins,draws,losses,score_rate,elo_diff,llr,result
+2026-09-10 02:21:50,New-90ba5a4,Base-8d0ff77,90ba5a4,8d0ff77,0.0,5.0,0.05,0.05,,10+0.1,6130,2332,1660,2138,0.5158,11.0,0.0,H1_ACCEPTED
