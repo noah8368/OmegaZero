@@ -256,7 +256,8 @@ class Engine {
                                   const UncDist* rfp_dist, int unc_mean)
       -> bool;
   auto ShouldFutilityPrune(const Move& move, int static_eval, int depth,
-                           bool at_pv_node, bool in_check, int alpha) -> bool;
+                           bool at_pv_node, bool in_check, int alpha,
+                           int fp_margin) -> bool;
   auto ShouldLateMovePrune(const Move& move, int num_quiet_searched, int depth,
                            bool at_pv_node, bool gives_check, bool in_check,
                            int ply) -> bool;
@@ -597,11 +598,15 @@ inline auto Engine::ShouldReverseFutilityPrune(int static_eval, int depth,
 
 inline auto Engine::ShouldFutilityPrune(const Move& move, int static_eval,
                                         int depth, bool at_pv_node,
-                                        bool in_check, int alpha) -> bool {
+                                        bool in_check, int alpha,
+                                        int fp_margin) -> bool {
+  // `fp_margin` is the position-conditional lower-tail cushion, computed ONCE
+  // per node in Pvs (see its derivation there) -- it is move-independent, so it
+  // must not be recomputed per quiet move here. This predicate stays a cheap
+  // per-move comparison; the single QuantileCp bisection lives at the node.
   return depth <= params_.max_futility_pruning_depth && !at_pv_node &&
          !in_check && move.captured_piece == kNA &&
-         move.promoted_to_piece == kNA &&
-         static_eval + depth * params_.futility_margin <= alpha;
+         move.promoted_to_piece == kNA && static_eval + fp_margin <= alpha;
 }
 
 inline auto Engine::ShouldLateMovePrune(const Move& move,
