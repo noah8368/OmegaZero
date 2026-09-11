@@ -63,7 +63,8 @@ inline constexpr IntOpt kIntOpts[] = {
 };
 
 inline constexpr DblOpt kDblOpts[] = {
-    {"PruneQuantile", &SearchParams::prune_quantile, 1000, 510, 999},
+    {"RfpQuantile", &SearchParams::rfp_quantile, 1000, 510, 999},
+    {"FpQuantile", &SearchParams::fp_quantile, 1000, 20, 490},
     {"TmMoveDecay", &SearchParams::tm_move_decay, 100, 0, 100},
     {"TmMoveWeight", &SearchParams::tm_move_weight, 100, 0, 300},
     {"TmScoreWeight", &SearchParams::tm_score_weight, 100, 0, 300},

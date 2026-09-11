@@ -663,13 +663,13 @@ auto Engine::Pvs(Move& pv_move, int alpha, int beta, int depth, int ply,
       unc_dist = board_->GetUncDistribution();
       corrected_eval =
           raw_eval - static_cast<int>(std::lround(unc_dist.MeanCp()));
-      // Forward-futility lower-tail cushion = depth floor - Q_{1-tau}(u|x).
-      // Q_{1-tau} < 0, so this is depth*futility_margin + |Q|.
-      // Move-independent, so the QuantileCp bisection runs ONCE here, never per
-      // quiet move below.
-      const float lower_tau = 1.0F - static_cast<float>(params_.prune_quantile);
+      // Forward-futility lower-tail cushion = depth floor - Q_fp(u|x), where
+      // fp_quantile is the lower-tail level directly (Q_fp < 0, so this is
+      // depth*futility_margin + |Q_fp|). Its own knob, decoupled from RFP's
+      // rfp_quantile. Move-independent, so the bisection runs ONCE here.
       fp_margin = depth * params_.futility_margin -
-                  static_cast<int>(std::lround(unc_dist.QuantileCp(lower_tau)));
+                  static_cast<int>(std::lround(unc_dist.QuantileCp(
+                      static_cast<float>(params_.fp_quantile))));
     } else {
       corrected_eval = raw_eval - board_->GetMeanCorrectionCp();
     }
