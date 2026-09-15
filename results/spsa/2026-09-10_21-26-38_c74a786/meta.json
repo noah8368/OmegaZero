@@ -1,0 +1,24 @@
+{
+  "params": [
+    "FpQuantile",
+    "FutilityMargin"
+  ],
+  "games": 20000,
+  "games_per_iter": 8,
+  "iterations": 2500,
+  "seed": null,
+  "start_theta": {
+    "FpQuantile": 166.0,
+    "FutilityMargin": 260.0
+  },
+  "schedule": {
+    "FpQuantile": {
+      "c_end": 23.5,
+      "r_end": 0.002
+    },
+    "FutilityMargin": {
+      "c_end": 29.0,
+      "r_end": 0.002
+    }
+  }
+}
